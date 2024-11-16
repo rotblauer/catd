@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
-	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -80,28 +79,32 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		return ct
 	}, deduped)
 
-	// S2 Unique-Cell Indexing
-	var s2Indexer *s2.Indexer
-	defer func() {
-		if s2Indexer != nil {
-			if err := s2Indexer.Close(); err != nil {
-				slog.Error("Failed to close S2-Indexer", "error", err)
+	/*
+
+		// S2 Unique-Cell Indexing
+		var s2Indexer *s2.Indexer
+		defer func() {
+			if s2Indexer != nil {
+				if err := s2Indexer.Close(); err != nil {
+					slog.Error("Failed to close S2-Indexer", "error", err)
+				}
 			}
+		}()
+
+		initS2IndexerFromCatTrack := func(ct *cattrack.CatTrack) (err error) {
+			s2Indexer, err = s2.NewIndexer(ct.CatID(), app.DatadirRoot, []s2.CellLevel{
+				s2.CellLevel23, s2.CellLevel16,
+			})
+			return
 		}
-	}()
 
-	initS2IndexerFromCatTrack := func(ct *cattrack.CatTrack) (err error) {
-		s2Indexer, err = s2.NewIndexer(ct.CatID(), app.DatadirRoot, []s2.CellLevel{
-			s2.CellLevel23, s2.CellLevel16,
-		})
-		return
-	}
+		indexed := stream.Transform(ctx)
 
-	indexed := stream.Transform(ctx)
+		// Tile generation.
 
-	// Tile generation.
-
-	// Trip detection.
+		// Trip detection.
+	
+	*/
 
 	var lastErr error
 	for result := range stored {
