@@ -1,6 +1,7 @@
 package node
 
 import (
+	"fmt"
 	"github.com/gorilla/mux"
 	"io"
 	"log"
@@ -91,7 +92,7 @@ func tokenAuthenticationMiddleware(next http.Handler) http.Handler {
 		// Enforce token validation.
 		if token != validToken {
 			log.Println("Invalid token",
-				"token:", token, "validToken:", "***REDACTED***",
+				"token:", fmt.Sprintf("%q", token), "validToken:", "***REDACTED***",
 				"method:", r.Method, "url:", r.URL, "proto:", r.Proto,
 				"host:", r.Host, "remote-addr:", r.RemoteAddr,
 				"request-URI:", r.RequestURI, "content-length:", r.ContentLength,

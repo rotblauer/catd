@@ -54,7 +54,7 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("Decoding", len(body), "bytes: ", string(body)[:int(math.Min(80, float64(len(body))))])
 
 	features, err := types.DecodeCatTracksShotgun(body)
-	if err != nil {
+	if err != nil || len(features) == 0 {
 		slog.Warn("Failed to decode", "error", err)
 		http.Error(w, "Failed to decode", http.StatusUnprocessableEntity)
 		return
@@ -70,6 +70,19 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)
 		return
+	}
+
+	if m := GetMelody(); m != nil {
+		bc := broadcats{
+			Action: websocketActionPopulate,
+			Features: []*cattrack.CatTrack{
+				features[len(features)-1],
+			},
+		}
+		b, _ := json.Marshal(bc)
+		if err := m.Broadcast(b); err != nil {
+			slog.Error("Failed to broadcast populate event", "error", err)
+		}
 	}
 
 	// This weirdness is to satisfy the legacy clients,
