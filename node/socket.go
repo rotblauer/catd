@@ -2,10 +2,11 @@ package node
 
 import (
 	"encoding/json"
+	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/types/cattrack"
 	"log"
 
 	"github.com/olahol/melody"
-	"github.com/paulmach/orb/geojson"
 )
 
 type websocketAction string
@@ -13,11 +14,17 @@ type websocketAction string
 var websocketActionPopulate websocketAction = "populate"
 
 type broadcats struct {
-	Action   websocketAction    `json:"action"`
-	Features []*geojson.Feature `json:"features"`
+	Action   websocketAction      `json:"action"`
+	Features []*cattrack.CatTrack `json:"features"`
 }
 
+// m is a global melody instance.
 var m *melody.Melody
+
+// GetMelody does stuff
+func GetMelody() *melody.Melody {
+	return m
+}
 
 // InitMelody sets up the websocket handler.
 func InitMelody() *melody.Melody {
@@ -26,7 +33,7 @@ func InitMelody() *melody.Melody {
 	// Incoming message about updated query params.
 	m.HandleConnect(func(s *melody.Session) {
 		log.Println("[websocket] connected", s.Request.RemoteAddr)
-		for _, v := range lastPushTTLCache.Items() {
+		for _, v := range cache.LastPushTTLCache.Items() {
 			features := v.Value()
 			bc := broadcats{
 				Action:   websocketActionPopulate,
@@ -42,16 +49,11 @@ func InitMelody() *melody.Melody {
 	m.HandleError(func(s *melody.Session, e error) {
 		log.Println("[websocket] error", e, s.Request.RemoteAddr)
 	})
-	m.HandleMessage(messageHandler)
-	return m
-}
-
-// GetMelody does stuff
-func GetMelody() *melody.Melody {
+	m.HandleMessage(loggingHandler)
 	return m
 }
 
 // on request
-func messageHandler(s *melody.Session, msg []byte) {
+func loggingHandler(s *melody.Session, msg []byte) {
 	log.Println("[websocket] message", string(msg))
 }

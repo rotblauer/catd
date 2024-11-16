@@ -17,6 +17,8 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/rotblauer/catd/app"
+	"github.com/rotblauer/catd/node"
 	"github.com/spf13/cobra"
 	"os"
 
@@ -35,6 +37,8 @@ var rootCmd = &cobra.Command{
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
 
+		port, _ := cmd.Flags().GetInt("http.port")
+		node.StartWebserver("localhost", port)
 		/*
 		   node.StartWebserver()
 		   node.StartIPC()
@@ -64,6 +68,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
 	rootCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
+	rootCmd.PersistentFlags().StringVar(&app.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
