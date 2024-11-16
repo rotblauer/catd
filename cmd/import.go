@@ -30,8 +30,12 @@ import (
 var importCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Import cat tracks from stdin",
-	Long:  `Scans geojson.Feature lines from stdin and passes them to api.Populate.`,
+	Long: `Scans geojson.Feature lines from stdin and passes them to api.Populate.
+
+Tracks from mixed cats are supported, eg. edge.json.gz - OK!
+`,
 	Run: func(cmd *cobra.Command, args []string) {
+		setSlogLevel(cmd, args)
 
 		ctx := context.Background()
 		send := make(chan *cattrack.CatTrack)

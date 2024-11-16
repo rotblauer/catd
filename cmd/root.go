@@ -20,6 +20,7 @@ import (
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/node"
 	"github.com/spf13/cobra"
+	"log/slog"
 	"os"
 
 	homedir "github.com/mitchellh/go-homedir"
@@ -27,6 +28,13 @@ import (
 )
 
 var cfgFile string
+
+// setSlogLevel sets the global slog level: -4..8.
+// https://pkg.go.dev/log/slog@master#Level
+func setSlogLevel(cmd *cobra.Command, args []string) {
+	verbosity, _ := cmd.Flags().GetInt("verbosity")
+	slog.SetLogLoggerLevel(slog.Level(verbosity))
+}
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -36,6 +44,7 @@ var rootCmd = &cobra.Command{
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
+		setSlogLevel(cmd, args)
 
 		port, _ := cmd.Flags().GetInt("http.port")
 		node.StartWebserver("localhost", port)
@@ -69,6 +78,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
 	rootCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
 	rootCmd.PersistentFlags().StringVar(&app.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
+	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

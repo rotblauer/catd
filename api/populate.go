@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/stream"
@@ -10,6 +9,9 @@ import (
 	"log/slog"
 )
 
+// Populate persists incoming CatTracks, which
+// may be from mixed cats (eg. edge.json.gz), in which case
+// this function will sort them into respective cat hats.
 func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
@@ -39,24 +41,37 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		}
 	}()
 
-	stored := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-		slog.Info("Storing track", "track", ct.StringPretty())
+	initWriterFromCatTrack := func(ct *cattrack.CatTrack) error {
+		cat := app.Cat{CatID: ct.CatID()}
+		var err error
+		writer, err = cat.NewCatWriter()
+		if err != nil {
+			return err
+		}
+		return nil
+	}
 
-		// The first feature will define the Cat for the rest of the batch.
+	stored := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+		// The first feature will define the Cat/Writer for the rest of the batch.
 		if writer == nil {
-			cat := app.Cat{CatID: ct.CatID()}
-			var err error
-			writer, err = cat.NewCatWriter()
-			if err != nil {
+			if err := initWriterFromCatTrack(ct); err != nil {
+				return err
+			}
+		} else if writer.CatID != ct.CatID() {
+			// If, for some reason, we're ingesting a mix of cats' tracks,
+			// then we need to close and reassign the Cat/Writer.
+			if err := writer.Close(); err != nil {
+				return err
+			}
+			if err := initWriterFromCatTrack(ct); err != nil {
 				return err
 			}
 		}
-		if writer.CatID != ct.CatID() {
-			return fmt.Errorf("mismatched cats' tracks")
-		}
+
 		if err := writer.WriteTrack(ct); err != nil {
 			return err
 		}
+		slog.Debug("Stored track", "track", ct.StringPretty())
 		return ct
 	}, deduped)
 
