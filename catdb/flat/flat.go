@@ -43,6 +43,10 @@ func (f *Flat) Path() string {
 	return f.path
 }
 
+func (f *Flat) NamedGZ(name string) (*GZFile, error) {
+	return NewFlatGZ(filepath.Join(f.path, name))
+}
+
 func (f *Flat) TracksGZ() (*GZFile, error) {
 	return NewFlatGZ(filepath.Join(f.path, TracksFileName))
 }

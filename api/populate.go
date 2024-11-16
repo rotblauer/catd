@@ -4,10 +4,15 @@ import (
 	"context"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 )
+
+func storeTracksGZ(in <-chan *cattrack.CatTrack) <-chan any {
+
+}
 
 // Populate persists incoming CatTracks, which
 // may be from mixed cats (eg. edge.json.gz), in which case
@@ -74,6 +79,29 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		slog.Debug("Stored track", "track", ct.StringPretty())
 		return ct
 	}, deduped)
+
+	// S2 Unique-Cell Indexing
+	var s2Indexer *s2.Indexer
+	defer func() {
+		if s2Indexer != nil {
+			if err := s2Indexer.Close(); err != nil {
+				slog.Error("Failed to close S2-Indexer", "error", err)
+			}
+		}
+	}()
+
+	initS2IndexerFromCatTrack := func(ct *cattrack.CatTrack) (err error) {
+		s2Indexer, err = s2.NewIndexer(ct.CatID(), app.DatadirRoot, []s2.CellLevel{
+			s2.CellLevel23, s2.CellLevel16,
+		})
+		return
+	}
+
+	indexed := stream.Transform(ctx)
+
+	// Tile generation.
+
+	// Trip detection.
 
 	var lastErr error
 	for result := range stored {
