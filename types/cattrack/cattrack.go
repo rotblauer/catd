@@ -19,6 +19,10 @@ func (ct *CatTrack) MarshalJSON() ([]byte, error) {
 	return (*geojson.Feature)(ct).MarshalJSON()
 }
 
+func (ct *CatTrack) UnmarshalJSON(data []byte) error {
+	return (*geojson.Feature)(ct).UnmarshalJSON(data)
+}
+
 func (ct *CatTrack) Time() (time.Time, error) {
 	if v, ok := ct.Properties["Time"].(time.Time); ok {
 		return v, nil

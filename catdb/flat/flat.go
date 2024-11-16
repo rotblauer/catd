@@ -8,6 +8,7 @@ import (
 )
 
 const (
+	CatsDir        = "cats"
 	TracksFileName = "tracks.geojson.gz"
 	SnapsFileName  = "snaps.geojson.gz"
 	LapsFileName   = "laps.geojson.gz"
@@ -30,7 +31,7 @@ func NewFlatWithRoot(root string) *Flat {
 }
 
 func (f *Flat) ForCat(catID conceptual.CatID) *Flat {
-	f.path = filepath.Join(f.path, catID.String())
+	f.path = filepath.Join(f.path, CatsDir, catID.String())
 	return f
 }
 
