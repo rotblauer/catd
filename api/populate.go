@@ -6,6 +6,7 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -13,11 +14,11 @@ import (
 )
 
 // PopulateCat persists incoming CatTracks for one cat.
-func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.CatTrack) error {
+func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) (lastErr error) {
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-		if cat != ct.CatID() {
-			slog.Warn("Invalid track, mismatched cat", "want", cat, "got", ct.CatID())
+		if catID != ct.CatID() {
+			slog.Warn("Invalid track, mismatched cat", "want", catID, "got", ct.CatID())
 			return false
 		}
 		if err := ct.Validate(); err != nil {
@@ -34,7 +35,7 @@ func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.
 	// Declare our cat-writer and intend to close it on completion.
 	// Holding the writer in this closure allows us to use the writer
 	// as a batching writer, only opening and closing the target writers once.
-	catApp := app.Cat{CatID: cat}
+	catApp := app.Cat{CatID: catID}
 	writer, err := catApp.NewCatWriter()
 	if err != nil {
 		return err
@@ -45,7 +46,7 @@ func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.
 		}
 	}()
 
-	stored := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+	storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
 		if err := writer.WriteTrack(ct); err != nil {
 			return err
 		}
@@ -56,57 +57,37 @@ func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.
 		return ct
 	}, deduped)
 
-	a, b := stream.Tee(ctx, stored)
+	a, b := stream.Tee(ctx, storeResults)
 
-	catIndexer, err := s2.NewIndexer(cat, app.DatadirRoot, s2.DefaultCellLevels)
+	storedOK := stream.Transform(ctx, func(t any) *cattrack.CatTrack {
+		return t.(*cattrack.CatTrack)
+	}, stream.Filter(ctx, func(t any) bool {
+		_, ok := t.(*cattrack.CatTrack)
+		return ok
+	}, a))
+
+	errs := stream.Filter(ctx, func(t any) bool {
+		_, ok := t.(error)
+		return ok
+	}, b)
+
+	catIndexer, err := s2.NewIndexer(catID, app.DatadirRoot, params.S2DefaultCellLevels)
 	if err != nil {
 		return err
 	}
-
-	/*
-
-
-
-		// S2 Unique-Cell Indexing
-
-
-		var s2Indexer *s2.Indexer
-		defer func() {
-			if s2Indexer != nil {
-				if err := s2Indexer.Close(); err != nil {
-					slog.Error("Failed to close S2-Indexer", "error", err)
-				}
-			}
-		}()
-
-		initS2IndexerFromCatTrack := func(ct *cattrack.CatTrack) (err error) {
-			s2Indexer, err = s2.NewIndexer(ct.CatID(), app.DatadirRoot, []s2.CellLevel{
-				s2.CellLevel23, s2.CellLevel16,
-			})
-			return
+	go func() {
+		if err := catIndexer.Index(ctx, storedOK); err != nil {
+			slog.Error("Indexer errored", "error", err)
 		}
-
-		indexed := stream.Transform(ctx)
-
-		// Tile generation.
-
-
-		// Trip detection.
-
-	*/
-
-	var lastErr error
-	stream.Sink(ctx, func(result any) {
-		if result == nil {
-			return
+		if err := catIndexer.Close(); err != nil {
+			slog.Error("Failed to close indexer", "error", err)
 		}
-		switch t := result.(type) {
-		case error:
-			slog.Error("Failed to populate CatTrack", "error", t)
-			lastErr = t
-		case *cattrack.CatTrack:
-		}
-	}, stored)
+	}()
 
+	// Blocking.
+	stream.Sink(ctx, func(t any) {
+		lastErr = t.(error)
+		slog.Error("Failed to populate CatTrack", "error", lastErr)
+	}, errs)
 	return lastErr
 }

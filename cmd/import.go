@@ -36,7 +36,7 @@ var importCmd = &cobra.Command{
 Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sorter.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		setSlogLevel(cmd, args)
+		setDefaultSlog(cmd, args)
 
 		ctx := context.Background()
 

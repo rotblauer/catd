@@ -29,11 +29,12 @@ import (
 
 var cfgFile string
 
-// setSlogLevel sets the global slog level: -4..8.
+// setDefaultSlog sets the global slog level: -4..8.
 // https://pkg.go.dev/log/slog@master#Level
-func setSlogLevel(cmd *cobra.Command, args []string) {
+func setDefaultSlog(cmd *cobra.Command, args []string) {
 	verbosity, _ := cmd.Flags().GetInt("verbosity")
 	slog.SetLogLoggerLevel(slog.Level(verbosity))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -44,7 +45,7 @@ var rootCmd = &cobra.Command{
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-		setSlogLevel(cmd, args)
+		setDefaultSlog(cmd, args)
 
 		port, _ := cmd.Flags().GetInt("http.port")
 		node.StartWebserver("localhost", port)
