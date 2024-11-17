@@ -40,3 +40,15 @@ func TestStream2(t *testing.T) {
 		t.Errorf("Expected [1, 2, 3, 4], got %v", result)
 	}
 }
+
+func TestBatchSize(t *testing.T) {
+	data := []int{0, 2, 4, 6, 8}
+	ctx := context.Background()
+	s := Slice(ctx, data)
+	b := BatchSize(ctx, s, 2)
+	result := Collect(ctx, b)
+
+	if !slices.Equal([]int{0, 2, 4, 6, 8}, result) {
+		t.Errorf("Expected [0, 2, 4, 6, 8], got %v", result)
+	}
+}

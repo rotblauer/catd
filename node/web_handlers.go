@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -72,23 +73,11 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if m := GetMelody(); m != nil {
-		bc := broadcats{
-			Action: websocketActionPopulate,
-			Features: []*cattrack.CatTrack{
-				features[len(features)-1],
-			},
-		}
-		b, _ := json.Marshal(bc)
-		if err := m.Broadcast(b); err != nil {
-			slog.Error("Failed to broadcast populate event", "error", err)
-		}
-	}
-
 	// This weirdness is to satisfy the legacy clients,
 	// but it's not an API pattern I like.
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("[]")); err != nil {
 		slog.Warn("Failed to write response", "error", err)
 	}
+	events.HTTPPopulateFeed.Send(features)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -13,9 +14,7 @@ func storeTracksGZ(in <-chan *cattrack.CatTrack) <-chan any {
 
 }
 
-// Populate persists incoming CatTracks, which
-// may be from mixed cats (eg. edge.json.gz), in which case
-// this function will sort them into respective cat hats.
+// Populate persists incoming CatTracks for one cat.
 func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
@@ -75,13 +74,21 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		if err := writer.WriteTrack(ct); err != nil {
 			return err
 		}
+
+		// We did it!
 		slog.Debug("Stored track", "track", ct.StringPretty())
+		events.NewStoredTrackFeed.Send(ct)
+
 		return ct
 	}, deduped)
 
 	/*
 
+
+
 		// S2 Unique-Cell Indexing
+
+
 		var s2Indexer *s2.Indexer
 		defer func() {
 			if s2Indexer != nil {
@@ -102,14 +109,15 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 
 		// Tile generation.
 
+
 		// Trip detection.
-	
+
 	*/
 
 	var lastErr error
-	for result := range stored {
+	stream.Sink(ctx, stored, func(result any) {
 		if result == nil {
-			continue
+			return
 		}
 		switch t := result.(type) {
 		case error:
@@ -117,6 +125,7 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 			lastErr = t
 		case *cattrack.CatTrack:
 		}
-	}
+	})
+
 	return lastErr
 }

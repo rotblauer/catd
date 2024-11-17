@@ -92,3 +92,56 @@ func Collect[T any](ctx context.Context, in <-chan T) []T {
 	}
 	return out
 }
+
+func BatchSize[T any](ctx context.Context, in <-chan T, batchSize int) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+
+		var batch []T
+		flush := func() {
+			Sink(ctx, Slice(ctx, batch), func(t T) {
+				out <- t
+			})
+			batch = []T{}
+		}
+		defer flush()
+
+		// Range, blocking until 'in' is closed.
+		for element := range in {
+			batch = append(batch, element)
+			if len(batch) == batchSize {
+				flush()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	return out
+}
+
+func Sink[T any](ctx context.Context, in <-chan T, sink func(T)) {
+	for element := range in {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if sink != nil {
+				sink(element)
+			}
+		}
+	}
+}
+
+func Drain[T any](ctx context.Context, in <-chan T) {
+	for range in {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
+}

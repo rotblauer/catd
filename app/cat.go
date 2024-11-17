@@ -1,7 +1,7 @@
 package app
 
 import (
-	"bytes"
+	"encoding/json"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
@@ -36,19 +36,11 @@ func (c *Cat) NewCatWriter() (*CatWriter, error) {
 }
 
 func (w *CatWriter) WriteTrack(ct *cattrack.CatTrack) error {
-	jsonBytes, err := ct.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	if !bytes.HasSuffix(jsonBytes, []byte("\n")) {
-		jsonBytes = append(jsonBytes, '\n')
-	}
-	_, err = w.TrackWriterGZ.Write(jsonBytes)
-	if err != nil {
+	if err := json.NewEncoder(w.TrackWriterGZ).Encode(ct); err != nil {
 		return err
 	}
 	cache.SetLastKnownTTL(w.CatID, ct)
-	return err
+	return nil
 }
 
 func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {

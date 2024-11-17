@@ -23,15 +23,143 @@ import (
 	"github.com/golang/geo/s2"
 	"github.com/golang/groupcache/lru"
 	"github.com/paulmach/orb"
+	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
+	"log/slog"
 	"path/filepath"
+	"time"
 )
 
 const s2DBName = "s2.db"
 const batchSize = 1_000
+
+var defaultCellLevels = []CellLevel{CellLevel16, CellLevel23}
+
+func init() {
+	var newTracksCh = make(chan *cattrack.CatTrack)
+	var newTracksSub = events.NewStoredTrackFeed.Subscribe(newTracksCh)
+
+	var indexers = lru.New(100)
+
+	type indexerCache struct {
+		input     chan *cattrack.CatTrack
+		indexer   *Indexer
+		lastWrite time.Time
+	}
+
+	go func() {
+		for {
+			select {
+			case err := <-newTracksSub.Err():
+				slog.Error("Failed to subscribe to NewStoredTrackFeed", "error", err)
+				return
+			case ct := <-newTracksCh:
+				slog.Info("new track", ct.StringPretty())
+				indexer, ok := indexers.Get(ct.CatID())
+				if !ok {
+					indexer, err := NewIndexer(ct.CatID(), app.DatadirRoot, defaultCellLevels)
+					if err != nil {
+						slog.Error("Failed to create indexer", "error", err)
+						continue
+					}
+					v := &indexerCache{
+						input:     make(chan *cattrack.CatTrack),
+						indexer:   indexer,
+						lastWrite: time.Now(),
+					}
+					indexers.Add(ct.CatID(), v)
+					go indexer.Index(v.input)
+					go func() {
+						t := time.NewTicker(10 * time.Second)
+						for range t.C {
+							if time.Since(v.lastWrite) > 10*time.Second {
+								if err := v.indexer.Close(); err != nil {
+									slog.Error("Failed to close indexer", "error", err)
+								}
+								indexers.Remove(ct.CatID())
+								return
+							}
+						}
+					}()
+				}
+				indexerCached := indexer.(*indexerCache)
+				indexerCached.input <- ct
+			}
+		}
+	}()
+}
+
+type Indexer struct {
+	CatID     conceptual.CatID
+	Cache     *lru.Cache
+	Levels    []CellLevel
+	DB        *bbolt.DB
+	FlatFiles map[CellLevel]*flat.GZFile
+
+	readingChan chan *cattrack.CatTrack
+}
+
+func NewIndexer(id conceptual.CatID, root string, levels []CellLevel) (*Indexer, error) {
+	if len(levels) == 0 {
+		return nil, fmt.Errorf("no levels provided")
+	}
+
+	f := flat.NewFlatWithRoot(root).ForCat(id)
+	if err := f.Ensure(); err != nil {
+		return nil, err
+	}
+	dbPath := filepath.Join(f.Path(), s2DBName)
+	db, err := bbolt.Open(dbPath, 0660, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	flatFileMap := make(map[CellLevel]*flat.GZFile)
+	for _, level := range levels {
+		gzf, err := f.NamedGZ(fmt.Sprintf("s2_level-%d.geojson.gz", level))
+		if err != nil {
+			return nil, err
+		}
+		flatFileMap[level] = gzf
+	}
+
+	return &Indexer{
+		CatID:     id,
+		Levels:    levels,
+		Cache:     lru.New(100_000),
+		DB:        db,
+		FlatFiles: flatFileMap,
+	}, nil
+}
+
+func (i *Indexer) Index(in chan *cattrack.CatTrack) any {
+	i.readingChan = in
+	for track := range i.readingChan {
+
+	}
+	return nil
+}
+
+func (i *Indexer) FlushBatch() error {
+	return nil
+}
+
+func (i *Indexer) Close() error {
+	i.readingChan = nil
+	if err := i.DB.Close(); err != nil {
+		return err
+	}
+	for _, gzf := range i.FlatFiles {
+		if err := gzf.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // cellIDWithLevel returns the cellID truncated to the given level.
 func cellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
@@ -78,61 +206,4 @@ func (i *Indexer) trackInCacheByCellID(cellID s2.CellID) (exists bool) {
 	}
 	i.Cache.Add(key, true)
 	return false
-}
-
-type Indexer struct {
-	CatID     conceptual.CatID
-	Cache     *lru.Cache
-	Levels    []CellLevel
-	DB        *bbolt.DB
-	FlatFiles map[CellLevel]*flat.GZFile
-}
-
-func NewIndexer(id conceptual.CatID, root string, levels []CellLevel) (*Indexer, error) {
-	if len(levels) == 0 {
-		return nil, fmt.Errorf("no levels provided")
-	}
-
-	f := flat.NewFlatWithRoot(root).ForCat(id)
-	if err := f.Ensure(); err != nil {
-		return nil, err
-	}
-	dbPath := filepath.Join(f.Path(), s2DBName)
-	db, err := bbolt.Open(dbPath, 0660, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	flatFileMap := make(map[CellLevel]*flat.GZFile)
-	for _, level := range levels {
-		gzf, err := f.NamedGZ(fmt.Sprintf("s2_level-%d.geojson.gz", level))
-		if err != nil {
-			return nil, err
-		}
-		flatFileMap[level] = gzf
-	}
-
-	return &Indexer{
-		CatID:     id,
-		Levels:    levels,
-		Cache:     lru.New(100_000),
-		DB:        db,
-		FlatFiles: flatFileMap,
-	}, nil
-}
-
-func (i *Indexer) Index(in <-chan *cattrack.CatTrack) any {
-	return nil
-}
-
-func (i *Indexer) Close() error {
-	if err := i.DB.Close(); err != nil {
-		return err
-	}
-	for _, gzf := range i.FlatFiles {
-		if err := gzf.Close(); err != nil {
-			return err
-		}
-	}
-	return nil
 }

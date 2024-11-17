@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
 	"io"
@@ -38,16 +39,25 @@ Tracks from mixed cats are supported, eg. edge.json.gz - OK!
 		setSlogLevel(cmd, args)
 
 		ctx := context.Background()
-		send := make(chan *cattrack.CatTrack)
 
-		go func() {
-			err := api.Populate(ctx, send)
-			if err != nil {
-				slog.Error("Failed to populate CatTracks", "error", err)
-			}
-		}()
+		catHat := func() chan *cattrack.CatTrack {
+			in := make(chan *cattrack.CatTrack)
 
+			go func() {
+				err := api.Populate(ctx, in)
+				if err != nil {
+					slog.Error("Failed to populate CatTracks", "error", err)
+				}
+			}()
+
+			return in
+		}
+
+		var hat chan *cattrack.CatTrack
+
+		var lastCatID conceptual.CatID
 		dec := json.NewDecoder(os.Stdin)
+	decodeLoop:
 		for {
 			ct := &cattrack.CatTrack{}
 			if err := dec.Decode(ct); err == io.EOF {
@@ -56,14 +66,21 @@ Tracks from mixed cats are supported, eg. edge.json.gz - OK!
 				slog.Error("Failed to decode CatTrack", "error", err)
 				continue
 			}
+			if lastCatID != ct.CatID() {
+				if hat != nil {
+					close(hat)
+				}
+				lastCatID = ct.CatID()
+				hat = catHat()
+			}
 			select {
 			case <-ctx.Done():
-				return
-			case send <- ct:
+				break decodeLoop
+			case hat <- ct:
 			}
 		}
 
-		close(send)
+		close(hat)
 	},
 }
 
