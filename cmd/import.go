@@ -40,11 +40,12 @@ var importCmd = &cobra.Command{
 Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sorter.
 
 But, BEWARE, it is not a fast cat sorter. 
-It is a slow cat sorter. Why? Probably decoding.
+It is a slow cat sorter. Why? Probably decoding, I guess.
 You may want to sort your cats before piping them in.
-You can use 'tdata-commander sort-cats' to sort your cats, 
-which will take about 15 minutes for a 6GB master.json.gz.
+If so, you can use 'tdata-commander sort-cats' to sort your cats, 
+which will take about 15 minutes for a 6GB master.json.gz. Fast.
 
+Then, run this command in parallel for each actual cat.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
@@ -53,14 +54,15 @@ which will take about 15 minutes for a 6GB master.json.gz.
 		interrupt := make(chan os.Signal)
 		signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
 
-		wg := sync.WaitGroup{}
+		populating := sync.WaitGroup{}
+
 		catHat := func(id conceptual.CatID) chan *cattrack.CatTrack {
 			in := make(chan *cattrack.CatTrack)
 
-			wg.Add(1)
+			populating.Add(1)
 
 			go func() {
-				defer wg.Done()
+				defer populating.Done()
 				err := api.PopulateCat(ctx, id, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
@@ -95,7 +97,7 @@ which will take about 15 minutes for a 6GB master.json.gz.
 			n++
 			if n%10_000 == 0 {
 				t, _ := ct.Time()
-				slog.Info("Imported", "n_tracks", n, "time", t)
+				slog.Info("Read tracks", "reads", n, "current_track.time", t)
 			}
 
 			if lastCatID != ct.CatID() {
@@ -120,7 +122,7 @@ which will take about 15 minutes for a 6GB master.json.gz.
 		slog.Warn("Closing cat hat")
 		close(hat)
 		slog.Warn("Waiting on cat populators")
-		wg.Wait()
+		populating.Wait()
 		slog.Warn("Canceling context")
 		ctxCanceler()
 	},
