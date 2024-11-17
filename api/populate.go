@@ -29,14 +29,14 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 	}, in)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
-	sorted := stream.CatchSizeSorting(ctx, 1000, cattrack.Sorter, sanitized)
+	sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.Sorter, sanitized)
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sorted)
 
 	// Declare our cat-writer and intend to close it on completion.
 	// Holding the writer in this closure allows us to use the writer
 	// as a batching writer, only opening and closing the target writers once.
-	catApp := app.Cat{CatID: catID}
-	writer, err := catApp.NewCatWriter()
+	appCat := app.Cat{CatID: catID}
+	writer, err := appCat.NewCatWriter()
 	if err != nil {
 		return err
 	}
@@ -72,15 +72,15 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 	}, b)
 
 	go func() {
-		catIndexer, err := s2.NewIndexer(catID, app.DatadirRoot, params.S2DefaultCellLevels)
+		cellIndexer, err := s2.NewCellIndexer(catID, params.DatadirRoot, params.S2DefaultCellLevels, params.DefaultBatchSize)
 		if err != nil {
 			slog.Error("Failed to initialize indexer", "error", err)
 			return
 		}
-		if err := catIndexer.Index(ctx, storedOK); err != nil {
-			slog.Error("Indexer errored", "error", err)
+		if err := cellIndexer.Index(ctx, storedOK); err != nil {
+			slog.Error("CellIndexer errored", "error", err)
 		}
-		if err := catIndexer.Close(); err != nil {
+		if err := cellIndexer.Close(); err != nil {
 			slog.Error("Failed to close indexer", "error", err)
 		}
 	}()

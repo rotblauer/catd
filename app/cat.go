@@ -5,6 +5,7 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 )
@@ -20,7 +21,7 @@ type CatWriter struct {
 }
 
 func (c *Cat) NewCatWriter() (*CatWriter, error) {
-	flatCat := flat.NewFlatWithRoot(DatadirRoot).ForCat(c.CatID)
+	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
 	if err := flatCat.Ensure(); err != nil {
 		return nil, err
 	}

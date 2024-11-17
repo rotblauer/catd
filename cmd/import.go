@@ -34,6 +34,13 @@ var importCmd = &cobra.Command{
 	Long: `Scans geojson.Feature lines from stdin and passes them to api.PopulateCat.
 
 Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sorter.
+
+But, BEWARE, it is not a fast cat sorter. 
+It is a slow cat sorter. Why? Probably decoding.
+You may want to sort your cats before piping them in.
+You can use 'tdata-commander sort-cats' to sort your cats, 
+which will take about 15 minutes for a 6GB master.json.gz.
+
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
@@ -56,6 +63,7 @@ Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sort
 		var hat chan *cattrack.CatTrack
 
 		var lastCatID conceptual.CatID
+		n := 0
 		dec := json.NewDecoder(os.Stdin)
 	decodeLoop:
 		for {
@@ -65,6 +73,11 @@ Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sort
 			} else if err != nil {
 				slog.Error("Failed to decode CatTrack", "error", err)
 				continue
+			}
+			n++
+			if n%10_000 == 0 {
+				t, _ := ct.Time()
+				slog.Info("Imported", "n_tracks", n, "time", t)
 			}
 			if lastCatID != ct.CatID() {
 				if hat != nil {

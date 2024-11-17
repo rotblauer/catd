@@ -17,8 +17,8 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/node"
+	"github.com/rotblauer/catd/params"
 	"github.com/spf13/cobra"
 	"log/slog"
 	"os"
@@ -33,8 +33,8 @@ var cfgFile string
 // https://pkg.go.dev/log/slog@master#Level
 func setDefaultSlog(cmd *cobra.Command, args []string) {
 	verbosity, _ := cmd.Flags().GetInt("verbosity")
-	slog.SetLogLoggerLevel(slog.Level(verbosity))
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
+	slog.SetLogLoggerLevel(slog.Level(verbosity))
 }
 
 // rootCmd represents the base command when called without any subcommands
@@ -78,7 +78,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
 	rootCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
-	rootCmd.PersistentFlags().StringVar(&app.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
+	rootCmd.PersistentFlags().StringVar(&params.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
 	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level")
 
 	// Cobra also supports local flags, which will only run

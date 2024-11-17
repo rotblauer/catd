@@ -104,7 +104,9 @@ func CatchSizeSorting[T any](ctx context.Context, batchSize int, sorter func(a, 
 		var batch []T
 		flush := func() {
 			if sorter != nil {
-				slices.SortFunc(batch, sorter)
+				if !slices.IsSortedFunc(batch, sorter) {
+					slices.SortFunc(batch, sorter)
+				}
 			}
 			Sink(ctx, func(t T) {
 				out <- t
