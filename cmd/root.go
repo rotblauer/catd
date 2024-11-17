@@ -33,7 +33,9 @@ var cfgFile string
 // https://pkg.go.dev/log/slog@master#Level
 func setDefaultSlog(cmd *cobra.Command, args []string) {
 	verbosity, _ := cmd.Flags().GetInt("verbosity")
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})))
+	myHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{AddSource: true})
+	myLogger := slog.New(myHandler)
+	slog.SetDefault(myLogger)
 	slog.SetLogLoggerLevel(slog.Level(verbosity))
 }
 

@@ -29,7 +29,7 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 	}, in)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
-	sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.Sorter, sanitized)
+	sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sorted)
 
 	// Declare our cat-writer and intend to close it on completion.

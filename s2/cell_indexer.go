@@ -66,7 +66,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 
 	flatFileMap := make(map[CellLevel]*flat.GZFile)
 	for _, level := range levels {
-		gzf, err := f.NamedGZ(fmt.Sprintf("s2_level-%d.geojson.gz", level))
+		gzf, err := f.NamedGZ(fmt.Sprintf("s2_level-%02d.geojson.gz", level))
 		if err != nil {
 			return nil, err
 		}
@@ -100,7 +100,7 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan *cattrack.CatTrack) 
 			slog.Debug("CellIndexer batch", "cat", ci.CatID,
 				"level", level, "size", len(batch))
 
-			_, uniqTracks := ci.filterAndIndexUniqCatTracks(ci.CatID.String(), level, batch)
+			_, uniqTracks := ci.filterAndIndexUniqCatTracks(level, batch)
 			if len(uniqTracks) == 0 {
 				continue
 			}
@@ -125,6 +125,48 @@ func (ci *CellIndexer) Close() error {
 		}
 	}
 	return nil
+}
+
+// filterAndIndexUniqCatTracks returns unique cellIDs and associated tracks for the given cat.
+// It attempts first to cross-reference all tracks against the cache. This step returns the indices of the tracks that are not in the cache.
+// Those uncached tracks are then cross-referenced against the index db, which writes them if they are unique.
+// Only the DB-access part of the process is blocking, since the cache is only a nice-to-have and we
+// don't care if some cache misses are false negatives.
+func (ci *CellIndexer) filterAndIndexUniqCatTracks(level CellLevel, tracks []*cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []*cattrack.CatTrack) {
+	if len(tracks) == 0 {
+		return uniqCellIDs, uniqTracks
+	}
+
+	// create a cellid slice analogous to tracks
+	cellIDs := getTrackCellIDs(tracks, level)
+	if len(cellIDs) != len(tracks) {
+		log.Fatalln("len(cellIDs) != len(tracks)", len(cellIDs), len(tracks))
+	}
+
+	// returns the indices of uniq tracks (== uniq cellIDs)
+	uniqCellIDTrackIndices := ci.uniqIndexesFromCache(level, cellIDs) // eg. 0, 23, 42, 99
+
+	// if there are no uniq cellIDs, return early
+	if len(uniqCellIDTrackIndices) == 0 {
+		return
+	}
+
+	tmpUniqCellIDs := make([]s2.CellID, len(uniqCellIDTrackIndices))
+	tmpUniqTracks := make([]*cattrack.CatTrack, len(uniqCellIDTrackIndices))
+	for ii, idx := range uniqCellIDTrackIndices {
+		tmpUniqCellIDs[ii] = cellIDs[idx]
+		tmpUniqTracks[ii] = tracks[idx]
+	}
+
+	// so now we've whittled the tracks to only those not in the cache
+	// we need to check the db for those that did not have cache hits
+
+	// further whittle the uniqs based on db hits/misses
+	_uniqCellIDs, _uniqTracks, err := ci.filterUniqFromDBWriting(level, tmpUniqCellIDs, tmpUniqTracks)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return _uniqCellIDs, _uniqTracks
 }
 
 // filterUniqFromDBWriting filters the givens cellIDs and tracklines to those which were not found in the database.
@@ -156,48 +198,6 @@ func (ci *CellIndexer) filterUniqFromDBWriting(level CellLevel, cellIDs []s2.Cel
 		return nil
 	})
 	return
-}
-
-// filterAndIndexUniqCatTracks returns unique cellIDs and associated tracks for the given cat.
-// It attempts first to cross reference all tracks against the cache. This step returns the indices of the tracks that are not in the cache.
-// Those uncached tracks are then cross referenced against the index db, which writes them if they are unique.
-// Only the DB-access part of the process is blocking, since the cache is only a nice-to-have and we
-// don't care if some cache misses are false negatives.
-func (ci *CellIndexer) filterAndIndexUniqCatTracks(cat string, level CellLevel, tracks []*cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []*cattrack.CatTrack) {
-	if len(tracks) == 0 {
-		return uniqCellIDs, uniqTracks
-	}
-
-	// create a cellid slice analogous to tracks
-	cellIDs := getTrackCellIDs(tracks, level)
-	if len(cellIDs) != len(tracks) {
-		log.Fatalln("len(cellIDs) != len(tracks)", len(cellIDs), len(tracks))
-	}
-
-	// returns the indices of uniq tracklines (== uniq cellIDs)
-	uniqCellIDTrackIndices := ci.uniqIndexesFromCache(level, cellIDs) // eg. 0, 23, 42, 99
-
-	// if there are no uniq cellIDs, return early
-	if len(uniqCellIDTrackIndices) == 0 {
-		return
-	}
-
-	tmpUniqCellIDs := make([]s2.CellID, len(uniqCellIDTrackIndices))
-	tmpUniqTracks := make([]*cattrack.CatTrack, len(uniqCellIDTrackIndices))
-	for ii, idx := range uniqCellIDTrackIndices {
-		tmpUniqCellIDs[ii] = cellIDs[idx]
-		tmpUniqTracks[ii] = tracks[idx]
-	}
-
-	// so now we've whittled the tracks to only those not in the cache
-	// we need to check the db for those that did not have cache hits
-
-	// further whittle the uniqs based on db hits/misses
-	_uniqCellIDs, _uniqTracks, err := ci.filterUniqFromDBWriting(level, tmpUniqCellIDs, tmpUniqTracks)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	return _uniqCellIDs, _uniqTracks
 }
 
 // uniqIndexesFromCache returns the indices of the given cellIDs that are not in the LRU cache.

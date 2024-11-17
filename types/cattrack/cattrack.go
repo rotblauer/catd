@@ -105,12 +105,12 @@ func (ct *CatTrack) Validate() error {
 	return nil
 }
 
-// Sorter implements the slices.SortFunc for CatTrack slices.
+// SortFunc implements the slices.SortFunc for CatTrack slices.
 // Sorting is done by time (chronologically, at 1 second granularity);
 // then, in case of equivalence, by accuracy.
 // > cmp(a, b) should return a negative number when a < b,
 // > a positive number when a > b, and zero when a == b
-func Sorter(a, b *CatTrack) int {
+func SortFunc(a, b *CatTrack) int {
 	ti, err := a.Time()
 	if err != nil {
 		return 0
