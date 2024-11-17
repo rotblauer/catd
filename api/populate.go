@@ -71,11 +71,12 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 		return ok
 	}, b)
 
-	catIndexer, err := s2.NewIndexer(catID, app.DatadirRoot, params.S2DefaultCellLevels)
-	if err != nil {
-		return err
-	}
 	go func() {
+		catIndexer, err := s2.NewIndexer(catID, app.DatadirRoot, params.S2DefaultCellLevels)
+		if err != nil {
+			slog.Error("Failed to initialize indexer", "error", err)
+			return
+		}
 		if err := catIndexer.Index(ctx, storedOK); err != nil {
 			slog.Error("Indexer errored", "error", err)
 		}
