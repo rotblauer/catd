@@ -18,6 +18,25 @@ but treads lightly and is sufficient to draw dots on the map.
 
 TODO: Explore tallying or otherwise aggregating track data for indexed cells,
 for example the number of tracks matched to that cell.
+
+Background:
+CatTracks used to pass master.json.gz (including all cats' tracks) through tippecanoe
+to generate a vector tileset for the map. This was slow and memory-intensive.
+The thing is, most of our tracks are spatially redundant - we sleep in the same beds
+most nights and shop at the same grocery stores for the most part.
+So in order to reduce tippecanoe's processing time and memory usage,
+we reduced the number of tracks passed to it by indexing tracks by S2 cell and only using uniques.
+This dropped tippecanoe processing time from days to an hour or two.
+And we still got dots on the map showing where we'd been.
+
+But now we have a trip detector and are generating (simplified) linestrings (aka laps) from the track points,
+and able to coalesce non-trips (aka naps) into a single feature (a point, or even a polygon).
+So we're able to maintain an effective representation of where we've been with again, fewer (and overall smaller) features.
+This, in turn, lightens the load on tippecanoe.
+
+So now it doesn't make a whole lot of sense to record nothing besides existence of a track in a cell,
+because this isn't critical for getting things on a map. In order to make this relevant again
+we should tally the number of tracks in a cell, or some other metrics/aggregations, heatmap/histogram style.
 */
 package s2
 
