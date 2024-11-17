@@ -44,31 +44,15 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		}
 	}()
 
-	initWriterFromCatTrack := func(ct *cattrack.CatTrack) error {
-		cat := app.Cat{CatID: ct.CatID()}
-		var err error
-		writer, err = cat.NewCatWriter()
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
 	stored := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-		// The first feature will define the Cat/Writer for the rest of the batch.
+		// The first feature will define the Cat/Writer for the rest of the channel.
 		if writer == nil {
-			if err := initWriterFromCatTrack(ct); err != nil {
+			cat := app.Cat{CatID: ct.CatID()}
+			wr, err := cat.NewCatWriter()
+			if err != nil {
 				return err
 			}
-		} else if writer.CatID != ct.CatID() {
-			// If, for some reason, we're ingesting a mix of cats' tracks,
-			// then we need to close and reassign the Cat/Writer.
-			if err := writer.Close(); err != nil {
-				return err
-			}
-			if err := initWriterFromCatTrack(ct); err != nil {
-				return err
-			}
+			writer = wr
 		}
 
 		if err := writer.WriteTrack(ct); err != nil {
