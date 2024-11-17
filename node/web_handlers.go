@@ -7,12 +7,10 @@ import (
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
-	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"log/slog"
 	"math"
 	"net/http"
-	"slices"
 )
 
 func handleLastKnown(w http.ResponseWriter, r *http.Request) {
@@ -61,12 +59,12 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// FIXME: Running a sort on unvalidated data is a bad idea.
-	slices.SortFunc(features, cattrack.Sorter)
+	// TODO: Assert/ensure WHICH CAT better.
+	cat := features[0].CatID()
 
 	ctx := context.Background()
 	ch := stream.Slice(ctx, features)
-	err = api.Populate(ctx, ch)
+	err = api.PopulateCat(ctx, cat, ch)
 	if err != nil {
 		slog.Warn("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)

@@ -31,20 +31,20 @@ import (
 var importCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Import cat tracks from stdin",
-	Long: `Scans geojson.Feature lines from stdin and passes them to api.Populate.
+	Long: `Scans geojson.Feature lines from stdin and passes them to api.PopulateCat.
 
-Tracks from mixed cats are supported, eg. edge.json.gz - OK!
+Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sorter.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setSlogLevel(cmd, args)
 
 		ctx := context.Background()
 
-		catHat := func() chan *cattrack.CatTrack {
+		catHat := func(id conceptual.CatID) chan *cattrack.CatTrack {
 			in := make(chan *cattrack.CatTrack)
 
 			go func() {
-				err := api.Populate(ctx, in)
+				err := api.PopulateCat(ctx, id, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
 				}
@@ -71,7 +71,7 @@ Tracks from mixed cats are supported, eg. edge.json.gz - OK!
 					close(hat)
 				}
 				lastCatID = ct.CatID()
-				hat = catHat()
+				hat = catHat(lastCatID)
 			}
 			select {
 			case <-ctx.Done():

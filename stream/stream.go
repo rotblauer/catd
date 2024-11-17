@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"slices"
 )
 
 // Slice, et al., taken from:
@@ -93,16 +94,21 @@ func Collect[T any](ctx context.Context, in <-chan T) []T {
 	return out
 }
 
-func BatchSize[T any](ctx context.Context, in <-chan T, batchSize int) <-chan T {
+// CatchSizeSorting is a caching/batching function that can sort batches of elements
+// before forwarding them on the channel. The 'sorter' function is optional.
+func CatchSizeSorting[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
 	out := make(chan T)
 	go func() {
 		defer close(out)
 
 		var batch []T
 		flush := func() {
-			Sink(ctx, Slice(ctx, batch), func(t T) {
+			if sorter != nil {
+				slices.SortFunc(batch, sorter)
+			}
+			Sink(ctx, func(t T) {
 				out <- t
-			})
+			}, Slice(ctx, batch))
 			batch = []T{}
 		}
 		defer flush()
@@ -123,7 +129,38 @@ func BatchSize[T any](ctx context.Context, in <-chan T, batchSize int) <-chan T 
 	return out
 }
 
-func Sink[T any](ctx context.Context, in <-chan T, sink func(T)) {
+func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]T) bool, in <-chan T) <-chan []T {
+	out := make(chan []T)
+	go func() {
+		defer close(out)
+
+		var batch []T
+		flush := func() {
+			out <- batch
+			batch = []T{}
+		}
+		defer flush()
+
+		// Range, blocking until 'in' is closed.
+		for element := range in {
+			if predicate != nil && predicate(element) {
+				flush()
+			}
+			batch = append(batch, element)
+			if posticate != nil && posticate(batch) {
+				flush()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	return out
+}
+
+func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	for element := range in {
 		select {
 		case <-ctx.Done():

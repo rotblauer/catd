@@ -41,14 +41,46 @@ func TestStream2(t *testing.T) {
 	}
 }
 
-func TestBatchSize(t *testing.T) {
+func TestCatchSize(t *testing.T) {
 	data := []int{0, 2, 4, 6, 8}
 	ctx := context.Background()
 	s := Slice(ctx, data)
-	b := BatchSize(ctx, s, 2)
+	b := CatchSizeSorting(ctx, 2, nil, s)
 	result := Collect(ctx, b)
 
 	if !slices.Equal([]int{0, 2, 4, 6, 8}, result) {
 		t.Errorf("Expected [0, 2, 4, 6, 8], got %v", result)
+	}
+}
+
+func TestCatchSize2(t *testing.T) {
+	reverse := func(a, b int) int {
+		return b - a
+	}
+
+	data := []int{0, 2, 4, 6, 8}
+	ctx := context.Background()
+	s := Slice(ctx, data)
+	b := CatchSizeSorting(ctx, 2, reverse, s)
+	result := Collect(ctx, b)
+
+	if !slices.Equal([]int{2, 0, 6, 4, 8}, result) {
+		t.Errorf("Expected [2, 0, 6, 4, 8], got %v", result)
+	}
+}
+
+func TestCatchSize3(t *testing.T) {
+	reverse := func(a, b int) int {
+		return b - a
+	}
+
+	data := []int{0, 2, 4, 6, 8}
+	ctx := context.Background()
+	s := Slice(ctx, data)
+	b := CatchSizeSorting(ctx, 10, reverse, s)
+	result := Collect(ctx, b)
+
+	if !slices.Equal([]int{8, 6, 4, 2, 0}, result) {
+		t.Errorf("Expected [8, 6, 4, 2, 0], got %v", result)
 	}
 }

@@ -4,20 +4,21 @@ import (
 	"context"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 )
 
-//func storeTracksGZ(in <-chan *cattrack.CatTrack) <-chan any {
-//
-//}
-
-// Populate persists incoming CatTracks for one cat.
-func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
+// PopulateCat persists incoming CatTracks for one cat.
+func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.CatTrack) error {
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+		if cat != ct.CatID() {
+			slog.Warn("Invalid track, mismatched cat", "want", cat, "got", ct.CatID())
+			return false
+		}
 		if err := ct.Validate(); err != nil {
 			slog.Warn("Invalid track", "error", err)
 			return false
@@ -25,42 +26,30 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		return true
 	}, in)
 
-	sanitized := stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
-		ct.Sanitize()
-		return ct
-	}, validated)
-
-	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sanitized)
+	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
+	sorted := stream.CatchSizeSorting(ctx, 1000, cattrack.Sorter, sanitized)
+	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sorted)
 
 	// Declare our cat-writer and intend to close it on completion.
 	// Holding the writer in this closure allows us to use the writer
 	// as a batching writer, only opening and closing the target writers once.
-	var writer *app.CatWriter
+	catApp := app.Cat{CatID: cat}
+	writer, err := catApp.NewCatWriter()
+	if err != nil {
+		return err
+	}
 	defer func() {
-		if writer != nil {
-			if err := writer.Close(); err != nil {
-				slog.Error("Failed to close track writer", "error", err)
-			}
+		if err := writer.Close(); err != nil {
+			slog.Error("Failed to close track writer", "error", err)
 		}
 	}()
 
 	stored := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-		// The first feature will define the Cat/Writer for the rest of the channel.
-		if writer == nil {
-			cat := app.Cat{CatID: ct.CatID()}
-			wr, err := cat.NewCatWriter()
-			if err != nil {
-				return err
-			}
-			writer = wr
-		}
-
 		if err := writer.WriteTrack(ct); err != nil {
 			return err
 		}
 
-		// We did it!
-		slog.Debug("Stored track", "track", ct.StringPretty())
+		slog.Debug("Stored cat track", "track", ct.StringPretty())
 		events.NewStoredTrackFeed.Send(ct)
 
 		return ct
@@ -99,7 +88,7 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 	*/
 
 	var lastErr error
-	stream.Sink(ctx, stored, func(result any) {
+	stream.Sink(ctx, func(result any) {
 		if result == nil {
 			return
 		}
@@ -109,7 +98,7 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 			lastErr = t
 		case *cattrack.CatTrack:
 		}
-	})
+	}, stored)
 
 	return lastErr
 }

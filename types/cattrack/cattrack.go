@@ -38,11 +38,15 @@ func (ct *CatTrack) Time() (time.Time, error) {
 	return t, nil
 }
 
-func (ct *CatTrack) Sanitize() {
+func Sanitize(ct *CatTrack) *CatTrack {
 	// Mutate the ID to a zero-value constant in case the client decides to fill it.
 	// CatTracks does not use this ID for anything, and we want to avoid false-negative
 	// duplicates due to ID mismatches.
 	ct.ID = 0
+	if ct.Properties["Alias"] == nil {
+		ct.Properties["Alias"] = names.AliasOrSanitizedName(ct.Properties.MustString("Name", ""))
+	}
+	return ct
 }
 
 func (ct *CatTrack) Validate() error {

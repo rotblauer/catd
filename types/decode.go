@@ -77,7 +77,7 @@ func DecodeCatTracksShotgun(data []byte) (out []*cattrack.CatTrack, err error) {
 		err = json.Unmarshal([]byte(el.Raw), tp)
 		if err == nil {
 			// Convert the legacy trackpoint to a geojson feature.
-			gj := trackpoint.TrackToFeature(tp)
+			gj := TrackToFeature(tp)
 			ct := cattrack.CatTrack(*gj)
 			out = append(out, &ct)
 			continue
