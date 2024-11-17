@@ -10,9 +10,9 @@ import (
 	"log/slog"
 )
 
-func storeTracksGZ(in <-chan *cattrack.CatTrack) <-chan any {
-
-}
+//func storeTracksGZ(in <-chan *cattrack.CatTrack) <-chan any {
+//
+//}
 
 // Populate persists incoming CatTracks for one cat.
 func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
@@ -30,7 +30,7 @@ func Populate(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 		return ct
 	}, validated)
 
-	deduped := stream.Filter(ctx, cache.DedupePassLRU, sanitized)
+	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sanitized)
 
 	// Declare our cat-writer and intend to close it on completion.
 	// Holding the writer in this closure allows us to use the writer

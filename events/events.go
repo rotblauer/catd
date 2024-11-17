@@ -8,8 +8,6 @@ import (
 // NewStoredTrackFeed is emitted for every new CatTrack that is successfully persisted.
 var NewStoredTrackFeed = event.FeedOf[*cattrack.CatTrack]{}
 
-var FlushTracksFeed = event.FeedOf[]{}
-
 // HTTPPopulateFeed is a feed of CatTracks as they are pushed to the server.
 // The tracks included as the payload should be expected to be nearly-exactly as they are received.
 // They will have been decoded and sorted, but not validated, deduped, nor necessarily even persisted.

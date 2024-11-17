@@ -39,3 +39,20 @@ func DedupePassLRU(ct *cattrack.CatTrack) bool {
 	PopulateDedupeCache.Add(key, true)
 	return true
 }
+
+func NewDedupePassLRUFunc() func(*cattrack.CatTrack) bool {
+	var dedupeCache = lru.New(10_000)
+	return func(track *cattrack.CatTrack) bool {
+		hash, err := hashstructure.Hash(track, hashstructure.FormatV2, nil)
+		if err != nil {
+			return false
+		}
+		key := fmt.Sprintf("%d", hash)
+		_, ok := dedupeCache.Get(key)
+		if ok {
+			return false
+		}
+		dedupeCache.Add(key, true)
+		return true
+	}
+}
