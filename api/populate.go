@@ -6,6 +6,7 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
+	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -54,6 +55,13 @@ func PopulateCat(ctx context.Context, cat conceptual.CatID, in <-chan *cattrack.
 
 		return ct
 	}, deduped)
+
+	a, b := stream.Tee(ctx, stored)
+
+	catIndexer, err := s2.NewIndexer(cat, app.DatadirRoot, s2.DefaultCellLevels)
+	if err != nil {
+		return err
+	}
 
 	/*
 

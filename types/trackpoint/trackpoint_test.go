@@ -2,7 +2,7 @@ package trackpoint
 
 import "testing"
 
-var validTrackPointJSON = `{
+var trackpointJSONValid = `{
   "heading": 310.8944091796875,
   "speed": 1.1056904792785645,
   "uuid": "5D37B5DA-6E0B-41FE-8A72-2BB681D661DA",
@@ -17,11 +17,9 @@ var validTrackPointJSON = `{
   "name": "Rye16"
 }`
 
-var invalidTrackPointJSON = `{"id":0,"type":"Feature","geometry":{"type":"Point","coordinates":[-111.6902967,45.5710024]},"properties":{"AccelerometerX":0.73,"AccelerometerY":0.54,"AccelerometerZ":9.78,"Accuracy":4.9,"Activity":"Stationary","ActivityConfidence":100,"BatteryLevel":0.93,"BatteryStatus":"unplugged","CurrentTripStart":"2024-02-03T18:55:20.824384Z","Distance":2325,"Elevation":1463.6,"GyroscopeX":0,"GyroscopeY":0,"GyroscopeZ":0,"Heading":274,"Name":"ia","NumberOfSteps":9659,"Pressure":850.49,"Speed":0.45,"Time":"2024-02-04T18:04:31.172Z","UUID":"63b2bab96ca49573","UnixTime":1707069871,"UserAccelerometerX":0,"UserAccelerometerY":0.01,"UserAccelerometerZ":0.03,"Version":"gcps/v0.0.0+4","vAccuracy":1.4}}`
-
 func TestTrackPoint_UnmarshalJSON1(t *testing.T) {
 	tp := &TrackPoint{}
-	err := tp.UnmarshalJSON([]byte(validTrackPointJSON))
+	err := tp.UnmarshalJSON([]byte(trackpointJSONValid))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,9 +55,13 @@ func TestTrackPoint_UnmarshalJSON1(t *testing.T) {
 	}
 }
 
+var featureGeoJSON = `{"id":0,"type":"Feature","geometry":{"type":"Point","coordinates":[-111.6902967,45.5710024]},"properties":{"AccelerometerX":0.73,"AccelerometerY":0.54,"AccelerometerZ":9.78,"Accuracy":4.9,"Activity":"Stationary","ActivityConfidence":100,"BatteryLevel":0.93,"BatteryStatus":"unplugged","CurrentTripStart":"2024-02-03T18:55:20.824384Z","Distance":2325,"Elevation":1463.6,"GyroscopeX":0,"GyroscopeY":0,"GyroscopeZ":0,"Heading":274,"Name":"ia","NumberOfSteps":9659,"Pressure":850.49,"Speed":0.45,"Time":"2024-02-04T18:04:31.172Z","UUID":"63b2bab96ca49573","UnixTime":1707069871,"UserAccelerometerX":0,"UserAccelerometerY":0.01,"UserAccelerometerZ":0.03,"Version":"gcps/v0.0.0+4","vAccuracy":1.4}}`
+
+// TestTrackPoint_UnmarshalJSON2 tests the TrackPoint.UnmarshalJSON method
+// will return an error when attempting to unmarshal a GeoJSON Feature.
 func TestTrackPoint_UnmarshalJSON2(t *testing.T) {
 	tp := &TrackPoint{}
-	err := tp.UnmarshalJSON([]byte(invalidTrackPointJSON))
+	err := tp.UnmarshalJSON([]byte(featureGeoJSON))
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}

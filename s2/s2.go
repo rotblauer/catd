@@ -37,7 +37,7 @@ import (
 const s2DBName = "s2.db"
 const batchSize = 1_000
 
-var defaultCellLevels = []CellLevel{CellLevel16, CellLevel23}
+var DefaultCellLevels = []CellLevel{CellLevel16, CellLevel23}
 
 func init() {
 	var newTracksCh = make(chan *cattrack.CatTrack)
@@ -61,7 +61,7 @@ func init() {
 				slog.Info("new track", ct.StringPretty())
 				indexer, ok := indexers.Get(ct.CatID())
 				if !ok {
-					indexer, err := NewIndexer(ct.CatID(), app.DatadirRoot, defaultCellLevels)
+					indexer, err := NewIndexer(ct.CatID(), app.DatadirRoot, DefaultCellLevels)
 					if err != nil {
 						slog.Error("Failed to create indexer", "error", err)
 						continue
@@ -137,10 +137,7 @@ func NewIndexer(id conceptual.CatID, root string, levels []CellLevel) (*Indexer,
 }
 
 func (i *Indexer) Index(in chan *cattrack.CatTrack) any {
-	i.readingChan = in
-	for track := range i.readingChan {
-
-	}
+	
 	return nil
 }
 

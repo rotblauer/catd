@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -83,4 +84,35 @@ func TestCatchSize3(t *testing.T) {
 	if !slices.Equal([]int{8, 6, 4, 2, 0}, result) {
 		t.Errorf("Expected [8, 6, 4, 2, 0], got %v", result)
 	}
+}
+
+func TestTee(t *testing.T) {
+	data := []int{0, 2, 4, 6, 8}
+	ctx := context.Background()
+	s := Slice(ctx, data)
+
+	out1, out2 := Tee(ctx, s)
+
+	t1 := Transform(ctx, divideByTwo, out1)
+	t2 := Transform(ctx, divideByTwo, out2)
+
+	wg := sync.WaitGroup{}
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		r1 := Collect(ctx, t1)
+		if !slices.Equal([]int{0, 1, 2, 3, 4}, r1) {
+			t.Errorf("Expected [0, 1, 2, 3, 4], got %v", r1)
+		}
+	}()
+	go func() {
+		wg.Add(1)
+		defer wg.Done()
+		r2 := Collect(ctx, t2)
+		if !slices.Equal([]int{0, 1, 2, 3, 4}, r2) {
+			t.Errorf("Expected [0, 1, 2, 3, 4], got %v", r2)
+		}
+	}()
+
+	wg.Wait()
 }

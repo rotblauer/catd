@@ -35,6 +35,7 @@ func DecodeTrackPoints(data []byte) (trackpoint.TrackPoints, error) {
 
 // DecodeCatTracksShotgun is a serial collection of handy-bandy attempts
 // to turn the input data into a slice of geojson features.
+// This is useful for a legacy-supporting API.
 func DecodeCatTracksShotgun(data []byte) (out []*cattrack.CatTrack, err error) {
 
 	// Is it a geojson.FeatureCollection object?
@@ -59,12 +60,12 @@ func DecodeCatTracksShotgun(data []byte) (out []*cattrack.CatTrack, err error) {
 
 	parsed := gjson.ParseBytes(data)
 	if !parsed.IsArray() {
-		return nil, fmt.Errorf("unknown data type")
+		return nil, fmt.Errorf("unknown data type (not an array)")
 	}
 
 	arr := parsed.Array()
 	if len(arr) == 0 {
-		return nil, fmt.Errorf("empty array")
+		return nil, fmt.Errorf("empty set")
 	}
 
 	for _, el := range arr {

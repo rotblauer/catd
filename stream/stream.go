@@ -129,6 +129,28 @@ func CatchSizeSorting[T any](ctx context.Context, batchSize int, sorter func(a, 
 	return out
 }
 
+func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
+	a, b = make(chan T), make(chan T)
+	go func() {
+		defer close(a)
+		defer close(b)
+		for element := range in {
+			var out1, out2 = a, b
+			for i := 0; i < 2; i++ {
+				select {
+				case <-ctx.Done():
+					return
+				case out1 <- element:
+					out1 = nil
+				case out2 <- element:
+					out2 = nil
+				}
+			}
+		}
+	}()
+	return
+}
+
 func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]T) bool, in <-chan T) <-chan []T {
 	out := make(chan []T)
 	go func() {
