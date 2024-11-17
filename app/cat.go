@@ -2,12 +2,15 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
+	"go.etcd.io/bbolt"
 	"io"
+	"path/filepath"
 )
 
 type Cat struct {
@@ -42,6 +45,30 @@ func (w *CatWriter) WriteTrack(ct *cattrack.CatTrack) error {
 	}
 	cache.SetLastKnownTTL(w.CatID, ct)
 	return nil
+}
+
+func (w *CatWriter) PersistLastTrack() error {
+	catPath := w.Flat.Path()
+	db, err := bbolt.Open(filepath.Join(catPath, "app.db"), 0600, nil)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte("app"))
+		if err != nil {
+			return err
+		}
+		track := cache.LastKnownTTLCache.Get(w.CatID.String())
+		if track == nil {
+			return fmt.Errorf("no last track (impossible if caller uses correctly)")
+		}
+		b, err := track.Value().MarshalJSON()
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte("last"), b)
+	})
 }
 
 func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {

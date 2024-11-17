@@ -18,6 +18,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -25,6 +26,9 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 )
 
 // importCmd represents the import command
@@ -45,12 +49,18 @@ which will take about 15 minutes for a 6GB master.json.gz.
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 
-		ctx := context.Background()
+		ctx, ctxCanceler := context.WithCancel(context.Background())
+		interrupt := make(chan os.Signal)
+		signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
 
+		wg := sync.WaitGroup{}
 		catHat := func(id conceptual.CatID) chan *cattrack.CatTrack {
 			in := make(chan *cattrack.CatTrack)
 
+			wg.Add(1)
+
 			go func() {
+				defer wg.Done()
 				err := api.PopulateCat(ctx, id, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
@@ -65,20 +75,29 @@ which will take about 15 minutes for a 6GB master.json.gz.
 		var lastCatID conceptual.CatID
 		n := 0
 		dec := json.NewDecoder(os.Stdin)
-	decodeLoop:
+
+	readLoop:
 		for {
 			ct := &cattrack.CatTrack{}
-			if err := dec.Decode(ct); err == io.EOF {
+			err := dec.Decode(ct)
+			if err != nil {
+				// The unexpected can/will happen, e.g. SIGINT.
+				// Only a warning.
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+					slog.Warn("Decode error", "error", err)
+					break
+				}
+				// Else a real error.
+				slog.Error("Decode error", "error", err)
 				break
-			} else if err != nil {
-				slog.Error("Failed to decode CatTrack", "error", err)
-				continue
 			}
+
 			n++
 			if n%10_000 == 0 {
 				t, _ := ct.Time()
 				slog.Info("Imported", "n_tracks", n, "time", t)
 			}
+
 			if lastCatID != ct.CatID() {
 				if hat != nil {
 					close(hat)
@@ -86,14 +105,24 @@ which will take about 15 minutes for a 6GB master.json.gz.
 				lastCatID = ct.CatID()
 				hat = catHat(lastCatID)
 			}
+
 			select {
 			case <-ctx.Done():
-				break decodeLoop
+				break readLoop
+			case sig := <-interrupt:
+				slog.Warn("Received signal", "signal", sig)
+				break readLoop
+
+				// Fire away!
 			case hat <- ct:
 			}
 		}
-
+		slog.Warn("Closing cat hat")
 		close(hat)
+		slog.Warn("Waiting on cat populators")
+		wg.Wait()
+		slog.Warn("Canceling context")
+		ctxCanceler()
 	},
 }
 

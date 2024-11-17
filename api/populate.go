@@ -45,6 +45,11 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 			slog.Error("Failed to close track writer", "error", err)
 		}
 	}()
+	defer func() {
+		if err := writer.PersistLastTrack(); err != nil {
+			slog.Error("Failed to persist last track", "error", err)
+		}
+	}()
 
 	storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
 		if err := writer.WriteTrack(ct); err != nil {
