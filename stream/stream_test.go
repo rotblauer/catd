@@ -11,6 +11,10 @@ func divideByTwo(n int) int {
 	return n / 2
 }
 
+func multiplyByTwo(n int) int {
+	return n * 2
+}
+
 func isNonZero(n int) bool {
 	return n != 0
 }
@@ -94,7 +98,7 @@ func TestTee(t *testing.T) {
 	out1, out2 := Tee(ctx, s)
 
 	t1 := Transform(ctx, divideByTwo, out1)
-	t2 := Transform(ctx, divideByTwo, out2)
+	t2 := Transform(ctx, multiplyByTwo, out2)
 
 	wg := sync.WaitGroup{}
 	go func() {
@@ -109,8 +113,8 @@ func TestTee(t *testing.T) {
 		wg.Add(1)
 		defer wg.Done()
 		r2 := Collect(ctx, t2)
-		if !slices.Equal([]int{0, 1, 2, 3, 4}, r2) {
-			t.Errorf("Expected [0, 1, 2, 3, 4], got %v", r2)
+		if !slices.Equal([]int{0, 4, 8, 12, 16}, r2) {
+			t.Errorf("Expected [0, 4, 8, 12, 16], got %v", r2)
 		}
 	}()
 
