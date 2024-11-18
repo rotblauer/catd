@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
@@ -29,6 +30,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // importCmd represents the import command
@@ -63,7 +65,8 @@ Then, run this command in parallel for each actual cat.
 
 			go func() {
 				defer populating.Done()
-				err := api.PopulateCat(ctx, id, in)
+				// TODO: Flag me.
+				err := api.PopulateCat(ctx, id, true, true, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
 				}
@@ -75,11 +78,13 @@ Then, run this command in parallel for each actual cat.
 		var hat chan *cattrack.CatTrack
 
 		var lastCatID conceptual.CatID
-		n := 0
+		n := int64(0)
+		nt := time.Now()
 		dec := json.NewDecoder(os.Stdin)
 
 	readLoop:
 		for {
+			// FIXME: Decoding JSON is slow (...er than handling raw []bytes, I think).
 			ct := &cattrack.CatTrack{}
 			err := dec.Decode(ct)
 			if err != nil {
@@ -95,9 +100,11 @@ Then, run this command in parallel for each actual cat.
 			}
 
 			n++
-			if n%10_000 == 0 {
-				t, _ := ct.Time()
-				slog.Info("Read tracks", "reads", n, "current_track.time", t)
+			if n%(10_000) == 0 {
+				t, _ := ct.Time() // Track timestamp.
+				tps := float64(n) / time.Since(nt).Seconds()
+				tps = common.DecimalToFixed(tps, 0)
+				slog.Info("Read tracks", "reads", n, "current_track.time", t, "tps", tps)
 			}
 
 			if lastCatID != ct.CatID() {

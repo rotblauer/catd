@@ -55,6 +55,7 @@ import (
 	"log"
 	"log/slog"
 	"path/filepath"
+	"time"
 )
 
 const s2DBName = "s2.db"
@@ -116,19 +117,27 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan *cattrack.CatTrack) 
 	}, in)
 	for batch := range batches {
 		for _, level := range ci.Levels {
-			slog.Debug("CellIndexer batch", "cat", ci.CatID,
-				"level", level, "size", len(batch))
+			if err := ci.index(level, batch); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
-			_, uniqTracks := ci.filterAndIndexUniqCatTracks(level, batch)
-			if len(uniqTracks) == 0 {
-				continue
-			}
-			enc := json.NewEncoder(ci.FlatFiles[level].Writer())
-			for _, ct := range uniqTracks {
-				if err := enc.Encode(ct); err != nil {
-					return err
-				}
-			}
+func (ci *CellIndexer) index(level CellLevel, tracks []*cattrack.CatTrack) error {
+	start := time.Now()
+	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
+		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
+
+	_, uniqTracks := ci.filterAndIndexUniqCatTracks(level, tracks)
+	if len(uniqTracks) == 0 {
+		return nil
+	}
+	enc := json.NewEncoder(ci.FlatFiles[level].Writer())
+	for _, ct := range uniqTracks {
+		if err := enc.Encode(ct); err != nil {
+			return err
 		}
 	}
 	return nil

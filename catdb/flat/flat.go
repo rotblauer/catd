@@ -35,6 +35,12 @@ func (f *Flat) ForCat(catID conceptual.CatID) *Flat {
 	return f
 }
 
+// Exists returns true if the directory exists.
+func (f *Flat) Exists() bool {
+	_, err := os.Stat(f.path)
+	return err == nil
+}
+
 func (f *Flat) Ensure() error {
 	return os.MkdirAll(f.path, 0770)
 }

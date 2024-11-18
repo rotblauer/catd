@@ -14,7 +14,48 @@ import (
 )
 
 // PopulateCat persists incoming CatTracks for one cat.
-func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) (lastErr error) {
+func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforceChronology bool, in <-chan *cattrack.CatTrack) (lastErr error) {
+
+	// Declare our cat-writer and intend to close it on completion.
+	// Holding the writer in this closure allows us to use the writer
+	// as a batching writer, only opening and closing the target writers once.
+	appCat := app.Cat{CatID: catID}
+	writer, err := appCat.NewCatWriter()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := writer.PersistLastTrack(); err != nil {
+			slog.Error("Failed to persist last track", "error", err)
+		}
+		if err := writer.Close(); err != nil {
+			slog.Error("Failed to close track writer", "error", err)
+		}
+	}()
+
+	// enforceChronology requires us to reference persisted state
+	// before we begin reading input in order to know where we left off.
+	// We'll reassign the source channel if necessary.
+	// This allows the cat populator to
+	// 1. enforce chronology (which is kind of interesting; no edits!)
+	// 2. import gracefully
+	source := in
+	if enforceChronology {
+		if reader, err := appCat.NewCatReader(); err == nil {
+			last, err := reader.ReadLastTrack()
+			if err == nil {
+				lastTrackTime, _ := last.Time()
+				source = stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+					t, err := ct.Time()
+					if err != nil {
+						return false
+					}
+					return t.After(lastTrackTime)
+				}, in)
+			}
+		}
+
+	}
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
 		if catID != ct.CatID() {
@@ -26,37 +67,25 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, in <-chan *cattrac
 			return false
 		}
 		return true
-	}, in)
+	}, source)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
-	sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
-	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), sorted)
 
-	// Declare our cat-writer and intend to close it on completion.
-	// Holding the writer in this closure allows us to use the writer
-	// as a batching writer, only opening and closing the target writers once.
-	appCat := app.Cat{CatID: catID}
-	writer, err := appCat.NewCatWriter()
-	if err != nil {
-		return err
+	// Sorting is obviously a little slower than not sorting.
+	pipedLast := sanitized
+	if sort {
+		// Catch is the batch.
+		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		pipedLast = sorted
 	}
-	defer func() {
-		if err := writer.Close(); err != nil {
-			slog.Error("Failed to close track writer", "error", err)
-		}
-	}()
-	defer func() {
-		if err := writer.PersistLastTrack(); err != nil {
-			slog.Error("Failed to persist last track", "error", err)
-		}
-	}()
+	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
 	storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
 		if err := writer.WriteTrack(ct); err != nil {
 			return err
 		}
 
-		slog.Debug("Stored cat track", "track", ct.StringPretty())
+		slog.Log(context.Background(), -5, "Stored cat track", "track", ct.StringPretty())
 		events.NewStoredTrackFeed.Send(ct)
 
 		return ct

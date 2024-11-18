@@ -1,10 +1,16 @@
 package api
 
-import "github.com/paulmach/orb/geojson"
+import (
+	"github.com/rotblauer/catd/app"
+	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/types/cattrack"
+)
 
-type LastKnownQuery struct {
-}
-
-func LastKnown(q LastKnownQuery) []*geojson.Feature {
-	return nil
+func LastKnown(catID conceptual.CatID) (*cattrack.CatTrack, error) {
+	catApp := app.Cat{CatID: catID}
+	reader, err := catApp.NewCatReader()
+	if err != nil {
+		return nil, err
+	}
+	return reader.ReadLastTrack()
 }

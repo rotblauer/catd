@@ -53,7 +53,7 @@ func NewRouter() *mux.Router {
 	jsonMiddleware := contentTypeMiddlewareFor("application/json")
 	apiJSONRoutes.Use(jsonMiddleware)
 
-	apiJSONRoutes.Path("/lastknown").HandlerFunc(handleLastKnown).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/last").HandlerFunc(handleLastTrack).Methods(http.MethodGet)
 	apiJSONRoutes.Path("/catsnaps").HandlerFunc(handleGetCatSnaps).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()

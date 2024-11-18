@@ -78,3 +78,41 @@ func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
 func (w *CatWriter) Close() error {
 	return w.TrackWriterGZ.Close()
 }
+
+type CatReader struct {
+	CatID conceptual.CatID
+	Flat  *flat.Flat
+}
+
+func (c *Cat) NewCatReader() (*CatReader, error) {
+	f := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
+	if !f.Exists() {
+		return nil, fmt.Errorf("cat not found")
+	}
+	return &CatReader{
+		CatID: c.CatID,
+		Flat:  f,
+	}, nil
+}
+
+func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
+	catPath := w.Flat.Path()
+	db, err := bbolt.Open(filepath.Join(catPath, "app.db"), 0600, &bbolt.Options{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+	track := &cattrack.CatTrack{}
+	err = db.View(func(tx *bbolt.Tx) error {
+		bucket := tx.Bucket([]byte("app"))
+		if bucket == nil {
+			return fmt.Errorf("no app bucket")
+		}
+		b := bucket.Get([]byte("last"))
+		if b == nil {
+			return fmt.Errorf("no last track")
+		}
+		return json.Unmarshal(b, track)
+	})
+	return track, err
+}

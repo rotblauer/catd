@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
@@ -13,8 +14,15 @@ import (
 	"net/http"
 )
 
-func handleLastKnown(w http.ResponseWriter, r *http.Request) {
-	result := api.LastKnown(api.LastKnownQuery{})
+func handleLastTrack(w http.ResponseWriter, r *http.Request) {
+	catID := r.URL.Query().Get("cat")
+
+	result, err := api.LastKnown(conceptual.CatID(catID))
+	if err != nil {
+		slog.Warn("Failed to get last known", "error", err)
+		http.Error(w, "Failed to get last known", http.StatusInternalServerError)
+		return
+	}
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		slog.Warn("Failed to write response", "error", err)
 	}
@@ -64,7 +72,7 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.Background()
 	ch := stream.Slice(ctx, features)
-	err = api.PopulateCat(ctx, cat, ch)
+	err = api.PopulateCat(ctx, cat, false, false, ch)
 	if err != nil {
 		slog.Warn("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)
