@@ -108,7 +108,7 @@ Then, run this command in parallel for each actual cat.
 				}
 				res := gjson.GetBytes(m, "properties.Time")
 				if res.Exists() {
-					
+
 					// Pad with an hour because exact equivalence
 					// would cause this loop to miss the first unseen track,
 					// since the decoder has already handled this line.

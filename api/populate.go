@@ -126,7 +126,11 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	// S2 indexing pipeline.
 	pipelining := &sync.WaitGroup{}
 	go S2IndexTracks(ctx, pipelining, catID, indexingCh)
-	go TripDetectTracks(ctx, pipelining, catID, tripdetectCh)
+	go func() {
+		cleaned := CleanTracks(ctx, catID, tripdetectCh)
+		TripDetectTracks(ctx, pipelining, catID, cleaned)
+
+	}()
 	//if err := TripDetectTracks(ctx, catID, tripdetectCh); err != nil {
 	//	slog.Error("Failed to detect trips", "error", err)
 	//	// return?

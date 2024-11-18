@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/conceptual"
-	"github.com/rotblauer/catd/geo/cleaner"
 	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -29,15 +28,6 @@ func TripDetectTracks(ctx context.Context, wg *sync.WaitGroup, catID conceptual.
 		return
 	}
 
-	accurate := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-		slog.Debug("Filtering accuracy", "track", ct.StringPretty())
-		return cleaner.FilterAccuracy(ct)
-	}, in)
-	slow := stream.Filter(ctx, cleaner.FilterSpeed, accurate)
-	low := stream.Filter(ctx, cleaner.FilterElevation, slow)
-	uncanyoned := cleaner.WangUrbanCanyonFilter(ctx, low)
-	unteleported := cleaner.TeleportationFilter(ctx, uncanyoned)
-
 	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
 	tripdetected := stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
 		slog.Debug("Detecting trips", "track", ct.StringPretty())
@@ -46,9 +36,15 @@ func TripDetectTracks(ctx context.Context, wg *sync.WaitGroup, catID conceptual.
 			return nil
 		}
 
-		// FIXME: These are causing a fatal concurrent map read and map write.
+		// FIXME/FIXED: These are causing a fatal concurrent map read and map write.
 		// Can we use ID instead? Or some other hack?
 		// Why hasn't this issue happened before? (e.g. Sanitized tracks)
+		// ...
+		// The issue was in teleportation.go; it held a variable *cattrack.CatTrack in memory
+		// representing a last-seen track, cached outside scope of a go routine.
+		// This got its Properties hit real fast by the stream and boom, fatal concurrent r/w.
+		// This was fixed by using attribute variables for the only values I needed - time and coords.
+		// No pointers, no properties map, no problems.
 		ct.Properties["IsTrip"] = td.Tripping
 		ct.Properties["MotionStateReason"] = td.MotionStateReason
 
@@ -59,7 +55,7 @@ func TripDetectTracks(ctx context.Context, wg *sync.WaitGroup, catID conceptual.
 		//}
 
 		return ct
-	}, unteleported)
+	}, in)
 
 	// Filter out the resets and inits.
 	// Resets happen when the trip detector is reset after a signal loss.
