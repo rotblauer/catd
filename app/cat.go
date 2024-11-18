@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/bbolt"
 	"io"
 	"path/filepath"
+	"sync"
 )
 
 type Cat struct {
@@ -18,9 +19,11 @@ type Cat struct {
 }
 
 type CatWriter struct {
-	CatID         conceptual.CatID
-	Flat          *flat.Flat
-	TrackWriterGZ io.WriteCloser
+	CatID            conceptual.CatID
+	Flat             *flat.Flat
+	TrackWriterGZ    io.WriteCloser
+	customWriterLock sync.Mutex
+	CustomWriters    map[string]io.WriteCloser
 }
 
 func (c *Cat) NewCatWriter() (*CatWriter, error) {
@@ -36,6 +39,7 @@ func (c *Cat) NewCatWriter() (*CatWriter, error) {
 		CatID:         c.CatID,
 		Flat:          flatCat,
 		TrackWriterGZ: gzFile.Writer(),
+		CustomWriters: map[string]io.WriteCloser{},
 	}, nil
 }
 
@@ -45,6 +49,40 @@ func (w *CatWriter) WriteTrack(ct *cattrack.CatTrack) error {
 	}
 	cache.SetLastKnownTTL(w.CatID, ct)
 	return nil
+}
+
+func (w *CatWriter) getOrInitCustomWriter(target string) (io.WriteCloser, error) {
+	w.customWriterLock.Lock()
+	defer w.customWriterLock.Unlock()
+	if wr, ok := w.CustomWriters[target]; ok {
+		return wr, nil
+	}
+	f, err := w.Flat.NamedGZ(target)
+	if err != nil {
+		return nil, err
+	}
+	wr := f.Writer()
+	w.CustomWriters[target] = wr
+	return wr, nil
+}
+
+// WriteTrackAt writes a track to a custom target.
+// It is not thread safe.
+func (w *CatWriter) WriteTrackAt(ct *cattrack.CatTrack, target string) error {
+	wr, err := w.getOrInitCustomWriter(target)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(wr).Encode(ct)
+}
+
+func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
+	f, err := w.Flat.NamedGZ(target)
+	if err != nil {
+		return nil, err
+	}
+	wr := f.Writer()
+	return wr, nil
 }
 
 func (w *CatWriter) PersistLastTrack() error {
@@ -76,6 +114,11 @@ func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
 }
 
 func (w *CatWriter) Close() error {
+	for _, writer := range w.CustomWriters {
+		if err := writer.Close(); err != nil {
+			return err
+		}
+	}
 	return w.TrackWriterGZ.Close()
 }
 

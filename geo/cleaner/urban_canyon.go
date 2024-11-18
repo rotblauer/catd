@@ -27,15 +27,18 @@ func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-
 		defer close(out)
 		for track := range in {
 			buffer = append(buffer, track)
-			if len(buffer) <= bufferFront {
+			if len(buffer) < bufferSize {
 				// The first points get automatically flushed without filtering
 				// because there are no head points to compare them against.
-				out <- track
+				if len(buffer) < bufferFront+1 {
+					out <- track
+				}
 				continue
 			}
-			for len(buffer) >= bufferSize {
+			for len(buffer) > bufferSize {
 				buffer = buffer[1:]
 			}
+
 			head := buffer[:bufferFront]
 			target := buffer[bufferFront]
 			tail := buffer[bufferFront+1:]

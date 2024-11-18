@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
-	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/geo/cleaner"
@@ -112,7 +112,8 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	// Normal track-pushing over HTTP probably doesn't need to wait.
 	pipelining := sync.WaitGroup{}
 
-	go func() {
+	// S2 indexing pipeline.
+	go func(in <-chan *cattrack.CatTrack) {
 		pipelining.Add(1)
 		defer pipelining.Done()
 		cellIndexer, err := s2.NewCellIndexer(catID, params.DatadirRoot, params.S2DefaultCellLevels, params.DefaultBatchSize)
@@ -121,30 +122,87 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 			return
 		}
 		// Blocking.
-		if err := cellIndexer.Index(ctx, indexingCh); err != nil {
+		if err := cellIndexer.Index(ctx, in); err != nil {
 			slog.Error("CellIndexer errored", "error", err)
 		}
 		if err := cellIndexer.Close(); err != nil {
 			slog.Error("Failed to close indexer", "error", err)
 		}
-	}()
+	}(indexingCh)
 
-	go func() {
-		// Lapomatic pipeline.
-		// Implement me.
+	// Lap-o-matic pipeline.
+	go func(in <-chan *cattrack.CatTrack) {
 		pipelining.Add(1)
 		defer pipelining.Done()
 
-		noYeagerCh := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			return ct.Properties.MustFloat64("Elevation") < common.ElevationOfTroposphere
-		}, stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			return ct.Properties.MustFloat64("Speed") < common.SpeedOfSound
-		}, tripDetectingCh))
+		accurate := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			slog.Debug("Filtering accuracy", "track", ct.StringPretty())
+			return cleaner.FilterAccuracy(ct)
+		}, in)
+		slow := stream.Filter(ctx, cleaner.FilterSpeed, accurate)
+		low := stream.Filter(ctx, cleaner.FilterElevation, slow)
+		uncanyoned := cleaner.WangUrbanCanyonFilter(ctx, low)
+		unteleported := cleaner.TeleportationFilter(ctx, uncanyoned)
 
-		uncanyoned := cleaner.WangUrbanCanyonFilter(ctx, noYeagerCh)
+		td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
+		tripdetected := stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
+			slog.Debug("Detecting trips", "track", ct.StringPretty())
+			_ = td.Add(ct)
+			ct.Properties["IsTrip"] = td.Tripping
+			ct.Properties["MotionStateReason"] = td.MotionStateReason
+			return ct
+		}, unteleported)
 
-		_ = tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
-	}()
+		// Filter out the resets and inits.
+		// Resets happen when the trip detector is reset after a signal loss.
+		// Inits happen when the trip detector is initialized.
+		tripdetectedValid := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return ct.Properties.MustString("MotionStateReason") != "init" &&
+				ct.Properties.MustString("MotionStateReason") != "reset"
+		}, tripdetected)
+
+		toMoving, toStationary := stream.Tee(ctx, tripdetectedValid)
+		moving := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return ct.Properties.MustBool("IsTrip")
+		}, toMoving)
+		stationary := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return !ct.Properties.MustBool("IsTrip")
+		}, toStationary)
+
+		// TODO: Coalesce moving points into linestrings, and stationary ones into stops.
+
+		movingWriter, err := writer.CustomWriter("moving.geojson.gz")
+		if err != nil {
+			slog.Error("Failed to create moving writer", "error", err)
+			return
+		}
+		defer movingWriter.Close()
+		wroteMoving := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+			slog.Debug("Writing moving track", "track", ct.StringPretty())
+			if err := json.NewEncoder(movingWriter).Encode(ct); err != nil {
+				slog.Error("Failed to write moving track", "error", err)
+			}
+			return nil
+		}, moving)
+
+		stationaryWriter, err := writer.CustomWriter("stationary.geojson.gz")
+		if err != nil {
+			slog.Error("Failed to create stationary writer", "error", err)
+			return
+		}
+		defer stationaryWriter.Close()
+		wroteStationary := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+			slog.Debug("Writing stationary track", "track", ct.StringPretty())
+			if err := json.NewEncoder(stationaryWriter).Encode(ct); err != nil {
+				slog.Error("Failed to write stationary track", "error", err)
+			}
+			return nil
+		}, stationary)
+
+		go stream.Drain(ctx, wroteStationary)
+		stream.Drain(ctx, wroteMoving)
+
+	}(tripDetectingCh)
 
 	// Blocking on store.
 	stream.Sink(ctx, func(t any) {

@@ -9,15 +9,28 @@ type Config struct {
 }
 
 type TrackCleaningConfig struct {
+	// AccuracyThreshold is the threshold to determine if a point is accurate.
+	// If the accuracy is greater than this value, it's considered inaccurate.
+	AccuracyThreshold float64
+
+	// WangUrbanCanyonDistance is the distance threshold to determine if a point is in an urban canyon.
+	// It is derived as the distance between the target point and the centroid of the 5 points before and after it.
 	WangUrbanCanyonDistance float64
-	TeleportFactor          float64
-	TeleportInterval        time.Duration
+
+	// TeleportSpeedFactor is the factor to determine teleportation.
+	// If calculated speed is X times faster than reported speed, it's a teleportation.
+	TeleportSpeedFactor float64
+
+	// Teleportations must happen within this window of time.
+	// Otherwise, it'll be considered signal loss instead.
+	TeleportWindow time.Duration
 }
 
 var DefaultCleanConfig = &TrackCleaningConfig{
-	WangUrbanCanyonDistance: 200,
-	TeleportInterval:        60 * time.Second,
-	TeleportFactor:          10,
+	AccuracyThreshold:       100.0,
+	WangUrbanCanyonDistance: 200.0,
+	TeleportWindow:          60 * time.Second,
+	TeleportSpeedFactor:     10.0,
 }
 
 type TripDetectorConfig struct {

@@ -116,10 +116,10 @@ func (d *TripDetector) IntervalPointsWhere(predicate func(t *cattrack.CatTrack) 
 	return out
 }
 
-// AddFeature takes a cattrack.CatTrack and adds it to the state of the TripDetector.
+// Add takes a cattrack.CatTrack and adds it to the state of the TripDetector.
 // The TripDetector will then decide if the feature determines a TripDetector state of Tripping or not,
 // and will update its state accordingly.
-func (d *TripDetector) AddFeature(ct *cattrack.CatTrack) error {
+func (d *TripDetector) Add(ct *cattrack.CatTrack) error {
 	defer d.AddFeatureToState(ct)
 
 	last := d.LastPointN(0)

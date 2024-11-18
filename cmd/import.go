@@ -25,6 +25,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -126,6 +127,19 @@ Then, run this command in parallel for each actual cat.
 			case hat <- ct:
 			}
 		}
+
+		// Provide a way to break of out of deadlocks.
+		// Hit CTRL-C twice to force exit.
+		go func() {
+			for {
+				select {
+				case sig := <-interrupt:
+					slog.Warn("Received signal again", "signal", sig)
+					log.Fatalln("Exiting")
+				}
+			}
+		}()
+
 		slog.Warn("Closing cat hat")
 		close(hat)
 		slog.Warn("Waiting on cat populators")
