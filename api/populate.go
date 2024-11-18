@@ -148,8 +148,12 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		tripdetected := stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
 			slog.Debug("Detecting trips", "track", ct.StringPretty())
 			_ = td.Add(ct)
-			ct.Properties["IsTrip"] = td.Tripping
-			ct.Properties["MotionStateReason"] = td.MotionStateReason
+
+			// FIXME: I think these might be causing a fatal concurrent map read and map write.
+			// Can we use ID instead? Or some other hack?
+			// Why hasn't this issue happened before? (e.g. Sanitized tracks)
+			//ct.Properties["IsTrip"] = td.Tripping
+			//ct.Properties["MotionStateReason"] = td.MotionStateReason
 			return ct
 		}, unteleported)
 

@@ -42,11 +42,11 @@ func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-ch
 				continue
 			}
 
-			last = track
 			select {
 			case <-ctx.Done():
 				return
 			case out <- track:
+				last = track
 			}
 		}
 	}()
