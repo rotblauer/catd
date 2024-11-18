@@ -81,46 +81,6 @@ Then, run this command in parallel for each actual cat.
 			return in
 		}
 
-		//catHat := func(id conceptual.CatID) chan *cattrack.CatTrack {
-		//	in := make(chan *cattrack.CatTrack)
-		//
-		//	go func() {
-		//
-		//		work := make(chan []*cattrack.CatTrack, 8)
-		//		defer close(work)
-		//
-		//		for i := 0; i < 8; i++ {
-		//			go func(n int) {
-		//				for w := range work {
-		//					slog.Info("Running async populator", "worker", n)
-		//
-		//					populating.Add(1)
-		//					defer populating.Done()
-		//
-		//					//go func() {
-		//					// TODO: Flag me.
-		//					err := api.PopulateCat(ctx, id, true, true, stream.Slice(ctx, w))
-		//					if err != nil {
-		//						slog.Error("Failed to populate CatTracks", "error", err)
-		//					} else {
-		//						slog.Info("Populator done", "worker", n)
-		//					}
-		//					//}()
-		//				}
-		//			}(i)
-		//		}
-		//
-		//		for batch := range stream.Batch(ctx, nil, func(s []*cattrack.CatTrack) bool {
-		//			return len(s) == 100_000
-		//		}, in) {
-		//			slog.Warn("Waiting on available worker")
-		//			work <- batch
-		//		}
-		//	}()
-		//
-		//	return in
-		//}
-
 		var hat chan *cattrack.CatTrack
 
 		var lastCatID conceptual.CatID
