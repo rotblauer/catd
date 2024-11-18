@@ -2,15 +2,11 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
-	"github.com/rotblauer/catd/geo/cleaner"
-	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -83,8 +79,19 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	}
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
+	wr, err := writer.TrackWriter()
+	if err != nil {
+		slog.Error("Failed to create track writer", "error", err)
+		return err
+	}
+	defer func() {
+		if err := wr.Close(); err != nil {
+			slog.Error("Failed to close track writer", "error", err)
+		}
+	}()
+
 	storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-		if err := writer.WriteTrack(ct); err != nil {
+		if err := writer.WriteTrack(wr, ct); err != nil {
 			return err
 		}
 
@@ -106,114 +113,33 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		return ok
 	}, b)
 
-	indexingCh, tripDetectingCh := stream.Tee(ctx, storeOKs)
+	//go stream.Drain(ctx, storeOKs)
+	//go func() {
+	//	for range storeOKs {
+	//		do nothing
+	//}
+	//}()
 
-	// TODO: This might be optional.
-	// Normal track-pushing over HTTP probably doesn't need to wait.
-	pipelining := sync.WaitGroup{}
+	indexingCh, tripdetectCh := stream.Tee(ctx, storeOKs)
+	//go stream.Drain(ctx, tripdetectCh)
 
 	// S2 indexing pipeline.
-	go func(in <-chan *cattrack.CatTrack) {
-		pipelining.Add(1)
-		defer pipelining.Done()
-		cellIndexer, err := s2.NewCellIndexer(catID, params.DatadirRoot, params.S2DefaultCellLevels, params.DefaultBatchSize)
-		if err != nil {
-			slog.Error("Failed to initialize indexer", "error", err)
-			return
-		}
-		// Blocking.
-		if err := cellIndexer.Index(ctx, in); err != nil {
-			slog.Error("CellIndexer errored", "error", err)
-		}
-		if err := cellIndexer.Close(); err != nil {
-			slog.Error("Failed to close indexer", "error", err)
-		}
-	}(indexingCh)
-
-	// Lap-o-matic pipeline.
-	go func(in <-chan *cattrack.CatTrack) {
-		pipelining.Add(1)
-		defer pipelining.Done()
-
-		accurate := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			slog.Debug("Filtering accuracy", "track", ct.StringPretty())
-			return cleaner.FilterAccuracy(ct)
-		}, in)
-		slow := stream.Filter(ctx, cleaner.FilterSpeed, accurate)
-		low := stream.Filter(ctx, cleaner.FilterElevation, slow)
-		uncanyoned := cleaner.WangUrbanCanyonFilter(ctx, low)
-		unteleported := cleaner.TeleportationFilter(ctx, uncanyoned)
-
-		td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
-		tripdetected := stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
-			slog.Debug("Detecting trips", "track", ct.StringPretty())
-			_ = td.Add(ct)
-
-			// FIXME: I think these might be causing a fatal concurrent map read and map write.
-			// Can we use ID instead? Or some other hack?
-			// Why hasn't this issue happened before? (e.g. Sanitized tracks)
-			//ct.Properties["IsTrip"] = td.Tripping
-			//ct.Properties["MotionStateReason"] = td.MotionStateReason
-			return ct
-		}, unteleported)
-
-		// Filter out the resets and inits.
-		// Resets happen when the trip detector is reset after a signal loss.
-		// Inits happen when the trip detector is initialized.
-		tripdetectedValid := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			return ct.Properties.MustString("MotionStateReason") != "init" &&
-				ct.Properties.MustString("MotionStateReason") != "reset"
-		}, tripdetected)
-
-		toMoving, toStationary := stream.Tee(ctx, tripdetectedValid)
-		moving := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			return ct.Properties.MustBool("IsTrip")
-		}, toMoving)
-		stationary := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-			return !ct.Properties.MustBool("IsTrip")
-		}, toStationary)
-
-		// TODO: Coalesce moving points into linestrings, and stationary ones into stops.
-
-		movingWriter, err := writer.CustomWriter("moving.geojson.gz")
-		if err != nil {
-			slog.Error("Failed to create moving writer", "error", err)
-			return
-		}
-		defer movingWriter.Close()
-		wroteMoving := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-			slog.Debug("Writing moving track", "track", ct.StringPretty())
-			if err := json.NewEncoder(movingWriter).Encode(ct); err != nil {
-				slog.Error("Failed to write moving track", "error", err)
-			}
-			return nil
-		}, moving)
-
-		stationaryWriter, err := writer.CustomWriter("stationary.geojson.gz")
-		if err != nil {
-			slog.Error("Failed to create stationary writer", "error", err)
-			return
-		}
-		defer stationaryWriter.Close()
-		wroteStationary := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-			slog.Debug("Writing stationary track", "track", ct.StringPretty())
-			if err := json.NewEncoder(stationaryWriter).Encode(ct); err != nil {
-				slog.Error("Failed to write stationary track", "error", err)
-			}
-			return nil
-		}, stationary)
-
-		go stream.Drain(ctx, wroteStationary)
-		stream.Drain(ctx, wroteMoving)
-
-	}(tripDetectingCh)
+	pipelining := &sync.WaitGroup{}
+	go S2IndexTracks(ctx, pipelining, catID, indexingCh)
+	go TripDetectTracks(ctx, pipelining, catID, tripdetectCh)
+	//if err := TripDetectTracks(ctx, catID, tripdetectCh); err != nil {
+	//	slog.Error("Failed to detect trips", "error", err)
+	//	// return?
+	//}
 
 	// Blocking on store.
+	slog.Warn("Blocking on store")
 	stream.Sink(ctx, func(t any) {
 		lastErr = t.(error)
 		slog.Error("Failed to populate CatTrack", "error", lastErr)
 	}, storeErrs)
 
+	slog.Warn("Blocking on pipelining")
 	pipelining.Wait()
 	return lastErr
 }

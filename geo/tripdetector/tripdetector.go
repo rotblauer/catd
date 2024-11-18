@@ -91,7 +91,8 @@ func (d *TripDetector) AddFeatureToState(f *cattrack.CatTrack) {
 	// Degrade the segment intersection gauge.
 	n := float64(0)
 	for _, t := range d.IntervalPoints {
-		if t.MustTime().Before(t.MustTime().Add(-d.DwellTime)) {
+		ti := t.MustTime()
+		if ti.Before(ti.Add(-d.DwellTime)) {
 			return
 		}
 		n += 1.0

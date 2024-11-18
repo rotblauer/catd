@@ -135,7 +135,7 @@ Then, run this command in parallel for each actual cat.
 				select {
 				case sig := <-interrupt:
 					slog.Warn("Received signal again", "signal", sig)
-					log.Fatalln("Exiting")
+					log.Fatalln("Force exit")
 				}
 			}
 		}()

@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/bbolt"
 	"io"
 	"path/filepath"
-	"sync"
 )
 
 type Cat struct {
@@ -19,11 +18,8 @@ type Cat struct {
 }
 
 type CatWriter struct {
-	CatID            conceptual.CatID
-	Flat             *flat.Flat
-	TrackWriterGZ    io.WriteCloser
-	customWriterLock sync.Mutex
-	CustomWriters    map[string]io.WriteCloser
+	CatID conceptual.CatID
+	Flat  *flat.Flat
 }
 
 func (c *Cat) NewCatWriter() (*CatWriter, error) {
@@ -31,49 +27,27 @@ func (c *Cat) NewCatWriter() (*CatWriter, error) {
 	if err := flatCat.Ensure(); err != nil {
 		return nil, err
 	}
-	gzFile, err := flatCat.TracksGZ()
-	if err != nil {
-		return nil, err
-	}
 	return &CatWriter{
-		CatID:         c.CatID,
-		Flat:          flatCat,
-		TrackWriterGZ: gzFile.Writer(),
-		CustomWriters: map[string]io.WriteCloser{},
+		CatID: c.CatID,
+		Flat:  flatCat,
 	}, nil
 }
 
-func (w *CatWriter) WriteTrack(ct *cattrack.CatTrack) error {
-	if err := json.NewEncoder(w.TrackWriterGZ).Encode(ct); err != nil {
+func (w *CatWriter) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
+	if err := json.NewEncoder(wr).Encode(ct); err != nil {
 		return err
 	}
 	cache.SetLastKnownTTL(w.CatID, ct)
 	return nil
 }
 
-func (w *CatWriter) getOrInitCustomWriter(target string) (io.WriteCloser, error) {
-	w.customWriterLock.Lock()
-	defer w.customWriterLock.Unlock()
-	if wr, ok := w.CustomWriters[target]; ok {
-		return wr, nil
-	}
-	f, err := w.Flat.NamedGZ(target)
+func (w *CatWriter) TrackWriter() (io.WriteCloser, error) {
+	gzf, err := w.Flat.TracksGZ()
 	if err != nil {
 		return nil, err
 	}
-	wr := f.Writer()
-	w.CustomWriters[target] = wr
-	return wr, nil
-}
+	return gzf.Writer(), nil
 
-// WriteTrackAt writes a track to a custom target.
-// It is not thread safe.
-func (w *CatWriter) WriteTrackAt(ct *cattrack.CatTrack, target string) error {
-	wr, err := w.getOrInitCustomWriter(target)
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(wr).Encode(ct)
 }
 
 func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
@@ -114,12 +88,7 @@ func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
 }
 
 func (w *CatWriter) Close() error {
-	for _, writer := range w.CustomWriters {
-		if err := writer.Close(); err != nil {
-			return err
-		}
-	}
-	return w.TrackWriterGZ.Close()
+	return nil
 }
 
 type CatReader struct {
