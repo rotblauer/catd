@@ -54,7 +54,6 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 				}, in)
 			}
 		}
-
 	}
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
