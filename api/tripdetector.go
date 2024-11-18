@@ -20,6 +20,7 @@ func TripDetectTracks(ctx context.Context, wg *sync.WaitGroup, catID conceptual.
 		wg.Add(1)
 		defer wg.Done()
 	}
+	defer slog.Info("Trip detection completed")
 
 	appCat := app.Cat{CatID: catID}
 	writer, err := appCat.NewCatWriter()
