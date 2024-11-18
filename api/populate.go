@@ -2,10 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
-	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -16,23 +16,6 @@ import (
 // PopulateCat persists incoming CatTracks for one cat.
 func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforceChronology bool, in <-chan *cattrack.CatTrack) (lastErr error) {
 
-	// Declare our cat-writer and intend to close it on completion.
-	// Holding the writer in this closure allows us to use the writer
-	// as a batching writer, only opening and closing the target writers once.
-	appCat := app.Cat{CatID: catID}
-	writer, err := appCat.NewCatWriter()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := writer.PersistLastTrack(); err != nil {
-			slog.Error("Failed to persist last track", "error", err)
-		}
-		if err := writer.Close(); err != nil {
-			slog.Error("Failed to close track writer", "error", err)
-		}
-	}()
-
 	// enforceChronology requires us to reference persisted state
 	// before we begin reading input in order to know where we left off.
 	// We'll reassign the source channel if necessary.
@@ -41,6 +24,7 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	// 2. import gracefully
 	source := in
 	if enforceChronology {
+		appCat := app.Cat{CatID: catID}
 		if reader, err := appCat.NewCatReader(); err == nil {
 			last, err := reader.ReadLastTrack()
 			if err == nil {
@@ -77,59 +61,58 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
 		pipedLast = sorted
 	}
+
+	// Dedupe with hash cache.
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
-	wr, err := writer.TrackWriter()
-	if err != nil {
-		slog.Error("Failed to create track writer", "error", err)
-		return err
-	}
-	defer func() {
-		if err := wr.Close(); err != nil {
-			slog.Error("Failed to close track writer", "error", err)
-		}
-	}()
+	// Store em! (Handle errors blocks this function).
+	stored, storeErrs := Store(ctx, catID, deduped)
 
-	storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-		if err := writer.WriteTrack(wr, ct); err != nil {
-			return err
-		}
-
-		slog.Log(context.Background(), -5, "Stored cat track", "track", ct.StringPretty())
-		events.NewStoredTrackFeed.Send(ct)
-
-		return ct
-	}, deduped)
-
-	a, b := stream.Tee(ctx, storeResults)
-	storeOKs := stream.Transform(ctx, func(t any) *cattrack.CatTrack {
-		return t.(*cattrack.CatTrack)
-	}, stream.Filter(ctx, func(t any) bool {
-		_, ok := t.(*cattrack.CatTrack)
-		return ok
-	}, a))
-	storeErrs := stream.Filter(ctx, func(t any) bool {
-		_, ok := t.(error)
-		return ok
-	}, b)
-
-	//go stream.Drain(ctx, storeOKs)
-	//go func() {
-	//	for range storeOKs {
-	//		do nothing
-	//}
-	//}()
-
-	indexingCh, tripdetectCh := stream.Tee(ctx, storeOKs)
-	//go stream.Drain(ctx, tripdetectCh)
+	indexingCh, tripdetectCh := stream.Tee(ctx, stored)
 
 	// S2 indexing pipeline.
 	pipelining := &sync.WaitGroup{}
 	go S2IndexTracks(ctx, pipelining, catID, indexingCh)
 	go func() {
-		cleaned := CleanTracks(ctx, catID, tripdetectCh)
-		TripDetectTracks(ctx, pipelining, catID, cleaned)
+		pipelining.Add(1)
+		defer pipelining.Done()
 
+		lapTracks := make(chan *cattrack.CatTrack)
+		napTracks := make(chan *cattrack.CatTrack)
+		defer close(lapTracks)
+		defer close(napTracks)
+
+		cleaned := CleanTracks(ctx, catID, tripdetectCh)
+		tripdetected := TripDetectTracks(ctx, catID, cleaned)
+
+		handleTripDetected(ctx, catID, tripdetected)
+
+		//// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
+		//
+		//// Laps
+		//linestrings := LinestringsFromTracks(ctx, catID, lapTracks)
+		//laps := SimplifyLinestrings(ctx, catID, linestrings)
+		//
+		///*
+		//	for lap := range laps {
+		//		// Only complete linestrings (complete trips/laps)
+		//		// are channeled here.
+		//		// Callers wanting the incomplete/partial/unfinished
+		//		// linestring for a cat can use
+		//		// catReader.
+		//	}
+		//*/
+		//
+		//// Naps
+		//naps := ClusterPoints(ctx, catID, napTracks)
+		//
+		//for detected := range tripdetected {
+		//	if detected.Properties.MustBool("IsTrip") {
+		//		lapTracks <- detected
+		//	} else {
+		//		napTracks <- detected
+		//	}
+		//}
 	}()
 	//if err := TripDetectTracks(ctx, catID, tripdetectCh); err != nil {
 	//	slog.Error("Failed to detect trips", "error", err)
@@ -138,12 +121,82 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 
 	// Blocking on store.
 	slog.Warn("Blocking on store")
-	stream.Sink(ctx, func(t any) {
-		lastErr = t.(error)
+	stream.Sink(ctx, func(e error) {
+		lastErr = e
 		slog.Error("Failed to populate CatTrack", "error", lastErr)
 	}, storeErrs)
 
 	slog.Warn("Blocking on pipelining")
 	pipelining.Wait()
 	return lastErr
+}
+
+func handleTripDetected(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) {
+	appCat := app.Cat{CatID: catID}
+	writer, err := appCat.NewCatWriter()
+	if err != nil {
+		slog.Error("Failed to create cat writer", "error", err)
+		return
+	}
+
+	toMoving, toStationary := stream.Tee(ctx, in)
+	moving := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+		//return ct.ID == 1
+		return ct.Properties.MustBool("IsTrip")
+	}, toMoving)
+	stationary := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+		//return ct.ID == 0
+		return !ct.Properties.MustBool("IsTrip")
+	}, toStationary)
+
+	// TODO: Coalesce moving points into linestrings, and stationary ones into stops.
+
+	doneMoving := make(chan struct{})
+	doneStationary := make(chan struct{})
+
+	movingWriter, err := writer.CustomWriter("moving.geojson.gz")
+	if err != nil {
+		slog.Error("Failed to create moving writer", "error", err)
+		return
+	}
+	defer movingWriter.Close()
+
+	stationaryWriter, err := writer.CustomWriter("stationary.geojson.gz")
+	if err != nil {
+		slog.Error("Failed to create stationary writer", "error", err)
+		return
+	}
+	defer stationaryWriter.Close()
+
+	go func() {
+		stream.Drain(ctx, stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+			slog.Debug("Writing moving track", "track", ct.StringPretty())
+			if err := json.NewEncoder(movingWriter).Encode(ct); err != nil {
+				slog.Error("Failed to write moving track", "error", err)
+			}
+			return nil
+		}, moving))
+		doneMoving <- struct{}{}
+	}()
+
+	go func() {
+		stream.Drain(ctx, stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+			slog.Debug("Writing stationary track", "track", ct.StringPretty())
+			if err := json.NewEncoder(stationaryWriter).Encode(ct); err != nil {
+				slog.Error("Failed to write stationary track", "error", err)
+			}
+			return nil
+		}, stationary))
+		doneStationary <- struct{}{}
+	}()
+
+	// Block on both writers, unordered.
+	for i := 0; i < 2; i++ {
+		select {
+		case <-doneMoving:
+			doneMoving = nil
+		case <-doneStationary:
+			doneStationary = nil
+		}
+	}
 }

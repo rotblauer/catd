@@ -22,6 +22,8 @@ type CatWriter struct {
 	Flat  *flat.Flat
 }
 
+// NewCatWriter defines filepath and encoding for a cat.
+// It should be non-contentious.
 func (c *Cat) NewCatWriter() (*CatWriter, error) {
 	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
 	if err := flatCat.Ensure(); err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/gjson"
@@ -64,14 +65,37 @@ Then, run this command in parallel for each actual cat.
 		catHat := func(id conceptual.CatID) chan *cattrack.CatTrack {
 			in := make(chan *cattrack.CatTrack)
 
-			populating.Add(1)
-
 			go func() {
-				defer populating.Done()
-				// TODO: Flag me.
-				err := api.PopulateCat(ctx, id, true, true, in)
-				if err != nil {
-					slog.Error("Failed to populate CatTracks", "error", err)
+
+				work := make(chan []*cattrack.CatTrack, 8)
+				defer close(work)
+
+				for i := 0; i < 8; i++ {
+					go func(n int) {
+						for w := range work {
+							slog.Info("Running async populator", "worker", n)
+
+							populating.Add(1)
+							defer populating.Done()
+
+							//go func() {
+							// TODO: Flag me.
+							err := api.PopulateCat(ctx, id, true, true, stream.Slice(ctx, w))
+							if err != nil {
+								slog.Error("Failed to populate CatTracks", "error", err)
+							} else {
+								slog.Info("Populator done", "worker", n)
+							}
+							//}()
+						}
+					}(i)
+				}
+
+				for batch := range stream.Batch(ctx, nil, func(s []*cattrack.CatTrack) bool {
+					return len(s) == 100_000
+				}, in) {
+					slog.Warn("Waiting on available worker")
+					work <- batch
 				}
 			}()
 
@@ -84,6 +108,7 @@ Then, run this command in parallel for each actual cat.
 		var lastTrack *cattrack.CatTrack
 
 		readN, skippedN := int64(0), int64(0)
+		seenLast := false
 		skippingLog, skippedLog := sync.Once{}, sync.Once{}
 		nt := time.Now()
 		dec := json.NewDecoder(os.Stdin)
@@ -92,7 +117,10 @@ Then, run this command in parallel for each actual cat.
 		for {
 			// Decoding JSON is slow (...er than handling raw []bytes).
 			// So if we can, we avoid struct-decoding as we skip already-seen tracks.
-			if lastTrack != nil {
+			// We compare the timestamp of the last-seen track for some cat,
+			// and only break the no-decode condition once we find it.
+			// Be advised that this assumes (!) incoming track consistent order.
+			if !seenLast && lastTrack != nil {
 				m := json.RawMessage{}
 				err := dec.Decode(&m)
 				if err != nil {
@@ -109,17 +137,15 @@ Then, run this command in parallel for each actual cat.
 				res := gjson.GetBytes(m, "properties.Time")
 				if res.Exists() {
 
-					// Pad with an hour because exact equivalence
-					// would cause this loop to miss the first unseen track,
-					// since the decoder has already handled this line.
-					// We need to break a little before the last track we've seen.
-					// So we fudge it out a little.
-					if res.Time().Before(lastTrack.MustTime().Add(-time.Hour)) {
+					if !res.Time().Equal(lastTrack.MustTime()) {
 						skippingLog.Do(func() {
 							slog.Warn("Skipping decode on already-seen tracks...")
 						})
 
 						skippedN++
+						continue
+					} else {
+						seenLast = true
 						continue
 					}
 				}
