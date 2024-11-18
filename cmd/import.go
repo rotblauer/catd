@@ -20,10 +20,12 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
+	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"log/slog"
@@ -79,13 +81,56 @@ Then, run this command in parallel for each actual cat.
 		var hat chan *cattrack.CatTrack
 
 		var lastCatID conceptual.CatID
-		n := int64(0)
+		var lastTrack *cattrack.CatTrack
+
+		readN, skippedN := int64(0), int64(0)
+		skippingLog, skippedLog := sync.Once{}, sync.Once{}
 		nt := time.Now()
 		dec := json.NewDecoder(os.Stdin)
 
 	readLoop:
 		for {
-			// FIXME: Decoding JSON is slow (...er than handling raw []bytes, I think).
+			// Decoding JSON is slow (...er than handling raw []bytes).
+			// So if we can, we avoid struct-decoding as we skip already-seen tracks.
+			if lastTrack != nil {
+				m := json.RawMessage{}
+				err := dec.Decode(&m)
+				if err != nil {
+					// The unexpected can/will happen, e.g. SIGINT.
+					// Only a warning.
+					if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+						slog.Warn("Decode error", "error", err)
+						break
+					}
+					// Else a real error.
+					slog.Error("Decode error", "error", err)
+					break
+				}
+				res := gjson.GetBytes(m, "properties.Time")
+				if res.Exists() {
+					
+					// Pad with an hour because exact equivalence
+					// would cause this loop to miss the first unseen track,
+					// since the decoder has already handled this line.
+					// We need to break a little before the last track we've seen.
+					// So we fudge it out a little.
+					if res.Time().Before(lastTrack.MustTime().Add(-time.Hour)) {
+						skippingLog.Do(func() {
+							slog.Warn("Skipping decode on already-seen tracks...")
+						})
+
+						skippedN++
+						continue
+					}
+				}
+			}
+
+			if readN > 0 {
+				skippedLog.Do(func() {
+					slog.Info("Reading tracks", "skipped", skippedN)
+				})
+			}
+
 			ct := &cattrack.CatTrack{}
 			err := dec.Decode(ct)
 			if err != nil {
@@ -100,15 +145,21 @@ Then, run this command in parallel for each actual cat.
 				break
 			}
 
-			n++
-			if n%(10_000) == 0 {
+			readN++
+			if readN%(10_000) == 0 {
 				t, _ := ct.Time() // Track timestamp.
-				tps := float64(n) / time.Since(nt).Seconds()
+				tps := float64(readN) / time.Since(nt).Seconds()
 				tps = common.DecimalToFixed(tps, 0)
-				slog.Info("Read tracks", "reads", n, "current_track.time", t, "tps", tps)
+				slog.Info("Read tracks", "reads", readN, "current_track.time", t, "tps", tps)
 			}
 
 			if lastCatID != ct.CatID() {
+				appCat := app.Cat{CatID: ct.CatID()}
+				if r, err := appCat.NewCatReader(); err == nil {
+					if last, err := r.ReadLastTrack(); err == nil {
+						lastTrack = last
+					}
+				}
 				if hat != nil {
 					close(hat)
 				}
