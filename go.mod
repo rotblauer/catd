@@ -6,12 +6,12 @@ require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
-	github.com/gookit/event v1.1.2
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/jellydator/ttlcache/v3 v3.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
+	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe
 	github.com/olahol/melody v1.2.1
 	github.com/paulmach/orb v0.11.1
 	github.com/spf13/cobra v1.8.1

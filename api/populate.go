@@ -4,13 +4,17 @@ import (
 	"context"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
+	"github.com/rotblauer/catd/geo/cleaner"
+	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
+	"sync"
 )
 
 // PopulateCat persists incoming CatTracks for one cat.
@@ -91,26 +95,33 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	}, deduped)
 
 	a, b := stream.Tee(ctx, storeResults)
-
-	storedOK := stream.Transform(ctx, func(t any) *cattrack.CatTrack {
+	storeOKs := stream.Transform(ctx, func(t any) *cattrack.CatTrack {
 		return t.(*cattrack.CatTrack)
 	}, stream.Filter(ctx, func(t any) bool {
 		_, ok := t.(*cattrack.CatTrack)
 		return ok
 	}, a))
-
-	errs := stream.Filter(ctx, func(t any) bool {
+	storeErrs := stream.Filter(ctx, func(t any) bool {
 		_, ok := t.(error)
 		return ok
 	}, b)
 
+	indexingCh, tripDetectingCh := stream.Tee(ctx, storeOKs)
+
+	// TODO: This might be optional.
+	// Normal track-pushing over HTTP probably doesn't need to wait.
+	pipelining := sync.WaitGroup{}
+
 	go func() {
+		pipelining.Add(1)
+		defer pipelining.Done()
 		cellIndexer, err := s2.NewCellIndexer(catID, params.DatadirRoot, params.S2DefaultCellLevels, params.DefaultBatchSize)
 		if err != nil {
 			slog.Error("Failed to initialize indexer", "error", err)
 			return
 		}
-		if err := cellIndexer.Index(ctx, storedOK); err != nil {
+		// Blocking.
+		if err := cellIndexer.Index(ctx, indexingCh); err != nil {
 			slog.Error("CellIndexer errored", "error", err)
 		}
 		if err := cellIndexer.Close(); err != nil {
@@ -118,10 +129,29 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		}
 	}()
 
-	// Blocking.
+	go func() {
+		// Lapomatic pipeline.
+		// Implement me.
+		pipelining.Add(1)
+		defer pipelining.Done()
+
+		noYeagerCh := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return ct.Properties.MustFloat64("Elevation") < common.ElevationOfTroposphere
+		}, stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return ct.Properties.MustFloat64("Speed") < common.SpeedOfSound
+		}, tripDetectingCh))
+
+		uncanyoned := cleaner.WangUrbanCanyonFilter(ctx, noYeagerCh)
+
+		_ = tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
+	}()
+
+	// Blocking on store.
 	stream.Sink(ctx, func(t any) {
 		lastErr = t.(error)
 		slog.Error("Failed to populate CatTrack", "error", lastErr)
-	}, errs)
+	}, storeErrs)
+
+	pipelining.Wait()
 	return lastErr
 }

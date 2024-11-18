@@ -111,6 +111,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 // Index indexes the given CatTracks into the S2 cell index(es), appending
 // all unique tracks to flat files respective of cell level.
 // It will block until the in channel closes and all batches are processed.
+// It uses batches to minimize disk txes.
 func (ci *CellIndexer) Index(ctx context.Context, in <-chan *cattrack.CatTrack) error {
 	batches := stream.Batch(ctx, nil, func(tracks []*cattrack.CatTrack) bool {
 		return len(tracks) == ci.BatchSize
