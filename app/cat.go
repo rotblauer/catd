@@ -123,8 +123,10 @@ func (w *CatWriter) WriteKV(key []byte, value []byte) error {
 	return w.storeKV(key, value)
 }
 
+// WriteSnap is not implemented.
+// TODO: Implement WriteSnap.
 func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
-	return nil
+	return fmt.Errorf("not implemented")
 }
 
 func (w *CatWriter) Close() error {

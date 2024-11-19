@@ -49,6 +49,6 @@ type SimplificationConfig struct {
 	DouglasPeuckerThreshold float64
 }
 
-var DefaultSimplificationConfig = &SimplificationConfig{
+var DefaultSimplifierConfig = &SimplificationConfig{
 	DouglasPeuckerThreshold: 0.00008,
 }

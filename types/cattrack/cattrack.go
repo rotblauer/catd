@@ -2,12 +2,10 @@ package cattrack
 
 import (
 	"fmt"
-	"github.com/montanaflynn/stats"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
-	"github.com/rotblauer/catd/types/activity"
 	"time"
 )
 
@@ -66,13 +64,16 @@ func Sanitize(ct *CatTrack) *CatTrack {
 	return ct
 }
 
+func (ct *CatTrack) IsValid() bool {
+	return ct.Validate() == nil
+}
+
 func (ct *CatTrack) Validate() error {
-	// Point is not nil.
 	if ct == nil {
-		return fmt.Errorf("nil point")
+		return fmt.Errorf("nil track")
 	}
 
-	// Point is a point.
+	// Geometry is a point.
 	if ct.Geometry == nil {
 		return fmt.Errorf("nil geometry")
 	}
@@ -172,58 +173,4 @@ func (ct *CatTrack) StringPretty() string {
 		ct.Properties["Accuracy"],
 		ct.Properties["Speed"],
 	)
-}
-
-func ActivityMode(list []*CatTrack) activity.Activity {
-	activities := make([]float64, len(list))
-	for i, f := range list {
-		act := activity.FromAny(f.Properties["Activity"])
-		activities[i] = float64(act)
-	}
-	activitiesStats := stats.Float64Data(activities)
-	mode, _ := activitiesStats.Mode()
-	if len(mode) == 0 {
-		return activity.TrackerStateUnknown
-	}
-	return activity.Activity(mode[0])
-}
-
-func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
-	activities := []float64{}
-	for _, f := range list {
-		act := activity.FromAny(f.Properties["Activity"])
-		if act > activity.TrackerStateStationary {
-			activities = append(activities, float64(act))
-		}
-	}
-	activitiesStats := stats.Float64Data(activities)
-	mode, _ := activitiesStats.Mode()
-	for _, m := range mode {
-		if m > float64(activity.TrackerStateStationary) {
-			return activity.Activity(m)
-		}
-	}
-
-	// At this point there are NO activities that are not either stationary or unknown.
-	// This may be a client bug (cough Android cough) where it doesn't report activity.
-	// So instead we'll use reported speed.
-	speeds := []float64{}
-	for _, f := range list {
-		speeds = append(speeds, f.Properties.MustFloat64("Speed"))
-	}
-	speedsStats := stats.Float64Data(speeds)
-
-	// Remember, these are meters per second.
-	mean, _ := speedsStats.Mean()
-
-	// Using common walking speeds, running speeds, bicycling, and driving speeds,
-	// we'll return the matching activity.
-	if mean < 1.78816 /* 4 mph */ {
-		return activity.TrackerStateWalking
-	} else if mean < 4.87274 /* 10.9 mph == 5.5 min / mile */ {
-		return activity.TrackerStateRunning
-	} else if mean < 8.04672 /* 18 mph */ {
-		return activity.TrackerStateCycling
-	}
-	return activity.TrackerStateDriving
 }

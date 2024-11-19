@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
@@ -58,7 +59,8 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	pipedLast := sanitized
 	if sort {
 		// Catch is the batch.
-		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize,
+			cattrack.SortFunc, sanitized)
 		pipedLast = sorted
 	}
 
@@ -85,39 +87,81 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		cleaned := CleanTracks(ctx, catID, tripdetectCh)
 		tripdetected := TripDetectTracks(ctx, catID, cleaned)
 
-		handleTripDetected(ctx, catID, tripdetected)
+		//handleTripDetected(ctx, catID, tripdetected)
 
-		//// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
-		//
-		//// Laps
-		//linestrings := LinestringsFromTracks(ctx, catID, lapTracks)
-		//laps := SimplifyLinestrings(ctx, catID, linestrings)
-		//
-		///*
-		//	for lap := range laps {
-		//		// Only complete linestrings (complete trips/laps)
-		//		// are channeled here.
-		//		// Callers wanting the incomplete/partial/unfinished
-		//		// linestring for a cat can use
-		//		// catReader.
-		//	}
-		//*/
-		//
-		//// Naps
-		//naps := ClusterPoints(ctx, catID, napTracks)
-		//
-		//for detected := range tripdetected {
-		//	if detected.Properties.MustBool("IsTrip") {
-		//		lapTracks <- detected
-		//	} else {
-		//		napTracks <- detected
-		//	}
-		//}
+		// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
+
+		// Laps
+		completedLaps := LapTracks(ctx, catID, lapTracks)
+
+		simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
+		simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
+			ct.Geometry = simplifier.Simplify(ct.Geometry)
+			return ct
+		}, completedLaps)
+		go func() {
+			appCat := app.Cat{CatID: catID}
+			writer, err := appCat.NewCatWriter()
+			if err != nil {
+				slog.Error("Failed to create cat writer", "error", err)
+				return
+			}
+			defer writer.Close()
+
+			lapsWriter, err := writer.CustomWriter("laps.geojson.gz")
+			if err != nil {
+				slog.Error("Failed to create laps writer", "error", err)
+				return
+			}
+			defer lapsWriter.Close()
+
+			enc := json.NewEncoder(lapsWriter)
+
+			// Blocking.
+			stream.Sink(ctx, func(ct *cattrack.CatLap) {
+				if err := enc.Encode(ct); err != nil {
+					slog.Error("Failed to write lap", "error", err)
+				}
+			}, simplified)
+		}()
+
+		// Naps
+		completedNaps := NapTracks(ctx, catID, napTracks)
+		go func() {
+			appCat := app.Cat{CatID: catID}
+			writer, err := appCat.NewCatWriter()
+			if err != nil {
+				slog.Error("Failed to create cat writer", "error", err)
+				return
+			}
+			defer writer.Close()
+
+			lapsWriter, err := writer.CustomWriter("naps.geojson.gz")
+			if err != nil {
+				slog.Error("Failed to create naps writer", "error", err)
+				return
+			}
+			defer lapsWriter.Close()
+
+			enc := json.NewEncoder(lapsWriter)
+
+			// Blocking.
+			stream.Sink(ctx, func(ct *cattrack.CatNap) {
+				if err := enc.Encode(ct); err != nil {
+					slog.Error("Failed to write nap", "error", err)
+				}
+			}, completedNaps)
+		}()
+
+		// Block on tripdetect.
+		for detected := range tripdetected {
+			if detected.Properties.MustBool("IsTrip") {
+				lapTracks <- detected
+			} else {
+				napTracks <- detected
+			}
+		}
 	}()
-	//if err := TripDetectTracks(ctx, catID, tripdetectCh); err != nil {
-	//	slog.Error("Failed to detect trips", "error", err)
-	//	// return?
-	//}
 
 	// Blocking on store.
 	slog.Warn("Blocking on store")
