@@ -75,6 +75,7 @@ func (w *CatWriter) storeKV(key []byte, data []byte) error {
 	}
 	defer db.Close()
 	return db.Update(func(tx *bbolt.Tx) error {
+		data := data
 		bucket, err := tx.CreateBucketIfNotExists(catStateBucket)
 		if err != nil {
 			return err
@@ -88,11 +89,14 @@ func (w *CatWriter) StoreLastTrack() error {
 	if track == nil {
 		return fmt.Errorf("no last track (impossible if caller uses correctly)")
 	}
-	b, err := json.Marshal(track.Value())
+	v := track.Value()
+	v.Properties = v.Properties.Clone()
+	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	err = w.storeKV([]byte("last"), b)
+	buf := bytes.NewBuffer(b)
+	err = w.storeKV([]byte("last"), buf.Bytes())
 	if err != nil {
 		slog.Error("Failed to store last track", "error", err)
 	} else {
