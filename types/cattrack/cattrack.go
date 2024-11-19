@@ -164,7 +164,7 @@ func (ct *CatTrack) StringPretty() string {
 	case "ia":
 		dot = "🔴"
 	}
-	return fmt.Sprintf("%s Name: %s (%s), Time: %v, Coords: %v, Accuracy: %v, Speed: %v",
+	return fmt.Sprintf("%s Name: %s (%s), Time: %v, Coords: %v, Accuracy: %v, Speed: %.1f",
 		dot,
 		ct.Properties["Name"],
 		alias,

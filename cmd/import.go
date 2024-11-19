@@ -20,21 +20,81 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/rotblauer/catd/api"
-	"github.com/rotblauer/catd/app"
-	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
-	"github.com/tidwall/gjson"
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
+
+var lastTrackStorePath = "/tmp/catd-last-track.json"
+
+func importStoreReadN(n int64) error {
+	f, err := os.OpenFile(lastTrackStorePath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write([]byte(strconv.FormatInt(n, 10)))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func importReadMarker() (int64, error) {
+	f, err := os.Open(lastTrackStorePath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return 0, err
+	}
+	// Trim newlines.
+	return strconv.ParseInt(string(data), 10, 64)
+}
+
+type readTrackLogger struct {
+	once          sync.Once
+	started       time.Time
+	n             atomic.Uint64
+	lastTrackTime time.Time
+	interval      time.Duration
+	ticker        *time.Ticker
+}
+
+func (rl *readTrackLogger) mark(trackTime time.Time) {
+	rl.lastTrackTime = trackTime
+	rl.n.Add(1)
+}
+
+func (rl *readTrackLogger) run() {
+	rl.ticker = time.NewTicker(rl.interval)
+	for range rl.ticker.C {
+		rl.log()
+	}
+}
+
+func (rl *readTrackLogger) log() {
+	n := rl.n.Load()
+	tps := math.Round(float64(n) / time.Since(rl.started).Seconds())
+	slog.Info("Read tracks", "n", n, "read.last", rl.lastTrackTime, "tps", tps)
+}
+
+func (rl *readTrackLogger) done() {
+	rl.ticker.Stop()
+}
 
 // importCmd represents the import command
 var importCmd = &cobra.Command{
@@ -84,13 +144,21 @@ Then, run this command in parallel for each actual cat.
 		var hat chan *cattrack.CatTrack
 
 		var lastCatID conceptual.CatID
-		var lastTrack *cattrack.CatTrack
+
+		lastReadN, lastReadNRestoreErr := importReadMarker()
+		if lastReadNRestoreErr == nil {
+			slog.Info("Restored last read track n", "n", lastReadN)
+		} else {
+			slog.Warn("Failed to restore last read track", "error", lastReadNRestoreErr)
+		}
 
 		readN, skippedN := int64(0), int64(0)
-		seenLast := false
-		skippingLog, skippedLog := sync.Once{}, sync.Once{}
-		nt := time.Now()
+		skipLog, readLog := sync.Once{}, sync.Once{}
 		dec := json.NewDecoder(os.Stdin)
+
+		tlogger := &readTrackLogger{
+			interval: 5 * time.Second,
+		}
 
 	readLoop:
 		for {
@@ -99,7 +167,11 @@ Then, run this command in parallel for each actual cat.
 			// We compare the timestamp of the last-seen track for some cat,
 			// and only break the no-decode condition once we find it.
 			// Be advised that this assumes (!) incoming track consistent order.
-			if !seenLast && lastTrack != nil {
+			if skippedN < lastReadN {
+				skipLog.Do(func() {
+					slog.Warn("Skipping decode on already-seen tracks...")
+				})
+
 				m := json.RawMessage{}
 				err := dec.Decode(&m)
 				if err != nil {
@@ -107,34 +179,23 @@ Then, run this command in parallel for each actual cat.
 					// Only a warning.
 					if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 						slog.Warn("Decode error", "error", err)
-						break
+						break readLoop
 					}
 					// Else a real error.
 					slog.Error("Decode error", "error", err)
-					break
+					break readLoop
 				}
-				res := gjson.GetBytes(m, "properties.Time")
-				if res.Exists() {
-
-					if !res.Time().Equal(lastTrack.MustTime()) {
-						skippingLog.Do(func() {
-							slog.Warn("Skipping decode on already-seen tracks...")
-						})
-
-						skippedN++
-						continue
-					} else {
-						seenLast = true
-						continue
-					}
-				}
+				skippedN++
+				continue readLoop
 			}
 
-			if readN > 0 {
-				skippedLog.Do(func() {
-					slog.Info("Reading tracks", "skipped", skippedN)
-				})
-			}
+			readLog.Do(func() {
+				slog.Info("Reading tracks", "skipped", skippedN)
+				readN = skippedN
+				tlogger.started = time.Now()
+				tlogger.n.Store(0)
+				go tlogger.run()
+			})
 
 			ct := &cattrack.CatTrack{}
 			err := dec.Decode(ct)
@@ -150,29 +211,14 @@ Then, run this command in parallel for each actual cat.
 				break
 			}
 
-			readN++
-			if readN%(10_000) == 0 {
-				t, _ := ct.Time() // Track timestamp.
-				tps := float64(readN) / time.Since(nt).Seconds()
-				tps = common.DecimalToFixed(tps, 0)
-				slog.Info("Read tracks", "reads", readN, "current_track.time", t, "tps", tps)
-			}
+			tlogger.mark(ct.MustTime())
 
 			if lastCatID != ct.CatID() {
-				appCat := app.Cat{CatID: ct.CatID()}
-				if r, err := appCat.NewCatReader(); err == nil {
-					if last, err := r.ReadLastTrack(); err == nil {
-						lastTrack = last
-					} else {
-						slog.Warn("Failed to read last track", "error", err)
-					}
-				}
 				if hat != nil {
 					close(hat)
 				}
 				lastCatID = ct.CatID()
 				hat = catHat(lastCatID)
-
 			}
 
 			select {
@@ -184,7 +230,16 @@ Then, run this command in parallel for each actual cat.
 
 				// Fire away!
 			case hat <- ct:
+				readN++
 			}
+		}
+
+		tlogger.done()
+
+		if err := importStoreReadN(readN); err != nil {
+			slog.Error("Failed to store import's last track", "error", err)
+		} else {
+			slog.Info("Stored import's last track")
 		}
 
 		// Provide a way to break of out of deadlocks.
