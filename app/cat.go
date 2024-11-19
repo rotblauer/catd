@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/catdb/cache"
@@ -65,7 +66,7 @@ func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
 	return wr, nil
 }
 
-func (w *CatWriter) StoreLastTrack() error {
+func (w *CatWriter) storeKV(key []byte, data []byte) error {
 	catPath := w.Flat.Path()
 	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, nil)
 	if err != nil {
@@ -77,16 +78,38 @@ func (w *CatWriter) StoreLastTrack() error {
 		if err != nil {
 			return err
 		}
-		track := cache.LastKnownTTLCache.Get(w.CatID.String())
-		if track == nil {
-			return fmt.Errorf("no last track (impossible if caller uses correctly)")
-		}
-		b, err := track.Value().MarshalJSON()
-		if err != nil {
+		return bucket.Put(key, data)
+	})
+}
+
+func (w *CatWriter) StoreLastTrack() error {
+	track := cache.LastKnownTTLCache.Get(w.CatID.String())
+	if track == nil {
+		return fmt.Errorf("no last track (impossible if caller uses correctly)")
+	}
+	b, err := track.Value().MarshalJSON()
+	if err != nil {
+		return err
+	}
+	return w.storeKV([]byte("last"), b)
+}
+
+// StoreTracksAt stores tracks in a KV store.
+// It is expected that this function can be used to cache
+// partial naps or partial laps (i.e. their last, unfinished, incomplete nap or lap).
+// Keep in mind that the tracks are buffered in memory, not streamed.
+// For this reason, it may be prudent to limit the number of tracks stored (and read!) this way,
+// and/or to limit the use of it.
+// However, tracks are encoded in newline-delimited JSON to allow for streaming, someday, maybe.
+func (w *CatWriter) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error {
+	buf := bytes.NewBuffer([]byte{})
+	enc := json.NewEncoder(buf)
+	for _, track := range tracks {
+		if err := enc.Encode(track); err != nil {
 			return err
 		}
-		return bucket.Put([]byte("last"), b)
-	})
+	}
+	return w.storeKV(key, buf.Bytes())
 }
 
 func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
@@ -113,24 +136,51 @@ func (c *Cat) NewCatReader() (*CatReader, error) {
 	}, nil
 }
 
-func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
+func (w *CatReader) readKV(key []byte) ([]byte, error) {
 	catPath := w.Flat.Path()
 	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, &bbolt.Options{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	track := &cattrack.CatTrack{}
+	var b []byte
 	err = db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
 			return fmt.Errorf("no app bucket")
 		}
-		b := bucket.Get([]byte("last"))
-		if b == nil {
-			return fmt.Errorf("no last track")
-		}
-		return json.Unmarshal(b, track)
+		b = bucket.Get(key)
+		return nil
 	})
+	return b, err
+}
+
+func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
+	got, err := w.readKV([]byte("last"))
+	if err != nil {
+		return nil, err
+	}
+	track := &cattrack.CatTrack{}
+	err = track.UnmarshalJSON(got)
 	return track, err
+}
+
+func (w *CatReader) ReadTracksAt(key []byte) ([]*cattrack.CatTrack, error) {
+	got, err := w.readKV(key)
+	if err != nil {
+		return nil, err
+	}
+	dec := json.NewDecoder(bytes.NewReader(got))
+	var tracks []*cattrack.CatTrack
+	for {
+		track := &cattrack.CatTrack{}
+		if err := dec.Decode(track); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, err
+		}
+		tracks = append(tracks, track)
+	}
+	return tracks, nil
 }
