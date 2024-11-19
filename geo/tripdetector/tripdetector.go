@@ -22,22 +22,26 @@ import (
 // Trips are defined as a series of points that are moving, structured as LineStrings.
 // Stops are defined as a series of points that are stationary, structured as Points.
 type TripDetector struct {
-	DwellTime                                time.Duration
-	SpeedThreshold                           float64
-	DwellDistance                            float64
-	LastNPoints                              []*cattrack.CatTrack
-	IntervalPoints                           []*cattrack.CatTrack
-	Tripping                                 bool
+	DwellTime      time.Duration
+	SpeedThreshold float64
+	DwellDistance  float64
+	LastNPoints    []*cattrack.CatTrack
+	IntervalPoints []*cattrack.CatTrack
+	Tripping       bool
+
+	// unused, for now
 	continuousGyroscopicStabilityGaugeCursor time.Time
 	continuousGyroscopicStabilityGauge       float64
 
 	// MotionStateReason is a string that describes the reason for the current state of the TripDetector.
 	MotionStateReason string
 
-	// intervalPtsCentroid is the centroid of the last dwell interval points.
-	intervalPtsCentroid orb.Point
+	// IntervalPtsCentroid is the centroid of the last dwell interval points.
+	IntervalPtsCentroid orb.Point
 
-	segmentIntersectionGauge float64
+	// SegmentIntersectionGauge is a gauge that measures
+	// the number of segment intersections in the last dwell interval.
+	SegmentIntersectionGauge float64
 }
 
 func timespan(pts []*cattrack.CatTrack) time.Duration {
@@ -64,10 +68,10 @@ func NewTripDetector(config *params.TripDetectorConfig) *TripDetector {
 func (d *TripDetector) ResetState() {
 	d.Tripping = false
 	d.MotionStateReason = "reset"
-	d.intervalPtsCentroid = orb.Point{}
+	d.IntervalPtsCentroid = orb.Point{}
 	d.LastNPoints = []*cattrack.CatTrack{}
 	d.IntervalPoints = []*cattrack.CatTrack{}
-	d.segmentIntersectionGauge = 0
+	d.SegmentIntersectionGauge = 0
 	d.continuousGyroscopicStabilityGauge = 0
 }
 
@@ -97,7 +101,7 @@ func (d *TripDetector) AddFeatureToState(f *cattrack.CatTrack) {
 		}
 		n += 1.0
 	}
-	d.segmentIntersectionGauge *= 1 - (1.0 / n)
+	d.SegmentIntersectionGauge *= 1 - (1.0 / n)
 }
 
 func (d *TripDetector) LastPointN(n int) *cattrack.CatTrack {
@@ -300,7 +304,7 @@ outer:
 func (d *TripDetector) DetectStopPointClusteringCentroid(ct *cattrack.CatTrack) (result DetectedT) {
 	dwellExceeded := false
 
-	// Update the d.intervalPtsCentroid value to reflect the centroid of d.IntervalPoints.
+	// Update the d.IntervalPtsCentroid value to reflect the centroid of d.IntervalPoints.
 	// NOTE We INCLUDE the cursor point in the centroid calculation.
 	//
 	pts := []orb.Point{ct.Point()}
@@ -313,9 +317,9 @@ func (d *TripDetector) DetectStopPointClusteringCentroid(ct *cattrack.CatTrack) 
 		}
 		pts = append(pts, p.Point())
 	}
-	d.intervalPtsCentroid, _ = planar.CentroidArea(orb.MultiPoint(pts))
+	d.IntervalPtsCentroid, _ = planar.CentroidArea(orb.MultiPoint(pts))
 
-	dist := geo.Distance(d.intervalPtsCentroid, ct.Point())
+	dist := geo.Distance(d.IntervalPtsCentroid, ct.Point())
 	if dist > d.DwellDistance {
 		return detectedTrip
 	} else if dwellExceeded {
@@ -359,13 +363,13 @@ func (d *TripDetector) DetectStopIntersection(ct *cattrack.CatTrack) (result Det
 				// to prevent short intervals from being strongly opinionated.
 				delta = math.Min(delta, 0.025)
 
-				d.segmentIntersectionGauge += delta
+				d.SegmentIntersectionGauge += delta
 				//break
 			}
 		}
 	}
 
-	return DetectedT(d.segmentIntersectionGauge * float64(detectedStop))
+	return DetectedT(d.SegmentIntersectionGauge * float64(detectedStop))
 }
 
 // DetectStopOverlaps is a method that identifies trip ends with track point segment overlaps.

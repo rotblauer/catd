@@ -65,7 +65,15 @@ func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatT
 			return ct
 		}, in)
 
+		// Block on sending stored results to respective channels,
+		// but permitting context interruption.
 		for result := range storeResults {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
 			switch t := result.(type) {
 			case error:
 				errCh <- t
