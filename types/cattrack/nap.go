@@ -3,6 +3,7 @@ package cattrack
 import (
 	"github.com/montanaflynn/stats"
 	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/geo"
 	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/orb/planar"
 	"github.com/rotblauer/catd/common"
@@ -25,7 +26,7 @@ func (cn *CatNap) IsValid() bool {
 }
 
 func NewCatNap(tracks []*CatTrack) *CatNap {
-	if len(tracks) == 0 {
+	if len(tracks) < 2 {
 		return nil
 	}
 
@@ -33,6 +34,7 @@ func NewCatNap(tracks []*CatTrack) *CatNap {
 
 	f.Properties["Name"] = tracks[0].Properties.MustString("Name")
 	f.Properties["UUID"] = tracks[0].Properties.MustString("UUID")
+	f.Properties["RawPointCount"] = len(tracks)
 
 	f.Properties["Time"] = map[string]any{
 		"Start": map[string]any{
@@ -74,8 +76,10 @@ func NewCatNap(tracks []*CatTrack) *CatNap {
 	installStats("Accuracy", accuracies, 0)
 	installStats("Elevation", elevations, 0)
 
-	centroid, area := planar.CentroidArea(multipoint)
+	area := geo.Area(multipoint.Bound())
 	f.Properties["Area"] = common.DecimalToFixed(area, 0)
+
+	centroid, _ := planar.CentroidArea(multipoint)
 	f.Geometry = centroid
 
 	return (*CatNap)(f)

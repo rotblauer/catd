@@ -14,16 +14,16 @@ import (
 func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
 	out := make(chan *cattrack.CatLap)
 
-	lb := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
+	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
 	appCat := app.Cat{CatID: catID}
 	if reader, err := appCat.NewCatReader(); err == nil {
 		if data, err := reader.ReadKV([]byte("lapstate")); err == nil && data != nil {
-			if err := json.Unmarshal(data, lb); err != nil {
+			if err := json.Unmarshal(data, ls); err != nil {
 				slog.Error("Failed to unmarshal lap state", "error", err)
 			} else {
-				slog.Info("Restored lap state")
+				slog.Info("Restored lap state", "len", len(ls.Tracks), "last", ls.Tracks[len(ls.Tracks)-1].MustTime())
 			}
 		}
 	}
@@ -38,7 +38,7 @@ func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.
 				slog.Error("Failed to create cat writer", "error", err)
 				return
 			}
-			data, err := json.Marshal(lb)
+			data, err := json.Marshal(ls)
 			if err != nil {
 				slog.Error("Failed to marshal lap state", "error", err)
 				return
@@ -51,7 +51,7 @@ func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.
 			}
 		}()
 
-		completed := lb.Stream(ctx, in)
+		completed := ls.Stream(ctx, in)
 		for complete := range completed {
 			out <- complete
 		}

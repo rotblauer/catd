@@ -23,7 +23,7 @@ func NapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.
 			if err := json.Unmarshal(data, ns); err != nil {
 				slog.Error("Failed to unmarshal nap state", "error", err)
 			} else {
-				slog.Info("Restored nap state")
+				slog.Info("Restored nap state", "len", len(ns.Tracks), "last", ns.Tracks[len(ns.Tracks)-1].MustTime())
 			}
 		}
 	}

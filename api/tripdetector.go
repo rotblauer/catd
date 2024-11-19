@@ -62,7 +62,7 @@ func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *ca
 		if last != nil {
 			tdLatest = last.MustTime()
 		}
-		slog.Info("Read trip detector state",
+		slog.Info("Restored trip-detector state",
 			"cat", catID, "last", tdLatest, "lap", td.Tripping)
 	}
 

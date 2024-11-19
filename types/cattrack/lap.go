@@ -97,9 +97,9 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		return out
 	}
 
-	installStats := func(key string, data []float64, precision int) {
+	mustGetStats := func(data []float64, precision int) map[string]float64 {
 		statsData := stats.Float64Data(data)
-		f.Properties[key] = map[string]float64{
+		return map[string]float64{
 			"Mean":   common.DecimalToFixed(statsMustFloat(statsData.Mean), precision),
 			"Median": common.DecimalToFixed(statsMustFloat(statsData.Median), precision),
 			"Min":    common.DecimalToFixed(statsMustFloat(statsData.Min), precision),
@@ -107,18 +107,18 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		}
 	}
 
-	installStats("Accuracy", accuracies, 0)
-	installStats("ReportedSpeed", reportedSpeeds, 2)
-	installStats("CalculatedSpeed", calculatedSpeeds, 2)
-
-	f.Properties["Distance"] = map[string]float64{
-		"Traversed": common.DecimalToFixed(distanceTraversed, 2),
-		"Absolute":  common.DecimalToFixed(geo.Distance(tracks[0].Point(), tracks[len(tracks)-1].Point()), 2),
+	f.Properties["Accuracy"] = mustGetStats(accuracies, 0)
+	f.Properties["Speed"] = map[string]any{
+		"Reported":   mustGetStats(reportedSpeeds, 2),
+		"Calculated": mustGetStats(calculatedSpeeds, 2),
 	}
-
+	f.Properties["Distance"] = map[string]float64{
+		"Traversed": math.Round(distanceTraversed),
+		"Absolute":  math.Round(geo.Distance(tracks[0].Point(), tracks[len(tracks)-1].Point())),
+	}
 	f.Properties["Elevation"] = map[string]float64{
-		"Gain": common.DecimalToFixed(elevationGain, 0),
-		"Loss": common.DecimalToFixed(elevationLoss, 0),
+		"Gain": math.Floor(elevationGain),
+		"Loss": math.Floor(elevationLoss),
 	}
 
 	return (*CatLap)(f)

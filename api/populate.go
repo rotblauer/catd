@@ -87,8 +87,6 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 		cleaned := CleanTracks(ctx, catID, tripdetectCh)
 		tripdetected := TripDetectTracks(ctx, catID, cleaned)
 
-		//handleTripDetected(ctx, catID, tripdetected)
-
 		// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
 
 		// Laps
@@ -99,59 +97,11 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 			ct.Geometry = simplifier.Simplify(ct.Geometry)
 			return ct
 		}, completedLaps)
-		go func() {
-			appCat := app.Cat{CatID: catID}
-			writer, err := appCat.NewCatWriter()
-			if err != nil {
-				slog.Error("Failed to create cat writer", "error", err)
-				return
-			}
-			defer writer.Close()
-
-			lapsWriter, err := writer.CustomWriter("laps.geojson.gz")
-			if err != nil {
-				slog.Error("Failed to create laps writer", "error", err)
-				return
-			}
-			defer lapsWriter.Close()
-
-			enc := json.NewEncoder(lapsWriter)
-
-			// Blocking.
-			stream.Sink(ctx, func(ct *cattrack.CatLap) {
-				if err := enc.Encode(ct); err != nil {
-					slog.Error("Failed to write lap", "error", err)
-				}
-			}, simplified)
-		}()
+		go sinkToCatJSONGZFile(ctx, catID, "laps.geojson.gz", simplified)
 
 		// Naps
 		completedNaps := NapTracks(ctx, catID, napTracks)
-		go func() {
-			appCat := app.Cat{CatID: catID}
-			writer, err := appCat.NewCatWriter()
-			if err != nil {
-				slog.Error("Failed to create cat writer", "error", err)
-				return
-			}
-			defer writer.Close()
-
-			lapsWriter, err := writer.CustomWriter("naps.geojson.gz")
-			if err != nil {
-				slog.Error("Failed to create naps writer", "error", err)
-				return
-			}
-			defer lapsWriter.Close()
-
-			enc := json.NewEncoder(lapsWriter)
-
-			// Blocking.
-			stream.Sink(ctx, func(ct *cattrack.CatNap) {
-				if err := enc.Encode(ct); err != nil {
-					slog.Error("Failed to write nap", "error", err)
-				}
-			}, completedNaps)
-		}()
+		go sinkToCatJSONGZFile(ctx, catID, "naps.geojson.gz", completedNaps)
 
 		// Block on tripdetect.
 		for detected := range tripdetected {
@@ -173,6 +123,32 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	slog.Warn("Blocking on pipelining")
 	pipelining.Wait()
 	return lastErr
+}
+
+func sinkToCatJSONGZFile[T any](ctx context.Context, catID conceptual.CatID, name string, in <-chan T) {
+	appCat := app.Cat{CatID: catID}
+	writer, err := appCat.NewCatWriter()
+	if err != nil {
+		slog.Error("Failed to create cat writer", "error", err)
+		return
+	}
+	defer writer.Close()
+
+	lapsWriter, err := writer.CustomWriter(name)
+	if err != nil {
+		slog.Error("Failed to create custom writer", "error", err)
+		return
+	}
+	defer lapsWriter.Close()
+
+	enc := json.NewEncoder(lapsWriter)
+
+	// Blocking.
+	stream.Sink(ctx, func(a T) {
+		if err := enc.Encode(a); err != nil {
+			slog.Error("Failed to write", "error", err)
+		}
+	}, in)
 }
 
 func handleTripDetected(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) {
