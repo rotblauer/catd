@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync"
 )
 
 const catDBName = "app.db"
@@ -26,6 +27,8 @@ type Cat struct {
 type CatWriter struct {
 	CatID conceptual.CatID
 	Flat  *flat.Flat
+	Cache *ttlcache.Cache[conceptual.CatID, *cattrack.CatTrack]
+	cmu   sync.Mutex
 }
 
 // NewCatWriter defines filepath and encoding for a cat.
@@ -38,6 +41,8 @@ func (c *Cat) NewCatWriter() (*CatWriter, error) {
 	return &CatWriter{
 		CatID: c.CatID,
 		Flat:  flatCat,
+		Cache: ttlcache.New[conceptual.CatID, *cattrack.CatTrack](
+			ttlcache.WithTTL[conceptual.CatID, *cattrack.CatTrack](params.CacheLastKnownTTL)),
 	}, nil
 }
 
@@ -45,7 +50,9 @@ func (w *CatWriter) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 	if err := json.NewEncoder(wr).Encode(ct); err != nil {
 		return err
 	}
-	cache.SetLastKnownTTL(w.CatID, ct)
+	w.cmu.Lock()
+	w.Cache.Set(w.CatID, ct, ttlcache.DefaultTTL)
+	w.cmu.Unlock()
 	return nil
 }
 
@@ -85,12 +92,13 @@ func (w *CatWriter) storeKV(key []byte, data []byte) error {
 }
 
 func (w *CatWriter) StoreLastTrack() error {
-	track := cache.LastKnownTTLCache.Get(w.CatID.String())
+	w.cmu.Lock()
+	track := w.Cache.Get(w.CatID)
+	defer w.cmu.Unlock()
 	if track == nil {
 		return fmt.Errorf("no last track (impossible if caller uses correctly)")
 	}
 	v := track.Value()
-	v.Properties = v.Properties.Clone()
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

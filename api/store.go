@@ -13,10 +13,7 @@ import (
 // Store stores incoming CatTracks for one cat to disk.
 func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
-	/*
-		defer close(storedCh)
-		defer close(errCh)
-	*/
+
 	go func() {
 		defer close(storedCh)
 		defer close(errCh)
@@ -59,7 +56,7 @@ func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatT
 				return err
 			}
 
-			slog.Log(context.Background(), -5, "Stored cat track", "track", ct.StringPretty())
+			slog.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
 			events.NewStoredTrackFeed.Send(ct)
 
 			return ct
