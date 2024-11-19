@@ -10,6 +10,7 @@ import (
 	"log/slog"
 )
 
+// Store stores incoming CatTracks for one cat to disk.
 func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
 	/*
@@ -30,7 +31,7 @@ func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatT
 			return
 		}
 		defer func() {
-			if err := writer.PersistLastTrack(); err != nil {
+			if err := writer.StoreLastTrack(); err != nil {
 				slog.Error("Failed to persist last track", "error", err)
 				errCh <- err
 			}

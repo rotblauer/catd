@@ -13,6 +13,10 @@ import (
 	"path/filepath"
 )
 
+const catDBName = "app.db"
+
+var catStateBucket = []byte("state")
+
 type Cat struct {
 	CatID conceptual.CatID
 }
@@ -61,15 +65,15 @@ func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
 	return wr, nil
 }
 
-func (w *CatWriter) PersistLastTrack() error {
+func (w *CatWriter) StoreLastTrack() error {
 	catPath := w.Flat.Path()
-	db, err := bbolt.Open(filepath.Join(catPath, "app.db"), 0600, nil)
+	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, nil)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 	return db.Update(func(tx *bbolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte("app"))
+		bucket, err := tx.CreateBucketIfNotExists(catStateBucket)
 		if err != nil {
 			return err
 		}
@@ -111,14 +115,14 @@ func (c *Cat) NewCatReader() (*CatReader, error) {
 
 func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
 	catPath := w.Flat.Path()
-	db, err := bbolt.Open(filepath.Join(catPath, "app.db"), 0600, &bbolt.Options{ReadOnly: true})
+	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, &bbolt.Options{ReadOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
 	track := &cattrack.CatTrack{}
 	err = db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("app"))
+		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
 			return fmt.Errorf("no app bucket")
 		}
