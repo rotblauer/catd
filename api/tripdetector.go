@@ -10,6 +10,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
+	"time"
 )
 
 func storeTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) error {
@@ -56,7 +57,13 @@ func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *ca
 	if err := readTripDetector(catID, td); err != nil {
 		slog.Warn("Failed to read trip detector (new cat?)", "error", err)
 	} else {
-		slog.Debug("Read trip detector", "cat", catID)
+		var tdLatest time.Time
+		last := td.LastPointN(0)
+		if last != nil {
+			tdLatest = last.MustTime()
+		}
+		slog.Info("Read trip detector state",
+			"cat", catID, "last", tdLatest, "lap", td.Tripping)
 	}
 
 	go func() {
@@ -67,7 +74,12 @@ func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *ca
 			if err := storeTripDetector(catID, td); err != nil {
 				slog.Error("Failed to store trip detector", "error", err)
 			} else {
-				slog.Debug("Stored trip detector", "cat", catID)
+				var tdLatest time.Time
+				last := td.LastPointN(0)
+				if last != nil {
+					tdLatest = last.MustTime()
+				}
+				slog.Debug("Stored trip detector state", "cat", catID, "last", tdLatest, "lap", td.Tripping)
 			}
 		}()
 
