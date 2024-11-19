@@ -9,6 +9,7 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
+	"time"
 )
 
 func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
@@ -23,7 +24,11 @@ func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.
 			if err := json.Unmarshal(data, ls); err != nil {
 				slog.Error("Failed to unmarshal lap state", "error", err)
 			} else {
-				slog.Info("Restored lap state", "len", len(ls.Tracks), "last", ls.Tracks[len(ls.Tracks)-1].MustTime())
+				var last time.Time
+				if len(ls.Tracks) > 0 {
+					last = ls.Tracks[len(ls.Tracks)-1].MustTime()
+				}
+				slog.Info("Restored lap state", "len", len(ls.Tracks), "last", last)
 			}
 		}
 	}

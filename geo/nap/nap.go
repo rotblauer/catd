@@ -36,8 +36,11 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 }
 
 func (s *State) Flush() {
-	if len(s.Tracks) >= 1 {
-		s.ch <- cattrack.NewCatNap(s.Tracks)
+	if len(s.Tracks) >= 2 {
+		nap := cattrack.NewCatNap(s.Tracks)
+		if nap != nil {
+			s.ch <- nap
+		}
 	}
 	s.Tracks = make([]*cattrack.CatTrack, 0)
 }

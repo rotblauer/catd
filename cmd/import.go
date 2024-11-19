@@ -172,6 +172,7 @@ Then, run this command in parallel for each actual cat.
 				}
 				lastCatID = ct.CatID()
 				hat = catHat(lastCatID)
+
 			}
 
 			select {

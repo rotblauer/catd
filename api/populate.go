@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
@@ -42,8 +43,9 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	}
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-		if catID != ct.CatID() {
-			slog.Warn("Invalid track, mismatched cat", "want", catID, "got", ct.CatID())
+		checkCatID := ct.CatID()
+		if catID != checkCatID {
+			slog.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", catID), "got", fmt.Sprintf("%q", checkCatID))
 			return false
 		}
 		if err := ct.Validate(); err != nil {
@@ -91,17 +93,24 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 
 		// Laps
 		completedLaps := LapTracks(ctx, catID, lapTracks)
-
+		longCompletedLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
+			duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+			return duration > 120
+		}, completedLaps)
 		simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
 		simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
 			ct.Geometry = simplifier.Simplify(ct.Geometry)
 			return ct
-		}, completedLaps)
+		}, longCompletedLaps)
 		go sinkToCatJSONGZFile(ctx, catID, "laps.geojson.gz", simplified)
 
 		// Naps
 		completedNaps := NapTracks(ctx, catID, napTracks)
-		go sinkToCatJSONGZFile(ctx, catID, "naps.geojson.gz", completedNaps)
+		longCompletedNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
+			duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+			return duration > 120
+		}, completedNaps)
+		go sinkToCatJSONGZFile(ctx, catID, "naps.geojson.gz", longCompletedNaps)
 
 		// Block on tripdetect.
 		for detected := range tripdetected {
