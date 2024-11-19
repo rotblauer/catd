@@ -70,7 +70,7 @@ Then, run this command in parallel for each actual cat.
 				defer populating.Done()
 
 				// TODO: Flag me.
-				err := api.PopulateCat(ctx, id, false, true, in)
+				err := api.PopulateCat(ctx, id, true, true, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
 				} else {
