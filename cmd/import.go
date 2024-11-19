@@ -163,6 +163,8 @@ Then, run this command in parallel for each actual cat.
 				if r, err := appCat.NewCatReader(); err == nil {
 					if last, err := r.ReadLastTrack(); err == nil {
 						lastTrack = last
+					} else {
+						slog.Warn("Failed to read last track", "error", err)
 					}
 				}
 				if hat != nil {

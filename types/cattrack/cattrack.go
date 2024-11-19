@@ -22,6 +22,9 @@ func (ct *CatTrack) MarshalJSON() ([]byte, error) {
 }
 
 func (ct *CatTrack) UnmarshalJSON(data []byte) error {
+	if ct == nil {
+		return fmt.Errorf("nil CatTrack")
+	}
 	return (*geojson.Feature)(ct).UnmarshalJSON(data)
 }
 

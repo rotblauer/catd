@@ -87,32 +87,32 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 
 		handleTripDetected(ctx, catID, tripdetected)
 
-		// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
-
-		// Laps
-		linestrings := LinestringsFromTracks(ctx, catID, lapTracks)
-		laps := SimplifyLinestrings(ctx, catID, linestrings)
-
-		/*
-			for lap := range laps {
-				// Only complete linestrings (complete trips/laps)
-				// are channeled here.
-				// Callers wanting the incomplete/partial/unfinished
-				// linestring for a cat can use
-				// catReader.
-			}
-		*/
-
-		// Naps
-		naps := ClusterPoints(ctx, catID, napTracks)
-
-		for detected := range tripdetected {
-			if detected.Properties.MustBool("IsTrip") {
-				lapTracks <- detected
-			} else {
-				napTracks <- detected
-			}
-		}
+		//// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
+		//
+		//// Laps
+		//linestrings := LinestringsFromTracks(ctx, catID, lapTracks)
+		//laps := SimplifyLinestrings(ctx, catID, linestrings)
+		//
+		///*
+		//	for lap := range laps {
+		//		// Only complete linestrings (complete trips/laps)
+		//		// are channeled here.
+		//		// Callers wanting the incomplete/partial/unfinished
+		//		// linestring for a cat can use
+		//		// catReader.
+		//	}
+		//*/
+		//
+		//// Naps
+		//naps := ClusterPoints(ctx, catID, napTracks)
+		//
+		//for detected := range tripdetected {
+		//	if detected.Properties.MustBool("IsTrip") {
+		//		lapTracks <- detected
+		//	} else {
+		//		napTracks <- detected
+		//	}
+		//}
 	}()
 	//if err := TripDetectTracks(ctx, catID, tripdetectCh); err != nil {
 	//	slog.Error("Failed to detect trips", "error", err)

@@ -11,6 +11,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"go.etcd.io/bbolt"
 	"io"
+	"log/slog"
 	"path/filepath"
 )
 
@@ -87,11 +88,17 @@ func (w *CatWriter) StoreLastTrack() error {
 	if track == nil {
 		return fmt.Errorf("no last track (impossible if caller uses correctly)")
 	}
-	b, err := track.Value().MarshalJSON()
+	b, err := json.Marshal(track.Value())
 	if err != nil {
 		return err
 	}
-	return w.storeKV([]byte("last"), b)
+	err = w.storeKV([]byte("last"), b)
+	if err != nil {
+		slog.Error("Failed to store last track", "error", err)
+	} else {
+		slog.Debug("Stored last track", "cat", w.CatID, "track", string(b))
+	}
+	return err
 }
 
 // StoreTracksAt stores tracks in a KV store.
@@ -110,6 +117,10 @@ func (w *CatWriter) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error
 		}
 	}
 	return w.storeKV(key, buf.Bytes())
+}
+
+func (w *CatWriter) WriteKV(key []byte, value []byte) error {
+	return w.storeKV(key, value)
 }
 
 func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
@@ -143,16 +154,26 @@ func (w *CatReader) readKV(key []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer db.Close()
-	var b []byte
+	buf := bytes.NewBuffer([]byte{})
 	err = db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
 			return fmt.Errorf("no app bucket")
 		}
-		b = bucket.Get(key)
-		return nil
+
+		// Gotcha! The value returned by Get is only valid in the scope of the transaction.
+		got := bucket.Get(key)
+		if got == nil {
+			return nil
+		}
+		_, err := buf.Write(got)
+		return err
 	})
-	return b, err
+	return buf.Bytes(), err
+}
+
+func (w *CatReader) ReadKV(key []byte) ([]byte, error) {
+	return w.readKV(key)
 }
 
 func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
@@ -160,8 +181,17 @@ func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
 	if err != nil {
 		return nil, err
 	}
+	if got == nil {
+		return nil, fmt.Errorf("no last track")
+	}
 	track := &cattrack.CatTrack{}
 	err = track.UnmarshalJSON(got)
+	if err != nil {
+		slog.Debug("Read last track", "error", err, "cat", w.CatID, "track", string(got))
+		err = fmt.Errorf("%w: %q", err, string(got))
+	} else {
+		slog.Debug("Read last track", "cat", w.CatID, "track", track.StringPretty())
+	}
 	return track, err
 }
 
