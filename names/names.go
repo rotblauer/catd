@@ -9,16 +9,17 @@ import (
 // AliasesToMatchers is a map of cat aliases to regular expressions, used to match cat names.
 // It is initialized in the params package.
 var AliasesToMatchers = map[string]string{
-	"rye": `(?i)(Rye.*|Kitty.*|jl)`,
-	"ia":  `(?i)(.*Papa.*|P2|Isaac.*|.*moto.*|iha|ubp52)`,
-	"jr":  `(?i)(Big.*Ma.*)`,
-	"kd":  `(?i)Kayleigh.*`,
-	"kk":  `(?i)(KK.*|kek)`,
-	"rj":  `(?i)Bob.*`,
-	"pr":  `(?i)(Pam.*|Rathbone.*)`,
-	"ric": `(?i)(Ric|.*A3_Pixel_XL.*|.*marlin-Pixel-222d.*)`,
-	"mat": `(?i)Twenty7.*`,
-	"jlc": `(?i)(.*Carlomag.*|JLC|jlc)`,
+	"rye":      `(?i)(^Rye.*|^Kitty.*|^jl$)`,
+	"ia":       `(?i)(.*Papa.*|^P2$|^Isaac.*|.*moto.*|^iha$|^ubp52$)`,
+	"jr":       `(?i)(^Big.*Ma.*)`,
+	"kd":       `(?i)^Kayleigh.*`,
+	"kk":       `(?i)(^KK.*|^kek$)`,
+	"rj":       `(?i)(^Bob.*)`,
+	"pr":       `(?i)(^Pam.*|^Rathbone.*)`,
+	"chishiki": `(?i)(^chishiki.*)`,
+	"mat":      `(?i)(^Twenty7.*)`,
+	"ric":      `(?i)(^Ric|.*A3_Pixel_XL.*|.*marlin-Pixel-222d.*)`,
+	"jlc":      `(?i)(.*Carlomag.*|^JLC$|^jlc$)`,
 }
 
 var MatchersToAliases = func() map[string]string {
