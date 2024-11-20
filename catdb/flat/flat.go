@@ -94,9 +94,6 @@ func (g *GZFile) Writer() *gzip.Writer {
 }
 
 func (g *GZFile) Close() error {
-	if err := g.gzw.Flush(); err != nil {
-		return err
-	}
 	if err := g.gzw.Close(); err != nil {
 		return err
 	}
