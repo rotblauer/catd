@@ -121,7 +121,12 @@ blocks on DB access.
 
 		ctx, ctxCanceler := context.WithCancel(context.Background())
 		interrupt := make(chan os.Signal)
-		signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM, syscall.SIGKILL)
+		signal.Notify(interrupt,
+			os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGQUIT,
+		)
+		defer func() {
+			slog.Info("Import done")
+		}()
 
 		populating := sync.WaitGroup{}
 
