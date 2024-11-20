@@ -85,7 +85,7 @@ Flags:
 			}, stream.Slice(ctx, w.lines))
 
 			// TODO: Flag me.
-			err := cat.Populate(ctx, optSortTrackBatches, false, pipe)
+			err := cat.Populate(ctx, optSortTrackBatches, pipe)
 			if err != nil {
 				slog.Error("Failed to populate CatTracks", "error", err)
 			} else {

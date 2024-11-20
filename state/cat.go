@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 	"go.etcd.io/bbolt"
 	"io"
-	"log/slog"
 	"path/filepath"
 	"sync"
 )
@@ -30,13 +28,8 @@ type CatState struct {
 	DB    *bbolt.DB
 	Flat  *flat.Flat
 
-	// FIXME: A TTL cache is definitely the wrong choice.
-	// The TTL cache might be a server-scope cache, or otherwise
-	// a global/API-facing-kind of cache. But a week-long TTL cache
-	// on a state accessor instance?
-	TTLCache *ttlcache.Cache[conceptual.CatID, *cattrack.CatTrack]
-	Waiting  sync.WaitGroup
-	rOnly    bool
+	Waiting sync.WaitGroup
+	rOnly   bool
 }
 
 // NewCatState defines data sources, caches, and encoding for a cat.
@@ -62,8 +55,6 @@ func (c *Cat) NewCatState(readOnly bool) (*CatState, error) {
 		CatID: c.CatID,
 		DB:    db,
 		Flat:  flatCat,
-		TTLCache: ttlcache.New[conceptual.CatID, *cattrack.CatTrack](
-			ttlcache.WithTTL[conceptual.CatID, *cattrack.CatTrack](params.CacheLastKnownTTL)),
 	}
 	c.State = s
 	return c.State, nil
@@ -83,45 +74,6 @@ func (s *CatState) Close() error {
 func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 	if err := json.NewEncoder(wr).Encode(ct); err != nil {
 		return err
-	}
-
-	/*
-			fatal error: concurrent map read and map write
-
-			goroutine 1581 [running]:
-			github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc099f2c500?)
-			        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:71 +0x70
-			github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
-			        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:86
-			github.com/rotblauer/catd/state.(*CatState).WriteTrack(0xc09a286400, {0xad6d80?, 0xc0907d6c60?}, 0xc09e0f94f0)
-			        /home/ia/dev/rotblauer/catd/state/cat.go:89 +0xdb
-			github.com/rotblauer/catd/api.(*Cat).Store.func1.3(0xc09e0f94f0)
-			        /home/ia/dev/rotblauer/catd/api/store.go:50 +0x7e
-			github.com/rotblauer/catd/stream.Transform[...].func1()
-			        /home/ia/dev/rotblauer/catd/stream/stream.go:77 +0xe2
-			created by github.com/rotblauer/catd/stream.Transform[...] in goroutine 1706
-			        /home/ia/dev/rotblauer/catd/stream/stream.go:71 +0xcb
-
-		// Cache as first or most recent track.
-		if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
-			s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
-		}
-
-		When the cache looks up the LAST track, we now have the pointer to that track.
-		So we're no longer handling tracks serially, and there are no guarantees that
-		that last track isn't going to mutating in some "later" pipe function.
-	*/
-
-	// Cache as first or most recent track.
-	var last *cattrack.CatTrack
-	res := s.TTLCache.Get("last")
-	if res != nil {
-		v := res.Value()
-		last = &cattrack.CatTrack{}
-		*last = *v
-	}
-	if res == nil || (last != nil && last.MustTime().Before(ct.MustTime())) {
-		s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
 	}
 	return nil
 }
@@ -158,25 +110,6 @@ func (s *CatState) storeKV(key []byte, data []byte) error {
 		}
 		return bucket.Put(key, data)
 	})
-}
-
-func (s *CatState) StoreLastTrack() error {
-	track := s.TTLCache.Get("last")
-	if track == nil {
-		return fmt.Errorf("no last track (impossible if caller uses correctly)")
-	}
-	v := track.Value()
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	err = s.storeKV([]byte("last"), b)
-	if err != nil {
-		slog.Error("Failed to store last track", "error", err)
-	} else {
-		slog.Debug("Stored last track", "cat", s.CatID, "track", string(b))
-	}
-	return err
 }
 
 // StoreTracksAt stores tracks in a KV store.
@@ -228,25 +161,6 @@ func (w *CatState) readKV(key []byte) ([]byte, error) {
 
 func (w *CatState) ReadKV(key []byte) ([]byte, error) {
 	return w.readKV(key)
-}
-
-func (w *CatState) ReadLastTrack() (*cattrack.CatTrack, error) {
-	got, err := w.readKV([]byte("last"))
-	if err != nil {
-		return nil, err
-	}
-	if got == nil {
-		return nil, fmt.Errorf("no last track")
-	}
-	track := &cattrack.CatTrack{}
-	err = track.UnmarshalJSON(got)
-	if err != nil {
-		slog.Debug("Read last track", "error", err, "cat", w.CatID, "track", string(got))
-		err = fmt.Errorf("%w: %q", err, string(got))
-	} else {
-		slog.Debug("Read last track", "cat", w.CatID, "track", track.StringPretty())
-	}
-	return track, err
 }
 
 func (w *CatState) ReadTracksAt(key []byte) ([]*cattrack.CatTrack, error) {

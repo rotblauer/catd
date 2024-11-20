@@ -13,7 +13,7 @@ import (
 )
 
 // Populate persists incoming CatTracks for one cat.
-func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, in <-chan *cattrack.CatTrack) (lastErr error) {
+func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTrack) (lastErr error) {
 
 	// Blocking.
 	c.logger.Info("Populate blocking on lock state")
@@ -25,9 +25,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 	c.logger.Info("Populate has the lock on state conn")
 	started := time.Now()
 	defer func() {
-		if err := c.State.StoreLastTrack(); err != nil {
-			c.logger.Error("Failed to persist last track", "error", err)
-		}
 		if err := c.State.Close(); err != nil {
 			c.logger.Error("Failed to close cat state", "error", err)
 		} else {
@@ -35,27 +32,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 		}
 		c.logger.Info("Populate done", "elapsed", time.Since(started).Round(time.Millisecond))
 	}()
-
-	// enforceChronology requires us to reference persisted state
-	// before we begin reading input in order to know where we left off.
-	// We'll reassign the source channel if necessary.
-	// This allows the cat populator to
-	// 1. enforce chronology (which is kind of interesting; no edits!)
-	// 2. import gracefully
-	source := in
-	if enforceChronology {
-		last, err := c.State.ReadLastTrack()
-		if err == nil {
-			lastTrackTime, _ := last.Time()
-			source = stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-				t, err := ct.Time()
-				if err != nil {
-					return false
-				}
-				return t.After(lastTrackTime)
-			}, in)
-		}
-	}
 
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
 		checkCatID := ct.CatID()
@@ -68,7 +44,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 			return false
 		}
 		return true
-	}, source)
+	}, in)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
 

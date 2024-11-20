@@ -69,11 +69,11 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT better.
 	catID := features[0].CatID()
-	cat := &api.Cat{CatID: catID}
+	cat := api.NewCat(catID)
 
 	ctx := context.Background()
 	ch := stream.Slice(ctx, features)
-	err = cat.Populate(ctx, false, false, ch)
+	err = cat.Populate(ctx, true, ch)
 	if err != nil {
 		slog.Warn("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)
