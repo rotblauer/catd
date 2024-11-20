@@ -243,9 +243,9 @@ blocks on DB access.
 		tlogger.done()
 
 		if err := importStoreReadN(readN); err != nil {
-			slog.Error("Failed to store import's last track", "error", err)
+			slog.Error("Import command failed to restore last imported track", "error", err)
 		} else {
-			slog.Info("Stored import's last track")
+			slog.Info("Import command stored last track")
 		}
 
 		// Provide a way to break of out of deadlocks.

@@ -22,9 +22,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 		return
 	}
 	defer func() {
-		//if err := c.State.StoreLastTrack(); err != nil {
-		//	slog.Error("Failed to persist last track", "error", err)
-		//}
+		if err := c.State.StoreLastTrack(); err != nil {
+			slog.Error("Failed to persist last track", "error", err)
+		}
 		if err := c.State.Close(); err != nil {
 			slog.Error("Failed to close cat state", "error", err)
 		} else {
