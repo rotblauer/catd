@@ -9,7 +9,6 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 )
 
 // Populate persists incoming CatTracks for one cat.
@@ -18,17 +17,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 	// Blocking.
 	_, err := c.WithState(false)
 	if err != nil {
-		slog.Error("Failed to create cat state", "error", err)
+		c.logger.Error("Failed to create cat state", "error", err)
 		return
 	}
 	defer func() {
 		if err := c.State.StoreLastTrack(); err != nil {
-			slog.Error("Failed to persist last track", "error", err)
+			c.logger.Error("Failed to persist last track", "error", err)
 		}
 		if err := c.State.Close(); err != nil {
-			slog.Error("Failed to close cat state", "error", err)
+			c.logger.Error("Failed to close cat state", "error", err)
 		} else {
-			slog.Info("Closed cat state", "cat", c.CatID)
+			c.logger.Info("Closed cat state")
 		}
 	}()
 
@@ -56,11 +55,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
 		checkCatID := ct.CatID()
 		if c.CatID != checkCatID {
-			slog.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
+			c.logger.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
 			return false
 		}
 		if err := ct.Validate(); err != nil {
-			slog.Warn("Invalid track", "error", err)
+			c.logger.Warn("Invalid track", "error", err)
 			return false
 		}
 		return true
@@ -109,6 +108,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 			ct.Geometry = simplifier.Simplify(ct.Geometry)
 			return ct
 		}, longCompletedLaps)
+
+		c.State.Waiting.Add(1)
 		go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", simplified)
 
 		// Naps
@@ -117,6 +118,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 			duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
 			return duration > 120
 		}, completedNaps)
+
+		c.State.Waiting.Add(1)
 		go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", longCompletedNaps)
 
 		// Block on tripdetect.
@@ -130,42 +133,48 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 	}()
 
 	// Blocking on store.
-	slog.Warn("Blocking on store gz", "cat", c.CatID)
+	c.logger.Warn("Blocking on store gz")
 	stream.Sink(ctx, func(e error) {
 		lastErr = e
-		slog.Error("Failed to populate CatTrack", "error", lastErr)
+		c.logger.Error("Failed to populate CatTrack", "error", lastErr)
 	}, storeErrs)
 
-	slog.Warn("Blocking on cat state", "cat", c.CatID)
+	c.logger.Info("Blocking on cat pipelines")
 	c.State.Waiting.Wait()
 	return lastErr
 }
 
-func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan T) {
+func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
 	if c.State == nil {
 		_, err := c.WithState(false)
 		if err != nil {
-			slog.Error("Failed to create cat state", "error", err)
+			c.logger.Error("Failed to create cat state", "error", err)
 			return
 		}
 	}
-
-	c.State.Waiting.Add(1)
+	defer c.logger.Info("Sunk stream to gz file", "name", name)
 	defer c.State.Waiting.Done()
 
-	lapsWriter, err := c.State.CustomGZWriter(name)
+	customWriter, err := c.State.CustomGZWriter(name)
 	if err != nil {
-		slog.Error("Failed to create custom writer", "error", err)
+		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
-	defer lapsWriter.Close()
-
-	enc := json.NewEncoder(lapsWriter)
+	defer func() {
+		if err := customWriter.Close(); err != nil {
+			c.logger.Error("Failed to close writer", "error", err)
+		}
+	}()
 
 	// Blocking.
-	stream.Sink(ctx, func(a T) {
+	stream.Sink(ctx, func(a *T) {
+		if a == nil {
+			c.logger.Warn("Refusing to encode nil to gzip file", "file", name)
+			return
+		}
+		enc := json.NewEncoder(customWriter)
 		if err := enc.Encode(a); err != nil {
-			slog.Error("Failed to write", "error", err)
+			c.logger.Error("Failed to write", "error", err)
 		}
 	}, in)
 }

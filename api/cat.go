@@ -3,6 +3,7 @@ package api
 import (
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/state"
+	"log/slog"
 )
 
 // Cat is the API representation of a cat.
@@ -18,6 +19,15 @@ type Cat struct {
 	// An API function might use another API function,
 	// and they might want to share a state conn.
 	State *state.CatState
+
+	logger *slog.Logger
+}
+
+func NewCat(catID conceptual.CatID) *Cat {
+	return &Cat{
+		CatID:  catID,
+		logger: slog.With("cat", catID),
+	}
 }
 
 // WithState returns a CatState for the Cat.

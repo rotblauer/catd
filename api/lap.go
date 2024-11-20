@@ -6,7 +6,6 @@ import (
 	"github.com/rotblauer/catd/geo/lap"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 )
 
 func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
@@ -15,7 +14,7 @@ func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	if c.State == nil {
 		_, err := c.WithState(false)
 		if err != nil {
-			slog.Error("Failed to create cat state", "error", err)
+			c.logger.Error("Failed to create cat state", "error", err)
 			return nil
 		}
 	}
@@ -26,13 +25,13 @@ func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	// Attempt to restore lap-builder state.
 	if data, err := c.State.ReadKV([]byte("lapstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ls); err != nil {
-			slog.Error("Failed to unmarshal lap state", "error", err)
+			c.logger.Error("Failed to unmarshal lap state", "error", err)
 		} else {
 			if len(ls.Tracks) > 0 {
 				last := ls.Tracks[len(ls.Tracks)-1].MustTime()
-				slog.Info("Restored lap state", "cat", c.CatID, "len", len(ls.Tracks), "last", last)
+				c.logger.Info("Restored lap state", "len", len(ls.Tracks), "last", last)
 			} else {
-				slog.Info("Restored lap state", "cat", c.CatID, "len", len(ls.Tracks))
+				c.logger.Info("Restored lap state", "len", len(ls.Tracks))
 			}
 		}
 	}
@@ -45,11 +44,11 @@ func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		defer func() {
 			data, err := json.Marshal(ls)
 			if err != nil {
-				slog.Error("Failed to marshal lap state", "error", err)
+				c.logger.Error("Failed to marshal lap state", "error", err)
 				return
 			}
 			if err := c.State.WriteKV([]byte("lapstate"), data); err != nil {
-				slog.Error("Failed to write lap state", "error", err)
+				c.logger.Error("Failed to write lap state", "error", err)
 			}
 		}()
 

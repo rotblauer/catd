@@ -7,7 +7,6 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 	"time"
 )
 
@@ -42,7 +41,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 	if c.State == nil {
 		_, err := c.WithState(false)
 		if err != nil {
-			slog.Error("Failed to create cat state", "error", err)
+			c.logger.Error("Failed to create cat state", "error", err)
 			return nil
 		}
 	}
@@ -52,15 +51,15 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 
 	// If possible, read persisted cat tripdetector-state.
 	if err := c.readTripDetector(td); err != nil {
-		slog.Warn("Failed to read trip detector (new cat?)", "cat", c.CatID, "error", err)
+		c.logger.Warn("Failed to read trip detector (new cat?)", "error", err)
 	} else {
 		last := td.LastPointN(0)
 		if last != nil {
 			tdLatest := last.MustTime()
-			slog.Info("Restored trip-detector state",
-				"cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
+			c.logger.Info("Restored trip-detector state",
+				"last", tdLatest, "lap", td.Tripping)
 		} else {
-			slog.Info("Restored empty trip-detector state", "cat", c.CatID, "lap", td.Tripping)
+			c.logger.Info("Restored empty trip-detector state", "lap", td.Tripping)
 		}
 	}
 
@@ -69,14 +68,14 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 		// Persist the trip detector state on stream completion.
 		defer func() {
 			if err := c.storeTripDetector(td); err != nil {
-				slog.Error("Failed to store trip detector", "error", err)
+				c.logger.Error("Failed to store trip detector", "error", err)
 			} else {
 				var tdLatest time.Time
 				last := td.LastPointN(0)
 				if last != nil {
 					tdLatest = last.MustTime()
 				}
-				slog.Debug("Stored trip detector state", "cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
+				c.logger.Debug("Stored trip detector state", "last", tdLatest, "lap", td.Tripping)
 			}
 			c.State.Waiting.Done()
 			defer close(out)
@@ -91,9 +90,9 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 				return reason != "init" && reason != "reset"
 			},
 			stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
-				slog.Debug("Detecting trips", "track", ct.StringPretty())
+				c.logger.Debug("Detecting trips", "track", ct.StringPretty())
 				if err := td.Add(ct); err != nil {
-					slog.Error("Failed to add track to trip detector", "error", err)
+					c.logger.Error("Failed to add track to trip detector", "error", err)
 					return nil
 				}
 

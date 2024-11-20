@@ -10,16 +10,17 @@ import (
 
 // Store stores incoming CatTracks for one cat to disk.
 func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
+
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
 
 	if c.State == nil {
 		_, err := c.WithState(false)
 		if err != nil {
-			slog.Error("Failed to create cat state", "error", err)
+			c.logger.Error("Failed to create cat state", "error", err)
 			return
 		}
 	}
-	slog.Info("Storing cat tracks gz", "cat", c.CatID)
+	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 	c.State.Waiting.Add(1)
 
 	go func() {
@@ -29,18 +30,18 @@ func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <
 
 		storedN := int64(0)
 		defer func() {
-			slog.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
+			c.logger.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
 		}()
 
 		wr, err := c.State.TrackGZWriter()
 		if err != nil {
-			slog.Error("Failed to create track writer", "error", err)
+			c.logger.Error("Failed to create track writer", "error", err)
 			errCh <- err
 			return
 		}
 		defer func() {
 			if err := wr.Close(); err != nil {
-				slog.Error("Failed to close track writer", "error", err)
+				c.logger.Error("Failed to close track writer", "error", err)
 				errCh <- err
 			}
 		}()
@@ -50,7 +51,7 @@ func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <
 				return err
 			}
 
-			slog.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
+			c.logger.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
 			events.NewStoredTrackFeed.Send(ct)
 			storedN++
 

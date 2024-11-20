@@ -82,8 +82,8 @@ blocks on DB access.
 				return
 			}
 
-			cat := &api.Cat{CatID: conceptual.CatID(w.name)}
-			slog.Info("Populating", "cat", cat.CatID, "worker", workerI, "lines", len(w.lines))
+			cat := api.NewCat(conceptual.CatID(w.name))
+			slog.Info("Populating", "worker", workerI, "lines", len(w.lines))
 
 			pipe := stream.Transform(ctx, func(data []byte) *cattrack.CatTrack {
 				ct := &cattrack.CatTrack{}

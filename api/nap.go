@@ -6,7 +6,6 @@ import (
 	"github.com/rotblauer/catd/geo/nap"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 )
 
 func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
@@ -15,7 +14,7 @@ func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	if c.State == nil {
 		_, err := c.WithState(false)
 		if err != nil {
-			slog.Error("Failed to create cat state", "error", err)
+			c.logger.Error("Failed to create cat state", "error", err)
 			return nil
 		}
 	}
@@ -27,13 +26,13 @@ func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 
 	if data, err := c.State.ReadKV([]byte("napstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ns); err != nil {
-			slog.Error("Failed to unmarshal nap state", "error", err)
+			c.logger.Error("Failed to unmarshal nap state", "error", err)
 		} else {
 			if len(ns.Tracks) > 0 {
 				last := ns.Tracks[len(ns.Tracks)-1].MustTime()
-				slog.Info("Restored nap state", "cat", c.CatID, "len", len(ns.Tracks), "last", last)
+				c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", last)
 			} else {
-				slog.Info("Restored nap state", "cat", c.CatID, "len", len(ns.Tracks))
+				c.logger.Info("Restored nap state", "len", len(ns.Tracks))
 			}
 		}
 	}
@@ -46,11 +45,11 @@ func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		defer func() {
 			data, err := json.Marshal(ns)
 			if err != nil {
-				slog.Error("Failed to marshal nap state", "error", err)
+				c.logger.Error("Failed to marshal nap state", "error", err)
 				return
 			}
 			if err := c.State.WriteKV([]byte("napstate"), data); err != nil {
-				slog.Error("Failed to write nap state", "error", err)
+				c.logger.Error("Failed to write nap state", "error", err)
 			}
 		}()
 
