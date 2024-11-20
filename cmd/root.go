@@ -17,7 +17,6 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/rotblauer/catd/node"
 	"github.com/rotblauer/catd/params"
 	"github.com/spf13/cobra"
 	"log/slog"
@@ -46,20 +45,7 @@ var rootCmd = &cobra.Command{
 	Long:  `Meow`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	Run: func(cmd *cobra.Command, args []string) {
-		setDefaultSlog(cmd, args)
-
-		port, _ := cmd.Flags().GetInt("http.port")
-		node.StartWebserver("localhost", port)
-		/*
-		   node.StartWebserver()
-		   node.StartIPC()
-
-		   flat.Root("~/tdata")
-
-		*/
-
-	},
+	// Run: func(cmd *cobra.Command, args []string) {},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -79,7 +65,6 @@ func init() {
 	// will be global for your application.
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
-	rootCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
 	rootCmd.PersistentFlags().StringVar(&params.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
 	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level -5,-4..8 (golang/slog) https://pkg.go.dev/log/slog#Level")
 
