@@ -2,43 +2,35 @@ package api
 
 import (
 	"context"
-	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
-	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 )
 
 // Store stores incoming CatTracks for one cat to disk.
-func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
+func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
+
+	if c.State == nil {
+		_, err := c.WithState(false)
+		if err != nil {
+			slog.Error("Failed to create cat state", "error", err)
+			return
+		}
+	}
+	slog.Info("Storing cat tracks gz", "cat", c.CatID)
+	c.State.Waiting.Add(1)
 
 	go func() {
 		defer close(storedCh)
 		defer close(errCh)
+		defer c.State.Waiting.Done()
 
-		// Declare our cat-writer and intend to close it on completion.
-		// Holding the writer in this closure allows us to use the writer
-		// as a batching writer, only opening and closing the target writers once.
-		appCat := state.Cat{CatID: catID}
-		writer, err := appCat.NewCatWriter()
-		if err != nil {
-			errCh <- err
-			return
-		}
-		defer func() {
-			if err := writer.StoreLastTrack(); err != nil {
-				slog.Error("Failed to persist last track", "error", err)
-				errCh <- err
-			}
-			if err := writer.Close(); err != nil {
-				slog.Error("Failed to close track writer", "error", err)
-				errCh <- err
-			}
-		}()
+		storedN := int64(0)
+		defer slog.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
 
-		wr, err := writer.TrackWriter()
+		wr, err := c.State.TrackGZWriter()
 		if err != nil {
 			slog.Error("Failed to create track writer", "error", err)
 			errCh <- err
@@ -52,12 +44,13 @@ func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatT
 		}()
 
 		storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-			if err := writer.WriteTrack(wr, ct); err != nil {
+			if err := c.State.WriteTrack(wr, ct); err != nil {
 				return err
 			}
 
 			slog.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
 			events.NewStoredTrackFeed.Send(ct)
+			storedN++
 
 			return ct
 		}, in)

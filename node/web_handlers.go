@@ -16,8 +16,8 @@ import (
 
 func handleLastTrack(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
-
-	result, err := api.LastKnown(conceptual.CatID(catID))
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	result, err := cat.LastKnown()
 	if err != nil {
 		slog.Warn("Failed to get last known", "error", err)
 		http.Error(w, "Failed to get last known", http.StatusInternalServerError)
@@ -68,11 +68,12 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO: Assert/ensure WHICH CAT better.
-	cat := features[0].CatID()
+	catID := features[0].CatID()
+	cat := &api.Cat{CatID: catID}
 
 	ctx := context.Background()
 	ch := stream.Slice(ctx, features)
-	err = api.PopulateCat(ctx, cat, false, false, ch)
+	err = cat.Populate(ctx, false, false, ch)
 	if err != nil {
 		slog.Warn("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)

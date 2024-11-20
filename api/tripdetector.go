@@ -3,39 +3,27 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"time"
 )
 
-func storeTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) error {
-	appCat := state.Cat{CatID: catID}
-	wr, err := appCat.NewCatWriter()
-	if err != nil {
-		return err
-	}
+func (c *Cat) storeTripDetector(td *tripdetector.TripDetector) error {
 	b, err := json.Marshal(td)
 	if err != nil {
 		return err
 	}
-	if err := wr.WriteKV([]byte("tripdetector"), b); err != nil {
+	if err := c.State.WriteKV([]byte("tripdetector"), b); err != nil {
 		return err
 	}
-	return wr.Close()
+	return nil
 }
 
-func readTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) error {
-	appCat := state.Cat{CatID: catID}
-	cr, err := appCat.NewCatReader()
-	if err != nil {
-		return err
-	}
-	read, err := cr.ReadKV([]byte("tripdetector"))
+func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
+	read, err := c.State.ReadKV([]byte("tripdetector"))
 	if err != nil {
 		return err
 	}
@@ -48,13 +36,22 @@ func readTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) err
 }
 
 // TripDetectTracks detects trips in incoming CatTracks.
-func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
+func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
+
+	if c.State == nil {
+		_, err := c.WithState(false)
+		if err != nil {
+			slog.Error("Failed to create cat state", "error", err)
+			return nil
+		}
+	}
+	c.State.Waiting.Add(1)
 
 	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
 
 	// If possible, read persisted cat tripdetector-state.
-	if err := readTripDetector(catID, td); err != nil {
+	if err := c.readTripDetector(td); err != nil {
 		slog.Warn("Failed to read trip detector (new cat?)", "error", err)
 	} else {
 		var tdLatest time.Time
@@ -63,15 +60,17 @@ func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *ca
 			tdLatest = last.MustTime()
 		}
 		slog.Info("Restored trip-detector state",
-			"cat", catID, "last", tdLatest, "lap", td.Tripping)
+			"cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
 	}
 
 	go func() {
 		defer close(out)
 
+		defer c.State.Waiting.Done()
+
 		// Persist the trip detector state on stream completion.
 		defer func() {
-			if err := storeTripDetector(catID, td); err != nil {
+			if err := c.storeTripDetector(td); err != nil {
 				slog.Error("Failed to store trip detector", "error", err)
 			} else {
 				var tdLatest time.Time
@@ -79,7 +78,7 @@ func TripDetectTracks(ctx context.Context, catID conceptual.CatID, in <-chan *ca
 				if last != nil {
 					tdLatest = last.MustTime()
 				}
-				slog.Debug("Stored trip detector state", "cat", catID, "last", tdLatest, "lap", td.Tripping)
+				slog.Debug("Stored trip detector state", "cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
 			}
 		}()
 

@@ -22,48 +22,78 @@ var catStateBucket = []byte("state")
 
 type Cat struct {
 	CatID conceptual.CatID
+	State *CatState
 }
 
-type CatWriter struct {
+type CatState struct {
 	CatID conceptual.CatID
 	DB    *bbolt.DB
 	Flat  *flat.Flat
-	Cache *ttlcache.Cache[conceptual.CatID, *cattrack.CatTrack]
-	cmu   sync.Mutex
+
+	// FIXME: A TTL cache is definitely the wrong choice.
+	// The TTL cache might be a server-scope cache, or otherwise
+	// a global/API-facing-kind of cache. But a week-long TTL cache
+	// on a state accessor instance?
+	TTLCache *ttlcache.Cache[conceptual.CatID, *cattrack.CatTrack]
+	Waiting  sync.WaitGroup
+	rOnly    bool
 }
 
-// NewCatWriter defines filepath and encoding for a cat.
-// It should be non-contentious.
-func (c *Cat) NewCatWriter() (*CatWriter, error) {
+// NewCatState defines data sources, caches, and encoding for a cat.
+// It should be non-contentious. It must be blocking; it should not permit
+// competing writes or reads to cat state. It must be the one true canonical cat.
+func (c *Cat) NewCatState(readOnly bool) (*CatState, error) {
 	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
 	if err := flatCat.Ensure(); err != nil {
 		return nil, err
 	}
-	db, err := bbolt.Open(filepath.Join(flatCat.Path(), catDBName), 0600, nil)
+
+	// Opening a writable DB conn will block all other cat writers and readers
+	// with essentially a file lock/flock.
+	db, err := bbolt.Open(filepath.Join(flatCat.Path(), catDBName),
+		0600, &bbolt.Options{
+			ReadOnly: readOnly,
+		})
 	if err != nil {
 		return nil, err
 	}
-	return &CatWriter{
+
+	s := &CatState{
 		CatID: c.CatID,
 		DB:    db,
 		Flat:  flatCat,
-		Cache: ttlcache.New[conceptual.CatID, *cattrack.CatTrack](
+		TTLCache: ttlcache.New[conceptual.CatID, *cattrack.CatTrack](
 			ttlcache.WithTTL[conceptual.CatID, *cattrack.CatTrack](params.CacheLastKnownTTL)),
-	}, nil
+	}
+	c.State = s
+	return c.State, nil
 }
 
-func (w *CatWriter) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
-	if err := json.NewEncoder(wr).Encode(ct); err != nil {
+func (s *CatState) Wait() {
+	s.Waiting.Wait()
+}
+
+func (s *CatState) Close() error {
+	if err := s.DB.Close(); err != nil {
 		return err
 	}
-	w.cmu.Lock()
-	w.Cache.Set("last", ct, ttlcache.DefaultTTL)
-	w.cmu.Unlock()
 	return nil
 }
 
-func (w *CatWriter) TrackWriter() (io.WriteCloser, error) {
-	gzf, err := w.Flat.TracksGZ()
+func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
+	if err := json.NewEncoder(wr).Encode(ct); err != nil {
+		return err
+	}
+
+	// Cache as first or most recent track.
+	if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
+		s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
+	}
+	return nil
+}
+
+func (s *CatState) TrackGZWriter() (io.WriteCloser, error) {
+	gzf, err := s.Flat.TracksGZ()
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +101,8 @@ func (w *CatWriter) TrackWriter() (io.WriteCloser, error) {
 
 }
 
-func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
-	f, err := w.Flat.NamedGZ(target)
+func (s *CatState) CustomGZWriter(target string) (io.WriteCloser, error) {
+	f, err := s.Flat.NamedGZ(target)
 	if err != nil {
 		return nil, err
 	}
@@ -80,15 +110,14 @@ func (w *CatWriter) CustomWriter(target string) (io.WriteCloser, error) {
 	return wr, nil
 }
 
-func (w *CatWriter) storeKV(key []byte, data []byte) error {
-	catPath := w.Flat.Path()
-	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, nil)
-	if err != nil {
-		return err
+func (s *CatState) storeKV(key []byte, data []byte) error {
+	if key == nil {
+		return fmt.Errorf("storeKV: nil key")
 	}
-	defer db.Close()
-	return db.Update(func(tx *bbolt.Tx) error {
-		data := data
+	if data == nil {
+		return fmt.Errorf("storeKV: nil data")
+	}
+	return s.DB.Update(func(tx *bbolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(catStateBucket)
 		if err != nil {
 			return err
@@ -97,10 +126,8 @@ func (w *CatWriter) storeKV(key []byte, data []byte) error {
 	})
 }
 
-func (w *CatWriter) StoreLastTrack() error {
-	w.cmu.Lock()
-	track := w.Cache.Get("last")
-	defer w.cmu.Unlock()
+func (s *CatState) StoreLastTrack() error {
+	track := s.TTLCache.Get("last")
 	if track == nil {
 		return fmt.Errorf("no last track (impossible if caller uses correctly)")
 	}
@@ -109,12 +136,11 @@ func (w *CatWriter) StoreLastTrack() error {
 	if err != nil {
 		return err
 	}
-	buf := bytes.NewBuffer(b)
-	err = w.storeKV([]byte("last"), buf.Bytes())
+	err = s.storeKV([]byte("last"), b)
 	if err != nil {
 		slog.Error("Failed to store last track", "error", err)
 	} else {
-		slog.Debug("Stored last track", "cat", w.CatID, "track", string(b))
+		slog.Debug("Stored last track", "cat", s.CatID, "track", string(b))
 	}
 	return err
 }
@@ -126,7 +152,7 @@ func (w *CatWriter) StoreLastTrack() error {
 // For this reason, it may be prudent to limit the number of tracks stored (and read!) this way,
 // and/or to limit the use of it.
 // However, tracks are encoded in newline-delimited JSON to allow for streaming, someday, maybe.
-func (w *CatWriter) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error {
+func (s *CatState) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error {
 	buf := bytes.NewBuffer([]byte{})
 	enc := json.NewEncoder(buf)
 	for _, track := range tracks {
@@ -134,48 +160,22 @@ func (w *CatWriter) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error
 			return err
 		}
 	}
-	return w.storeKV(key, buf.Bytes())
+	return s.storeKV(key, buf.Bytes())
 }
 
-func (w *CatWriter) WriteKV(key []byte, value []byte) error {
-	return w.storeKV(key, value)
+func (s *CatState) WriteKV(key []byte, value []byte) error {
+	return s.storeKV(key, value)
 }
 
 // WriteSnap is not implemented.
 // TODO: Implement WriteSnap.
-func (w *CatWriter) WriteSnap(ct *cattrack.CatTrack) error {
+func (s *CatState) WriteSnap(ct *cattrack.CatTrack) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (w *CatWriter) Close() error {
-	return nil
-}
-
-type CatReader struct {
-	CatID conceptual.CatID
-	Flat  *flat.Flat
-}
-
-func (c *Cat) NewCatReader() (*CatReader, error) {
-	f := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
-	if !f.Exists() {
-		return nil, fmt.Errorf("cat not found")
-	}
-	return &CatReader{
-		CatID: c.CatID,
-		Flat:  f,
-	}, nil
-}
-
-func (w *CatReader) readKV(key []byte) ([]byte, error) {
-	catPath := w.Flat.Path()
-	db, err := bbolt.Open(filepath.Join(catPath, catDBName), 0600, &bbolt.Options{ReadOnly: true})
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
+func (w *CatState) readKV(key []byte) ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	err = db.View(func(tx *bbolt.Tx) error {
+	err := w.DB.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
 			return fmt.Errorf("no state bucket")
@@ -192,11 +192,11 @@ func (w *CatReader) readKV(key []byte) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (w *CatReader) ReadKV(key []byte) ([]byte, error) {
+func (w *CatState) ReadKV(key []byte) ([]byte, error) {
 	return w.readKV(key)
 }
 
-func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
+func (w *CatState) ReadLastTrack() (*cattrack.CatTrack, error) {
 	got, err := w.readKV([]byte("last"))
 	if err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (w *CatReader) ReadLastTrack() (*cattrack.CatTrack, error) {
 	return track, err
 }
 
-func (w *CatReader) ReadTracksAt(key []byte) ([]*cattrack.CatTrack, error) {
+func (w *CatState) ReadTracksAt(key []byte) ([]*cattrack.CatTrack, error) {
 	got, err := w.readKV(key)
 	if err != nil {
 		return nil, err

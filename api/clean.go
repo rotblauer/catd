@@ -2,13 +2,12 @@ package api
 
 import (
 	"context"
-	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/geo/cleaner"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func CleanTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
+func (c *Cat) CleanTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
 
 	go func() {

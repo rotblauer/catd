@@ -100,13 +100,21 @@ func (rl *readTrackLogger) done() {
 var importCmd = &cobra.Command{
 	Use:   "import",
 	Short: "Import cat tracks from stdin",
-	Long: `Scans geojson.Feature lines from stdin and passes them to api.PopulateCat.
+	Long: `Scans geojson.Feature lines from stdin and passes them to api.Populate.
 
-Tracks from mixed cats ARE NOT supported. Sort your cats first.
+Tracks from mixed cats are supported.
+But (as-is) it is NOT A GOOD SORTING HAT. 
+Like, 50 tracks/second instead of 5000 tracks/second (or, 8000+).
+
+It IS more efficient to sort them by cat up front, 
+and then run this command in parallel for each cat.
 You can use 'tdata-commander sort-cats' to sort your cats, 
 which will take about 15 minutes for a 6GB master.json.gz. Fast.
 
-Then, run this command in parallel for each actual cat.
+The sorting slowness is because in 'zcat master.json.gz'
+we're basically importing the tracks as they were originally posted.
+So each post (a mini cat-batch of tracks) call cat.Populate, which
+blocks on DB access.
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
@@ -125,8 +133,10 @@ Then, run this command in parallel for each actual cat.
 			go func() {
 				defer populating.Done()
 
+				cat := &api.Cat{CatID: id}
+
 				// TODO: Flag me.
-				err := api.PopulateCat(ctx, id, true, true, in)
+				err := cat.Populate(ctx, true, true, in)
 				if err != nil {
 					slog.Error("Failed to populate CatTracks", "error", err)
 				} else {

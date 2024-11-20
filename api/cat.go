@@ -13,16 +13,21 @@ import (
 // an environment value. Anywhere cat data comes from, that is not the state of this app.
 type Cat struct {
 	CatID conceptual.CatID
+
+	// Ok, actually we DO have to have/want a conn to state.
+	// An API function might use another API function,
+	// and they might want to share a state conn.
+	State *state.CatState
 }
 
-// Writer returns a CatWriter for the Cat. Stateful. Blocking. Locking.
-func (c Cat) Writer() (*state.CatWriter, error) {
+// WithState returns a CatState for the Cat.
+// If readOnly is false it will block.
+func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	s := &state.Cat{CatID: c.CatID}
-	return s.NewCatWriter()
-}
-
-// Reader returns a CatReader for the Cat.
-func (c Cat) Reader() (*state.CatReader, error) {
-	s := &state.Cat{CatID: c.CatID}
-	return s.NewCatReader()
+	st, err := s.NewCatState(readOnly)
+	if err != nil {
+		return nil, err
+	}
+	c.State = st
+	return c.State, nil
 }
