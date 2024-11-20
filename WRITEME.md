@@ -1,4 +1,8 @@
 
+Careful with catching signal interruptions with `|& tee run.out`.
+It seems `import` is not able to catch the interrupt and does 
+not exit gracefully, which means important state is lost.
+
 ```
 2024/11/19 11:48:33 WARN Invalid track, mismatched cat want=rye got=rye
 2024/11/19 11:48:33 WARN Blocking on store

@@ -54,13 +54,14 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 	if err := c.readTripDetector(td); err != nil {
 		slog.Warn("Failed to read trip detector (new cat?)", "error", err)
 	} else {
-		var tdLatest time.Time
 		last := td.LastPointN(0)
 		if last != nil {
-			tdLatest = last.MustTime()
+			tdLatest := last.MustTime()
+			slog.Info("Restored trip-detector state",
+				"cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
+		} else {
+			slog.Info("Restored empty trip-detector state", "cat", c.CatID, "lap", td.Tripping)
 		}
-		slog.Info("Restored trip-detector state",
-			"cat", c.CatID, "last", tdLatest, "lap", td.Tripping)
 	}
 
 	go func() {
