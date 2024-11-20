@@ -74,7 +74,7 @@ blocks on DB access.
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
-		workersN := 8
+		workersN := 12
 		workCh := make(chan workT, workersN)
 		workerFn := func(workerI int, w workT) {
 			defer workersWG.Done()
@@ -99,7 +99,7 @@ blocks on DB access.
 			if err != nil {
 				slog.Error("Failed to populate CatTracks", "error", err)
 			} else {
-				slog.Info("Populator done")
+				slog.Info("Populator done", "cat", cat.CatID)
 			}
 		}
 
@@ -155,13 +155,14 @@ blocks on DB access.
 			}
 		}
 
-		// flush remaining lines
+		// Flush any remaining lines
+		slog.Info("Flushing remaining lines", "len", len(linesCh))
 		for linesCh != nil && len(linesCh) > 0 {
 			handleLinesBatch(<-linesCh)
 		}
 
+		slog.Info("Closing lines chan")
 		close(linesCh)
-
 		slog.Warn("Closing work chan")
 		close(workCh)
 		slog.Warn("Waiting on workers")

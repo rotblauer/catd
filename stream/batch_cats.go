@@ -167,6 +167,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			select {
 			case <-quit:
 				slog.Warn("Reader received quit")
+				tlogger.done()
 				break readLoop
 			default:
 			}
@@ -178,6 +179,15 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			slog.Error("Cat scanner failed to store last read track", "error", err)
 		} else {
 			slog.Info("Cat scanner stored last read n", "n", readN)
+		}
+
+		// Flush any remaining cats (partial batches)
+		for cat, lines := range catBatches {
+			if len(lines) > 0 {
+				slog.Info("Flushing remaining cat lines", "cat", cat, "len", len(lines))
+				ch <- lines
+				delete(catBatches, cat)
+			}
 		}
 
 	}(ch, errs, reader)

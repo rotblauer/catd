@@ -52,7 +52,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 
 	// If possible, read persisted cat tripdetector-state.
 	if err := c.readTripDetector(td); err != nil {
-		slog.Warn("Failed to read trip detector (new cat?)", "error", err)
+		slog.Warn("Failed to read trip detector (new cat?)", "cat", c.CatID, "error", err)
 	} else {
 		last := td.LastPointN(0)
 		if last != nil {
