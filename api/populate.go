@@ -51,7 +51,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// Sorting is obviously a little slower than not sorting.
 	pipedLast := sanitized
 	if sort {
-		// Catch is the batch.
+		// Catch is the new batch.
 		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize,
 			cattrack.SortFunc, sanitized)
 		pipedLast = sorted
@@ -67,51 +67,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 
 	// S2 indexing pipeline.
 	go c.S2IndexTracks(ctx, indexingCh)
-	go func() {
-		lapTracks := make(chan *cattrack.CatTrack)
-		napTracks := make(chan *cattrack.CatTrack)
-		defer close(lapTracks)
-		defer close(napTracks)
-
-		cleaned := c.CleanTracks(ctx, tripdetectCh)
-		tripdetected := c.TripDetectTracks(ctx, cleaned)
-
-		// Synthesize new/derivative/aggregate features: LineStrings for laps, Points for naps.
-
-		// Laps
-		completedLaps := c.LapTracks(ctx, lapTracks)
-		longCompletedLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
-			duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
-			return duration > 120
-		}, completedLaps)
-		simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
-		simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
-			ct.Geometry = simplifier.Simplify(ct.Geometry)
-			return ct
-		}, longCompletedLaps)
-
-		c.State.Waiting.Add(1)
-		go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", simplified)
-
-		// Naps
-		completedNaps := c.NapTracks(ctx, napTracks)
-		longCompletedNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
-			duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
-			return duration > 120
-		}, completedNaps)
-
-		c.State.Waiting.Add(1)
-		go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", longCompletedNaps)
-
-		// Block on tripdetect.
-		for detected := range tripdetected {
-			if detected.Properties.MustBool("IsTrip") {
-				lapTracks <- detected
-			} else {
-				napTracks <- detected
-			}
-		}
-	}()
+	go c.TripDetectionPipeline(ctx, tripdetectCh)
 
 	// Blocking on store.
 	c.logger.Info("Blocking on store cat tracks gz")
@@ -123,6 +79,53 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	c.logger.Info("Blocking on cat pipelines")
 	c.State.Waiting.Wait()
 	return lastErr
+}
+
+func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.CatTrack) {
+	lapTracks := make(chan *cattrack.CatTrack)
+	napTracks := make(chan *cattrack.CatTrack)
+	defer close(lapTracks)
+	defer close(napTracks)
+
+	cleaned := c.CleanTracks(ctx, in)
+	tripdetected := c.TripDetectTracks(ctx, cleaned)
+
+	// Synthesize new/derivative/aggregate features:
+	// ... LineStrings for laps, Points for naps.
+
+	// Laps
+	completedLaps := c.LapTracks(ctx, lapTracks)
+	longCompletedLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
+		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+		return duration > 120
+	}, completedLaps)
+	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
+	simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
+		ct.Geometry = simplifier.Simplify(ct.Geometry)
+		return ct
+	}, longCompletedLaps)
+
+	c.State.Waiting.Add(1)
+	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", simplified)
+
+	// Naps
+	completedNaps := c.NapTracks(ctx, napTracks)
+	longCompletedNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
+		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+		return duration > 120
+	}, completedNaps)
+
+	c.State.Waiting.Add(1)
+	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", longCompletedNaps)
+
+	// Block on tripdetect.
+	for detected := range tripdetected {
+		if detected.Properties.MustBool("IsTrip") {
+			lapTracks <- detected
+		} else {
+			napTracks <- detected
+		}
+	}
 }
 
 func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
@@ -159,73 +162,3 @@ func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-c
 		}
 	}, in)
 }
-
-//func handleTripDetected(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) {
-//	appCat := state.Cat{CatID: catID}
-//	writer, err := appCat.NewCatState()
-//	if err != nil {
-//		slog.Error("Failed to create cat writer", "error", err)
-//		return
-//	}
-//
-//	toMoving, toStationary := stream.Tee(ctx, in)
-//	moving := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-//		//return ct.ID == 1
-//		return ct.Properties.MustBool("IsTrip")
-//	}, toMoving)
-//	stationary := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-//		//return ct.ID == 0
-//		return !ct.Properties.MustBool("IsTrip")
-//	}, toStationary)
-//
-//	// TODO: Coalesce moving points into linestrings, and stationary ones into stops.
-//
-//	doneMoving := make(chan struct{})
-//	doneStationary := make(chan struct{})
-//
-//	movingWriter, err := writer.CustomGZWriter("moving.geojson.gz")
-//	if err != nil {
-//		slog.Error("Failed to create moving writer", "error", err)
-//		return
-//	}
-//	defer movingWriter.Close()
-//
-//	stationaryWriter, err := writer.CustomGZWriter("stationary.geojson.gz")
-//	if err != nil {
-//		slog.Error("Failed to create stationary writer", "error", err)
-//		return
-//	}
-//	defer stationaryWriter.Close()
-//
-//	go func() {
-//		stream.Drain(ctx, stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-//			slog.Debug("Writing moving track", "track", ct.StringPretty())
-//			if err := json.NewEncoder(movingWriter).Encode(ct); err != nil {
-//				slog.Error("Failed to write moving track", "error", err)
-//			}
-//			return nil
-//		}, moving))
-//		doneMoving <- struct{}{}
-//	}()
-//
-//	go func() {
-//		stream.Drain(ctx, stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-//			slog.Debug("Writing stationary track", "track", ct.StringPretty())
-//			if err := json.NewEncoder(stationaryWriter).Encode(ct); err != nil {
-//				slog.Error("Failed to write stationary track", "error", err)
-//			}
-//			return nil
-//		}, stationary))
-//		doneStationary <- struct{}{}
-//	}()
-//
-//	// Block on both writers, unordered.
-//	for i := 0; i < 2; i++ {
-//		select {
-//		case <-doneMoving:
-//			doneMoving = nil
-//		case <-doneStationary:
-//			doneStationary = nil
-//		}
-//	}
-//}

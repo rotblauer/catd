@@ -10,30 +10,6 @@ import (
 	"time"
 )
 
-func (c *Cat) storeTripDetector(td *tripdetector.TripDetector) error {
-	b, err := json.Marshal(td)
-	if err != nil {
-		return err
-	}
-	if err := c.State.WriteKV([]byte("tripdetector"), b); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
-	read, err := c.State.ReadKV([]byte("tripdetector"))
-	if err != nil {
-		return err
-	}
-	tmp := &tripdetector.TripDetector{}
-	if err := json.Unmarshal(read, tmp); err != nil {
-		return err
-	}
-	*td = *tmp
-	return nil
-}
-
 // TripDetectTracks detects trips in incoming CatTracks.
 func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
@@ -123,4 +99,28 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 	}()
 
 	return out
+}
+
+func (c *Cat) storeTripDetector(td *tripdetector.TripDetector) error {
+	b, err := json.Marshal(td)
+	if err != nil {
+		return err
+	}
+	if err := c.State.WriteKV([]byte("tripdetector"), b); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
+	read, err := c.State.ReadKV([]byte("tripdetector"))
+	if err != nil {
+		return err
+	}
+	tmp := &tripdetector.TripDetector{}
+	if err := json.Unmarshal(read, tmp); err != nil {
+		return err
+	}
+	*td = *tmp
+	return nil
 }

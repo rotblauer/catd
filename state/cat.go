@@ -37,8 +37,11 @@ type CatState struct {
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *Cat) NewCatState(readOnly bool) (*CatState, error) {
 	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
-	if err := flatCat.Ensure(); err != nil {
-		return nil, err
+
+	if !readOnly {
+		if err := flatCat.Ensure(); err != nil {
+			return nil, err
+		}
 	}
 
 	// Opening a writable DB conn will block all other cat writers and readers
@@ -112,14 +115,14 @@ func (s *CatState) storeKV(key []byte, data []byte) error {
 	})
 }
 
-// StoreTracksAt stores tracks in a KV store.
+// StoreTracksKV stores tracks in a KV store.
 // It is expected that this function can be used to cache
 // partial naps or partial laps (i.e. their last, unfinished, incomplete nap or lap).
 // Keep in mind that the tracks are buffered in memory, not streamed.
 // For this reason, it may be prudent to limit the number of tracks stored (and read!) this way,
 // and/or to limit the use of it.
 // However, tracks are encoded in newline-delimited JSON to allow for streaming, someday, maybe.
-func (s *CatState) StoreTracksAt(key []byte, tracks []*cattrack.CatTrack) error {
+func (s *CatState) StoreTracksKV(key []byte, tracks []*cattrack.CatTrack) error {
 	buf := bytes.NewBuffer([]byte{})
 	enc := json.NewEncoder(buf)
 	for _, track := range tracks {
@@ -160,10 +163,13 @@ func (w *CatState) readKV(key []byte) ([]byte, error) {
 }
 
 func (w *CatState) ReadKV(key []byte) ([]byte, error) {
+	if key == nil {
+		return nil, fmt.Errorf("readKV: nil key")
+	}
 	return w.readKV(key)
 }
 
-func (w *CatState) ReadTracksAt(key []byte) ([]*cattrack.CatTrack, error) {
+func (w *CatState) ReadTracksKV(key []byte) ([]*cattrack.CatTrack, error) {
 	got, err := w.readKV(key)
 	if err != nil {
 		return nil, err
