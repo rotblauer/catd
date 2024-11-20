@@ -20,6 +20,7 @@ import (
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
@@ -33,12 +34,8 @@ import (
 	"syscall"
 )
 
-// workT is passed to concurrent workers.
-// It represents a batch of cat tracks for some (one) cat.
-type workT struct {
-	name  string
-	lines [][]byte
-}
+var optSortTrackBatches bool
+var optWorkersN int
 
 // importCmd represents the import command
 var importCmd = &cobra.Command{
@@ -47,18 +44,12 @@ var importCmd = &cobra.Command{
 	Long: `Scans geojson.Feature lines from stdin and passes them to api.Populate.
 
 Tracks from mixed cats are supported.
-But (as-is) it is NOT A GOOD SORTING HAT. 
-Like, 50 tracks/second instead of 5000 tracks/second (or, 8000+).
 
-It IS more efficient to sort them by cat up front, 
-and then run this command in parallel for each cat.
-You can use 'tdata-commander sort-cats' to sort your cats, 
-which will take about 15 minutes for a 6GB master.json.gz. Fast.
+Flags:
 
-The sorting slowness is because in 'zcat master.json.gz'
-we're basically importing the tracks as they were originally posted.
-So each post (a mini cat-batch of tracks) call cat.Populate, which
-blocks on DB access.
+  --sort      Sort the batches by track time. This is time consuming and makes populate work in batches (vs pure stream).
+  --workers   Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT.
+
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
@@ -74,8 +65,7 @@ blocks on DB access.
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
-		workersN := 12
-		workCh := make(chan workT, workersN)
+		workCh := make(chan workT, optWorkersN)
 		workerFn := func(workerI int, w workT) {
 			defer workersWG.Done()
 			if len(w.lines) == 0 {
@@ -95,7 +85,7 @@ blocks on DB access.
 			}, stream.Slice(ctx, w.lines))
 
 			// TODO: Flag me.
-			err := cat.Populate(ctx, true, false, pipe)
+			err := cat.Populate(ctx, optSortTrackBatches, false, pipe)
 			if err != nil {
 				slog.Error("Failed to populate CatTracks", "error", err)
 			} else {
@@ -104,7 +94,7 @@ blocks on DB access.
 		}
 
 		// Spin up the workers.
-		for i := 0; i < workersN; i++ {
+		for i := 0; i < optWorkersN; i++ {
 			workerI := i + 1
 			go func() {
 				workerI := workerI
@@ -121,7 +111,7 @@ blocks on DB access.
 		}
 
 		quit := make(chan struct{})
-		linesCh, errCh, _ := stream.ScanLinesBatchingCats(os.Stdin, quit, 100_000, workersN)
+		linesCh, errCh, _ := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -178,8 +168,17 @@ func init() {
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
 	// importCmd.PersistentFlags().String("foo", "", "A help for foo")
-
+	importCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
+	importCmd.PersistentFlags().IntVar(&optWorkersN, "workers", 12, "Number of workers to run parallel")
+	importCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// importCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+}
+
+// workT is passed to concurrent workers.
+// It represents a batch of cat tracks for some (one) cat.
+type workT struct {
+	name  string
+	lines [][]byte
 }
