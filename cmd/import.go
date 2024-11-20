@@ -89,7 +89,7 @@ Flags:
 			if err != nil {
 				slog.Error("Failed to populate CatTracks", "error", err)
 			} else {
-				slog.Info("Populator done", "cat", cat.CatID)
+				slog.Info("Populator worker done", "cat", cat.CatID)
 			}
 		}
 

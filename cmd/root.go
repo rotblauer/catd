@@ -81,7 +81,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
 	rootCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
 	rootCmd.PersistentFlags().StringVar(&params.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
-	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level")
+	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level -5,-4..8 (golang/slog) https://pkg.go.dev/log/slog#Level")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.

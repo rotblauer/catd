@@ -9,6 +9,7 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"time"
 )
 
 // Populate persists incoming CatTracks for one cat.
@@ -21,7 +22,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 		c.logger.Error("Failed to create cat state", "error", err)
 		return
 	}
-	c.logger.Info("Populate has the state conn")
+	c.logger.Info("Populate has the lock on state conn")
+	started := time.Now()
 	defer func() {
 		if err := c.State.StoreLastTrack(); err != nil {
 			c.logger.Error("Failed to persist last track", "error", err)
@@ -31,6 +33,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 		} else {
 			c.logger.Info("Closed cat state")
 		}
+		c.logger.Info("Populate done", "elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
 	// enforceChronology requires us to reference persisted state
