@@ -28,7 +28,9 @@ func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <
 		defer c.State.Waiting.Done()
 
 		storedN := int64(0)
-		defer slog.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
+		defer func() {
+			slog.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
+		}()
 
 		wr, err := c.State.TrackGZWriter()
 		if err != nil {

@@ -22,13 +22,13 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 		return
 	}
 	defer func() {
-		if err := c.State.StoreLastTrack(); err != nil {
-			slog.Error("Failed to persist last track", "error", err)
-		}
+		//if err := c.State.StoreLastTrack(); err != nil {
+		//	slog.Error("Failed to persist last track", "error", err)
+		//}
 		if err := c.State.Close(); err != nil {
 			slog.Error("Failed to close cat state", "error", err)
 		} else {
-			slog.Info("Closed cat state")
+			slog.Info("Closed cat state", "cat", c.CatID)
 		}
 	}()
 
@@ -131,7 +131,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 
 	// Blocking on store.
 	slog.Warn("Blocking on store gz", "cat", c.CatID)
-
 	stream.Sink(ctx, func(e error) {
 		lastErr = e
 		slog.Error("Failed to populate CatTrack", "error", lastErr)
