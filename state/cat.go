@@ -102,15 +102,27 @@ func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 			created by github.com/rotblauer/catd/stream.Transform[...] in goroutine 1706
 			        /home/ia/dev/rotblauer/catd/stream/stream.go:71 +0xcb
 
+		// Cache as first or most recent track.
+		if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
+			s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
+		}
+
 		When the cache looks up the LAST track, we now have the pointer to that track.
 		So we're no longer handling tracks serially, and there are no guarantees that
 		that last track isn't going to mutating in some "later" pipe function.
 	*/
 
 	// Cache as first or most recent track.
-	//if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
-	s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
-	//}
+	var last *cattrack.CatTrack
+	res := s.TTLCache.Get("last")
+	if res != nil {
+		v := res.Value()
+		last = &cattrack.CatTrack{}
+		*last = *v
+	}
+	if res == nil || (last != nil && last.MustTime().Before(ct.MustTime())) {
+		s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
+	}
 	return nil
 }
 

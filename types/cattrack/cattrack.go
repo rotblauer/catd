@@ -19,26 +19,7 @@ func (ct *CatTrack) MarshalJSON() ([]byte, error) {
 	if ct == nil {
 		return nil, fmt.Errorf("nil CatTrack")
 	}
-	/*
-		fatal error: concurrent map read and map write
-
-		goroutine 1547 [running]:
-		github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc09b3f8b90)
-		        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:30 +0x33
-		github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
-		        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:45
-		github.com/rotblauer/catd/state.(*CatState).WriteTrack(0xc0556a9680, {0xad6d40?, 0xc047a19340?}, 0xc055711ef0)
-		        /home/ia/dev/rotblauer/catd/state/cat.go:89 +0xdb
-		github.com/rotblauer/catd/api.(*Cat).Store.func1.3(0xc055711ef0)
-		        /home/ia/dev/rotblauer/catd/api/store.go:50 +0x7e
-		github.com/rotblauer/catd/stream.Transform[...].func1()
-		        /home/ia/dev/rotblauer/catd/stream/stream.go:77 +0xe2
-		created by github.com/rotblauer/catd/stream.Transform[...] in goroutine 1616
-		        /home/ia/dev/rotblauer/catd/stream/stream.go:71 +0xcb
-	*/
-	cp := &CatTrack{}
-	*cp = *ct
-	return (*geojson.Feature)(cp).MarshalJSON()
+	return (*geojson.Feature)(ct).MarshalJSON()
 }
 
 func (ct *CatTrack) UnmarshalJSON(data []byte) error {
@@ -49,29 +30,10 @@ func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {
-	/*
-		fatal error: concurrent map read and map write
-
-		goroutine 1175 [running]:
-		github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc033414910)
-		        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:52 +0x33
-		github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
-		        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:67
-		github.com/rotblauer/catd/state.(*CatState).WriteTrack(0xc02414b040, {0xad6d80?, 0xc090d62c60?}, 0xc0334149b0)
-		        /home/ia/dev/rotblauer/catd/state/cat.go:89 +0xdb
-		github.com/rotblauer/catd/api.(*Cat).Store.func1.3(0xc0334149b0)
-		        /home/ia/dev/rotblauer/catd/api/store.go:50 +0x7e
-		github.com/rotblauer/catd/stream.Transform[...].func1()
-		        /home/ia/dev/rotblauer/catd/stream/stream.go:77 +0xe2
-		created by github.com/rotblauer/catd/stream.Transform[...] in goroutine 1234
-		        /home/ia/dev/rotblauer/catd/stream/stream.go:71 +0xcb
-	*/
-	cp := &CatTrack{}
-	*cp = *ct
-	if v, ok := cp.Properties["Time"].(time.Time); ok {
+	if v, ok := ct.Properties["Time"].(time.Time); ok {
 		return v, nil
 	}
-	ts, ok := cp.Properties["Time"].(string)
+	ts, ok := ct.Properties["Time"].(string)
 	if !ok {
 		return time.Time{}, fmt.Errorf("missing Time property (string)")
 	}
