@@ -1,4 +1,4 @@
-package app
+package state
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"sync"
 )
 
-const catDBName = "app.db"
+const catDBName = "state.db"
 
 var catStateBucket = []byte("state")
 
@@ -26,6 +26,7 @@ type Cat struct {
 
 type CatWriter struct {
 	CatID conceptual.CatID
+	DB    *bbolt.DB
 	Flat  *flat.Flat
 	Cache *ttlcache.Cache[conceptual.CatID, *cattrack.CatTrack]
 	cmu   sync.Mutex
@@ -38,8 +39,13 @@ func (c *Cat) NewCatWriter() (*CatWriter, error) {
 	if err := flatCat.Ensure(); err != nil {
 		return nil, err
 	}
+	db, err := bbolt.Open(filepath.Join(flatCat.Path(), catDBName), 0600, nil)
+	if err != nil {
+		return nil, err
+	}
 	return &CatWriter{
 		CatID: c.CatID,
+		DB:    db,
 		Flat:  flatCat,
 		Cache: ttlcache.New[conceptual.CatID, *cattrack.CatTrack](
 			ttlcache.WithTTL[conceptual.CatID, *cattrack.CatTrack](params.CacheLastKnownTTL)),
@@ -51,7 +57,7 @@ func (w *CatWriter) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 		return err
 	}
 	w.cmu.Lock()
-	w.Cache.Set(w.CatID, ct, ttlcache.DefaultTTL)
+	w.Cache.Set("last", ct, ttlcache.DefaultTTL)
 	w.cmu.Unlock()
 	return nil
 }
@@ -93,7 +99,7 @@ func (w *CatWriter) storeKV(key []byte, data []byte) error {
 
 func (w *CatWriter) StoreLastTrack() error {
 	w.cmu.Lock()
-	track := w.Cache.Get(w.CatID)
+	track := w.Cache.Get("last")
 	defer w.cmu.Unlock()
 	if track == nil {
 		return fmt.Errorf("no last track (impossible if caller uses correctly)")
@@ -172,7 +178,7 @@ func (w *CatReader) readKV(key []byte) ([]byte, error) {
 	err = db.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
-			return fmt.Errorf("no app bucket")
+			return fmt.Errorf("no state bucket")
 		}
 
 		// Gotcha! The value returned by Get is only valid in the scope of the transaction.

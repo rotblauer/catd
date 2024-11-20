@@ -3,10 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/geo/lap"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"time"
@@ -18,7 +18,7 @@ func LapTracks(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.
 	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
-	appCat := app.Cat{CatID: catID}
+	appCat := state.Cat{CatID: catID}
 	if reader, err := appCat.NewCatReader(); err == nil {
 		if data, err := reader.ReadKV([]byte("lapstate")); err == nil && data != nil {
 			if err := json.Unmarshal(data, ls); err != nil {

@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/paulmach/orb/simplify"
-	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -26,7 +26,7 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 	// 2. import gracefully
 	source := in
 	if enforceChronology {
-		appCat := app.Cat{CatID: catID}
+		appCat := state.Cat{CatID: catID}
 		if reader, err := appCat.NewCatReader(); err == nil {
 			last, err := reader.ReadLastTrack()
 			if err == nil {
@@ -135,7 +135,7 @@ func PopulateCat(ctx context.Context, catID conceptual.CatID, sort bool, enforce
 }
 
 func sinkToCatJSONGZFile[T any](ctx context.Context, catID conceptual.CatID, name string, in <-chan T) {
-	appCat := app.Cat{CatID: catID}
+	appCat := state.Cat{CatID: catID}
 	writer, err := appCat.NewCatWriter()
 	if err != nil {
 		slog.Error("Failed to create cat writer", "error", err)
@@ -161,7 +161,7 @@ func sinkToCatJSONGZFile[T any](ctx context.Context, catID conceptual.CatID, nam
 }
 
 func handleTripDetected(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatTrack) {
-	appCat := app.Cat{CatID: catID}
+	appCat := state.Cat{CatID: catID}
 	writer, err := appCat.NewCatWriter()
 	if err != nil {
 		slog.Error("Failed to create cat writer", "error", err)

@@ -102,12 +102,8 @@ var importCmd = &cobra.Command{
 	Short: "Import cat tracks from stdin",
 	Long: `Scans geojson.Feature lines from stdin and passes them to api.PopulateCat.
 
-Tracks from mixed cats ARE supported, eg. edge.json.gz; the reader is a cat-sorter.
-
-But, BEWARE, it is not a fast cat sorter. 
-It is a slow cat sorter. Why? Probably decoding, I guess.
-You may want to sort your cats before piping them in.
-If so, you can use 'tdata-commander sort-cats' to sort your cats, 
+Tracks from mixed cats ARE NOT supported. Sort your cats first.
+You can use 'tdata-commander sort-cats' to sort your cats, 
 which will take about 15 minutes for a 6GB master.json.gz. Fast.
 
 Then, run this command in parallel for each actual cat.

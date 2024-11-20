@@ -3,10 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -14,7 +14,7 @@ import (
 )
 
 func storeTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) error {
-	appCat := app.Cat{CatID: catID}
+	appCat := state.Cat{CatID: catID}
 	wr, err := appCat.NewCatWriter()
 	if err != nil {
 		return err
@@ -30,7 +30,7 @@ func storeTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) er
 }
 
 func readTripDetector(catID conceptual.CatID, td *tripdetector.TripDetector) error {
-	appCat := app.Cat{CatID: catID}
+	appCat := state.Cat{CatID: catID}
 	cr, err := appCat.NewCatReader()
 	if err != nil {
 		return err

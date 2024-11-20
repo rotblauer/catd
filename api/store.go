@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
-	"github.com/rotblauer/catd/app"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/events"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -21,7 +21,7 @@ func Store(ctx context.Context, catID conceptual.CatID, in <-chan *cattrack.CatT
 		// Declare our cat-writer and intend to close it on completion.
 		// Holding the writer in this closure allows us to use the writer
 		// as a batching writer, only opening and closing the target writers once.
-		appCat := app.Cat{CatID: catID}
+		appCat := state.Cat{CatID: catID}
 		writer, err := appCat.NewCatWriter()
 		if err != nil {
 			errCh <- err
