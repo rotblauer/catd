@@ -30,7 +30,7 @@ func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <
 
 		storedN := int64(0)
 		defer func() {
-			c.logger.Info("Stored cat tracks gz", "cat", c.CatID, "count", storedN)
+			c.logger.Info("Stored cat tracks gz", "count", storedN)
 		}()
 
 		wr, err := c.State.TrackGZWriter()

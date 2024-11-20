@@ -15,11 +15,13 @@ import (
 func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, in <-chan *cattrack.CatTrack) (lastErr error) {
 
 	// Blocking.
+	c.logger.Info("Populate blocking on lock state")
 	_, err := c.WithState(false)
 	if err != nil {
 		c.logger.Error("Failed to create cat state", "error", err)
 		return
 	}
+	c.logger.Info("Populate has the state conn")
 	defer func() {
 		if err := c.State.StoreLastTrack(); err != nil {
 			c.logger.Error("Failed to persist last track", "error", err)
@@ -133,7 +135,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, enforceChronology bool, i
 	}()
 
 	// Blocking on store.
-	c.logger.Warn("Blocking on store gz")
+	c.logger.Info("Blocking on store cat tracks gz")
 	stream.Sink(ctx, func(e error) {
 		lastErr = e
 		c.logger.Error("Failed to populate CatTrack", "error", lastErr)

@@ -85,10 +85,32 @@ func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 		return err
 	}
 
+	/*
+			fatal error: concurrent map read and map write
+
+			goroutine 1581 [running]:
+			github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc099f2c500?)
+			        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:71 +0x70
+			github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
+			        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:86
+			github.com/rotblauer/catd/state.(*CatState).WriteTrack(0xc09a286400, {0xad6d80?, 0xc0907d6c60?}, 0xc09e0f94f0)
+			        /home/ia/dev/rotblauer/catd/state/cat.go:89 +0xdb
+			github.com/rotblauer/catd/api.(*Cat).Store.func1.3(0xc09e0f94f0)
+			        /home/ia/dev/rotblauer/catd/api/store.go:50 +0x7e
+			github.com/rotblauer/catd/stream.Transform[...].func1()
+			        /home/ia/dev/rotblauer/catd/stream/stream.go:77 +0xe2
+			created by github.com/rotblauer/catd/stream.Transform[...] in goroutine 1706
+			        /home/ia/dev/rotblauer/catd/stream/stream.go:71 +0xcb
+
+		When the cache looks up the LAST track, we now have the pointer to that track.
+		So we're no longer handling tracks serially, and there are no guarantees that
+		that last track isn't going to mutating in some "later" pipe function.
+	*/
+
 	// Cache as first or most recent track.
-	if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
-		s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
-	}
+	//if res := s.TTLCache.Get("last"); res == nil || res.Value().MustTime().Before(ct.MustTime()) {
+	s.TTLCache.Set("last", ct, ttlcache.DefaultTTL)
+	//}
 	return nil
 }
 

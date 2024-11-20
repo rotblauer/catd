@@ -83,7 +83,7 @@ blocks on DB access.
 			}
 
 			cat := api.NewCat(conceptual.CatID(w.name))
-			slog.Info("Populating", "worker", workerI, "lines", len(w.lines))
+			slog.Info("Populating", "worker", workerI, "cat", cat.CatID, "lines", len(w.lines))
 
 			pipe := stream.Transform(ctx, func(data []byte) *cattrack.CatTrack {
 				ct := &cattrack.CatTrack{}
@@ -156,13 +156,11 @@ blocks on DB access.
 		}
 
 		// Flush any remaining lines
-		slog.Info("Flushing remaining lines", "len", len(linesCh))
 		for linesCh != nil && len(linesCh) > 0 {
+			slog.Info("Import flushing remaining cat-line batches", "len", len(linesCh))
 			handleLinesBatch(<-linesCh)
 		}
 
-		slog.Info("Closing lines chan")
-		close(linesCh)
 		slog.Warn("Closing work chan")
 		close(workCh)
 		slog.Warn("Waiting on workers")
