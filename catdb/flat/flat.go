@@ -5,6 +5,7 @@ import (
 	"github.com/rotblauer/catd/conceptual"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 const (
@@ -97,13 +98,21 @@ func NewFlatGZWriter(path string) (*GZFileWriter, error) {
 	return &GZFileWriter{f: fi, gzw: gzw}, nil
 }
 
+// Writer returns a gzip writer for the file.
+// While the writer is not closed, an exclusive lock is held on the file.
 func (g *GZFileWriter) Writer() *gzip.Writer {
+	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
+		panic(err)
+	}
 	return g.gzw
 }
 
 func (g *GZFileWriter) Close() error {
 	if err := g.gzw.Close(); err != nil {
 		return err
+	}
+	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
+		panic(err)
 	}
 	if err := g.f.Close(); err != nil {
 		return err
@@ -131,9 +140,6 @@ func NewFlatGZReader(path string) (*GZFileReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	//if err := syscall.Flock(int(fi.Fd()), syscall.LOCK_SH); err != nil {
-	//	return nil, err
-	//}
 	gzr, err := gzip.NewReader(fi)
 	if err != nil {
 		return nil, err
@@ -141,7 +147,12 @@ func NewFlatGZReader(path string) (*GZFileReader, error) {
 	return &GZFileReader{f: fi, gzr: gzr}, nil
 }
 
+// Reader returns a gzip reader for the file.
+// While the reader is not closed, a shared lock is held on the file.
 func (g *GZFileReader) Reader() *gzip.Reader {
+	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH); err != nil {
+		panic(err)
+	}
 	return g.gzr
 }
 
@@ -149,11 +160,11 @@ func (g *GZFileReader) Close() error {
 	if err := g.gzr.Close(); err != nil {
 		return err
 	}
+	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
+		panic(err)
+	}
 	if err := g.f.Close(); err != nil {
 		return err
 	}
-	//if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
-	//	return err
-	//}
 	return nil
 }

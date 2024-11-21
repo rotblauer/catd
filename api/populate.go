@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/params"
@@ -119,9 +118,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
-		features := stream.Collect(ctx, stream.Transform(ctx, func(lap *cattrack.CatLap) *geojson.Feature {
-			return (*geojson.Feature)(lap)
-		}, sendLaps))
+		features := stream.Collect(ctx, sendLaps)
 		if len(features) == 0 {
 			return
 		}
@@ -163,9 +160,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
-		features := stream.Collect(ctx, stream.Transform(ctx, func(nap *cattrack.CatNap) *geojson.Feature {
-			return (*geojson.Feature)(nap)
-		}, sendNaps))
+		features := stream.Collect(ctx, sendNaps)
 		if len(features) == 0 {
 			return
 		}
@@ -190,15 +185,6 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 				"method", "Daemon.PushFeatures", "source", "naps", "features.len", len(features), "error", err)
 		}
 	}()
-	//go c.rpcClient.Go("Daemon.PushFeatures", tiler.PushFeaturesRequestArgs{
-	//	CatID:       c.CatID,
-	//	SourceName:  "naps",
-	//	LayerName:   "naps",
-	//	TippeConfig: params.TippeConfigNameNaps,
-	//	JSONBytes: stream.Collect(ctx, stream.Transform(ctx, func(lap *cattrack.CatNap) *geojson.Feature {
-	//		return (*geojson.Feature)(lap)
-	//	}, sendNaps)),
-	//}, nil, nil)
 
 	// Block on tripdetect.
 	cleaned := c.CleanTracks(ctx, in)
@@ -206,6 +192,19 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 
 	c.logger.Info("Trip detector blocking")
 	for detected := range tripdetected {
+		detected := detected
+		/*
+			fatal error: concurrent map read and map write
+
+			goroutine 4787 [running]:
+			github.com/paulmach/orb/geojson.Properties.MustBool(0xc00314e030?, {0xa48197?, 0xf60500?}, {0x0, 0x0, 0x16?})
+			        /home/ia/go/pkg/mod/github.com/paulmach/orb@v0.11.1/geojson/properties.go:14 +0x3f
+			github.com/rotblauer/catd/api.(*Cat).TripDetectionPipeline(0xc002a041e0, {0xb3a610, 0xc0000b6cd0}, 0xc00218ea80)
+			        /home/ia/dev/rotblauer/catd/api/populate.go:209 +0x5c7
+			created by github.com/rotblauer/catd/api.(*Cat).Populate in goroutine 22
+			        /home/ia/dev/rotblauer/catd/api/populate.go:75 +0x4f7
+
+		*/
 		if detected.Properties.MustBool("IsTrip") {
 			lapTracks <- detected
 		} else {

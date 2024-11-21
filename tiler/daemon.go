@@ -6,7 +6,6 @@ import (
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -101,8 +100,10 @@ func (d *Daemon) Run() error {
 
 	go func() {
 		if err := http.Serve(l, server); err != nil {
-			log.Fatal("TileDaemon RPC HTTP serve error:", err)
+			d.logger.Error("TileDaemon RPC HTTP serve error", "error", err)
+			os.Exit(1)
 		}
+		d.logger.Info("TilerDaemon RPC HTTP server stopped")
 	}()
 
 	go func() {
@@ -116,11 +117,10 @@ func (d *Daemon) Run() error {
 		for {
 			select {
 			case <-d.Interrupt:
-				d.logger.Info("TilerDaemon quitting, waiting on tilingPending tasks...")
+				d.logger.Info("TilerDaemon quitting", "awaiting", "pending")
 				d.tilingPending.Wait()
-				d.logger.Info("TilerDaemon quitting, waiting on running tasks...")
+				d.logger.Info("TilerDaemon quitting", "awaiting", "running")
 				d.running.Wait()
-				d.logger.Info("TilerDaemon tasks done, exiting")
 				return
 			}
 		}
@@ -161,10 +161,6 @@ func (d *Daemon) writeGZ(f *flat.Flat, args *PushFeaturesRequestArgs, name strin
 	if err != nil {
 		return err
 	}
-
-	//if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
-	//	panic(err)
-	//}
 
 	if _, err := wr.Writer().Write(args.JSONBytes); err != nil {
 		return err
