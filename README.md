@@ -25,6 +25,25 @@ Indeed, it's overkill for what the server will handle most often, namely POST re
 tracks at a time, but it's a good fit for the `import` command and the grand schemes of generally extensible cat trackers.
 Want to download your Cat Tracks? We'll stream them to you!
 
+### More thoughts on data handling
+
+catd is responsible for:
+
+Safely storing tracks, gzipped. Data persistence and integrity is paramount.
+Unsure whether to store RAW (unfiltered/validated) tracks, too. Currently only valid, deduped, etc. tracks are stored.
+
+Making maps. Producing `.mbtiles` vector tiles, ultimately for the client.
+Part of this job is structuring the data in a way that is easy and reasonably rendered.
+S2 indexes were part of this. LineStrings (CatLaps) are an evolution of this. Trip Detector.
+Uses `tippecanoe` for turning `.geojson.gz` files into `.mbtiles`, which are ultimately the primary data source for the mapping client.
+
+Retrieving tracks. Serving tracks to the client.
+This is the toughest one to do lightly. I'd rather not rely on Postgres.
+Currently will store and serve a cache of recent tracks for cats (even provide real-time websocket updates on push).
+catd intends to enable streaming download of `.gz` tracks.
+But time/space queries are not well supported. `cat-engine` has this, implemented in Google Firestore using geohashes.
+
+
 ## API
 
 ### Commands

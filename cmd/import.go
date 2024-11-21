@@ -116,7 +116,7 @@ Missoula, Montana
 		}()
 
 		quitTiler := make(chan struct{})
-		go tiler.RunDaemon(quitTiler)
+		tilerDaemonDone := tiler.RunDaemon(nil, quitTiler)
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
@@ -243,6 +243,7 @@ Missoula, Montana
 		ctxCanceler()
 		slog.Warn("Quitting tiler")
 		quitTiler <- struct{}{}
+		<-tilerDaemonDone
 	},
 }
 

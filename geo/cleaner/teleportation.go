@@ -29,9 +29,10 @@ func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-ch
 			}
 
 			// Signal loss is not teleportation.
-			interval := track.MustTime().Sub(lastTime)
+			trackTime := track.MustTime()
+			interval := trackTime.Sub(lastTime)
 			if interval > params.DefaultCleanConfig.TeleportWindow {
-				lastTime = track.MustTime()
+				lastTime = trackTime
 				lastPoint = track.Point()
 				out <- track
 				continue
@@ -47,7 +48,7 @@ func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-ch
 				continue
 			}
 
-			lastTime = track.MustTime()
+			lastTime = trackTime
 			lastPoint = track.Point()
 			select {
 			case <-ctx.Done():

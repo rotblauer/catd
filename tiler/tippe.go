@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func (d *Daemon) tip(source string, args params.CLIFlagsT) {
+func (d *Daemon) tip(source string, args params.CLIFlagsT) error {
 	r, w := io.Pipe()
 
 	go func() {
@@ -25,14 +25,11 @@ func (d *Daemon) tip(source string, args params.CLIFlagsT) {
 
 		_, err = io.Copy(w, reader.Reader())
 		if err != nil {
-			d.logger.Error("Failed to copy laps edge file", "error", err)
+			d.logger.Error("Failed to copy source gz file", "error", err)
 		}
 	}()
 
-	err := tipFromReader(r, args)
-	if err != nil {
-		d.logger.Error("Failed to run tippe laps", "error", err)
-	}
+	return tipFromReader(r, args)
 }
 
 func tipFromReader(reader io.Reader, args params.CLIFlagsT) error {

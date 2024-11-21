@@ -1,4 +1,18 @@
 
+```shell
+fatal error: concurrent map read and map write
+
+goroutine 4679 [running]:
+github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc002b042d0)
+        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:36 +0x7f
+github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
+        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:48
+github.com/rotblauer/catd/geo/cleaner.TeleportationFilter.func1()
+        /home/ia/dev/rotblauer/catd/geo/cleaner/teleportation.go:32 +0x1de
+created by github.com/rotblauer/catd/geo/cleaner.TeleportationFilter in goroutine 4746
+        /home/ia/dev/rotblauer/catd/geo/cleaner/teleportation.go:15 +0xa5
+
+```
 
 - (event) StoreTracks(tracks) -> tpp
 - (event) StoreLap(lap) -> tpl

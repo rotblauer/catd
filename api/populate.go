@@ -115,15 +115,20 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	go stream.Sink(ctx, func(lap *cattrack.CatLap) {
 		canon := make(chan *cattrack.CatLap)
 		edge := make(chan *cattrack.CatLap)
-		go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", canon)
-		go sinkToCatJSONGZFile(ctx, c, "laps_edge.geojson.gz", edge)
-		canon <- lap
-		edge <- lap
-		close(canon)
-		close(edge)
+		go func() {
+			// Block until consumed.
+			canon <- lap
+			close(canon)
+			edge <- lap
+			close(edge)
+		}()
+		// Block to ensure files are written before notifying tiling.
+		sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", canon)
+		sinkToCatJSONGZFile(ctx, c, "laps_tmp.geojson.gz", edge)
 		c.rpcClient.Go("Daemon.RequestTiling", tiler.TilingRequestArgs{
-			Source: filepath.Join(c.State.Flat.Path(), "laps_edge.geojson.gz"),
-			Config: params.TippeConfigLaps,
+			CatID:    c.CatID,
+			Config:   params.TippeConfigLaps,
+			SourceGZ: filepath.Join(c.State.Flat.Path(), "laps_tmp.geojson.gz"),
 		}, nil, nil)
 	}, simplified)
 
@@ -135,13 +140,23 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		return duration > 120
 	}, completedNaps)
 
-	sinkNaps, tileNaps := stream.Tee(ctx, filteredNaps)
-	// Storage
-	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", sinkNaps)
-	go sinkToCatJSONGZFile(ctx, c, "naps_edge.geojson.gz", tileNaps)
-
-	// TODO I tink I want to trigger a global tile update here,
-	// or to fire an event that can be listened to by a global tiling service.
+	go stream.Sink(ctx, func(nap *cattrack.CatNap) {
+		canon := make(chan *cattrack.CatNap)
+		edge := make(chan *cattrack.CatNap)
+		go func() {
+			canon <- nap
+			close(canon)
+			edge <- nap
+			close(edge)
+		}()
+		sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", canon)
+		sinkToCatJSONGZFile(ctx, c, "naps_tmp.geojson.gz", edge)
+		c.rpcClient.Go("Daemon.RequestTiling", tiler.TilingRequestArgs{
+			CatID:    c.CatID,
+			Config:   params.TippeConfigNaps,
+			SourceGZ: filepath.Join(c.State.Flat.Path(), "naps_tmp.geojson.gz"),
+		}, nil, nil)
+	}, filteredNaps)
 
 	// Block on tripdetect.
 	for detected := range tripdetected {

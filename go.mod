@@ -3,6 +3,7 @@ module github.com/rotblauer/catd
 go 1.22.2
 
 require (
+	github.com/bep/debounce v1.2.1
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
