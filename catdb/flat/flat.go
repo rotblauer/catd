@@ -31,10 +31,10 @@ func NewFlatWithRoot(root string) *Flat {
 }
 
 func (f *Flat) ForCat(catID conceptual.CatID) *Flat {
-	return f.Join(CatsDir, catID.String())
+	return f.Joining(CatsDir, catID.String())
 }
 
-func (f *Flat) Join(paths ...string) *Flat {
+func (f *Flat) Joining(paths ...string) *Flat {
 	f.path = filepath.Join(append([]string{f.path}, paths...)...)
 	return f
 }
@@ -131,6 +131,9 @@ func NewFlatGZReader(path string) (*GZFileReader, error) {
 	if err != nil {
 		return nil, err
 	}
+	//if err := syscall.Flock(int(fi.Fd()), syscall.LOCK_SH); err != nil {
+	//	return nil, err
+	//}
 	gzr, err := gzip.NewReader(fi)
 	if err != nil {
 		return nil, err
@@ -149,32 +152,8 @@ func (g *GZFileReader) Close() error {
 	if err := g.f.Close(); err != nil {
 		return err
 	}
+	//if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
+	//	return err
+	//}
 	return nil
-}
-
-type TextFile struct {
-	f *os.File
-}
-
-func NewFlatText(path string) (*TextFile, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
-		return nil, err
-	}
-	fi, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0660)
-	if err != nil {
-		return nil, err
-	}
-	return &TextFile{f: fi}, nil
-}
-
-func (t *TextFile) Writer() *os.File {
-	return t.f
-}
-
-func (t *TextFile) Close() error {
-	return t.f.Close()
-}
-
-func (t *TextFile) Path() string {
-	return t.f.Name()
 }

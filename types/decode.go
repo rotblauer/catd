@@ -16,7 +16,7 @@ var ErrDecodeTracks = fmt.Errorf("could not decode as trackpoints or geojson or 
 // An error will be returned if the unmarshaling fails,
 // OR if the resulting slice is empty,
 // OR if the first trackpoint in the slice has a zero Time field.
-// A Time value is required for all cat tracks (whether TrackPoints or GeoJSON Features),
+// A Time value is required for all cat tracks (whether TrackPoints or GeoJSON JSONBytes),
 // and an unmarshal of a geojson slice will not fill the flat Time field of a TrackPoint,
 // since the geojson will locate the Time field in the properties of the feature; '.properties.Time' vs. '.time'.
 func DecodeTrackPoints(data []byte) (trackpoint.TrackPoints, error) {

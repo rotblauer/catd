@@ -2,13 +2,13 @@ package params
 
 var TippecanoeCommand = "/usr/local/bin/tippecanoe"
 
-type TippeConfigT string
+type TippeConfigName string
 
 const (
-	TippeConfigTracks TippeConfigT = "tracks"
-	TippeConfigSnaps  TippeConfigT = "snaps"
-	TippeConfigLaps   TippeConfigT = "laps"
-	TippeConfigNaps   TippeConfigT = "naps"
+	TippeConfigNameTracks TippeConfigName = "tracks"
+	TippeConfigNameSnaps  TippeConfigName = "snaps"
+	TippeConfigNameLaps   TippeConfigName = "laps"
+	TippeConfigNameNaps   TippeConfigName = "naps"
 )
 
 type CLIFlagsT []string

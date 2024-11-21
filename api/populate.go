@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/params"
@@ -11,7 +13,6 @@ import (
 	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
-	"path/filepath"
 	"time"
 )
 
@@ -91,9 +92,6 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	defer close(lapTracks)
 	defer close(napTracks)
 
-	cleaned := c.CleanTracks(ctx, in)
-	tripdetected := c.TripDetectTracks(ctx, cleaned)
-
 	// Synthesize new/derivative/aggregate features:
 	// ... LineStrings for laps, Points for naps.
 
@@ -112,25 +110,42 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		return ct
 	}, filterLaps)
 
-	go stream.Sink(ctx, func(lap *cattrack.CatLap) {
-		canon := make(chan *cattrack.CatLap)
-		edge := make(chan *cattrack.CatLap)
-		go func() {
-			// Block until consumed.
-			canon <- lap
-			close(canon)
-			edge <- lap
-			close(edge)
-		}()
-		// Block to ensure files are written before notifying tiling.
-		sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", canon)
-		sinkToCatJSONGZFile(ctx, c, "laps_tmp.geojson.gz", edge)
-		c.rpcClient.Go("Daemon.RequestTiling", tiler.TilingRequestArgs{
-			CatID:    c.CatID,
-			Config:   params.TippeConfigLaps,
-			SourceGZ: filepath.Join(c.State.Flat.Path(), "laps_tmp.geojson.gz"),
-		}, nil, nil)
-	}, simplified)
+	// End of the line for all cat laps...
+	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
+
+	c.State.Waiting.Add(1)
+	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", sinkLaps)
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		features := stream.Collect(ctx, stream.Transform(ctx, func(lap *cattrack.CatLap) *geojson.Feature {
+			return (*geojson.Feature)(lap)
+		}, sendLaps))
+		if len(features) == 0 {
+			return
+		}
+		buf := new(bytes.Buffer)
+		enc := json.NewEncoder(buf)
+		for _, f := range features {
+			if err := enc.Encode(f); err != nil {
+				c.logger.Error("Failed to encode lap feature", "error", err)
+				return
+			}
+		}
+		m := tiler.PushFeaturesRequestArgs{
+			CatID:       c.CatID,
+			SourceName:  "laps",
+			LayerName:   "laps",
+			TippeConfig: params.TippeConfigNameLaps,
+			JSONBytes:   buf.Bytes(),
+		}
+		err := c.rpcClient.Call("Daemon.PushFeatures", m, nil)
+		if err != nil {
+			c.logger.Error("Failed to call RPC client",
+				"method", "Daemon.PushFeatures", "source", "laps", "features.len", len(features), "error", err)
+		}
+	}()
 
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
@@ -140,25 +155,56 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		return duration > 120
 	}, completedNaps)
 
-	go stream.Sink(ctx, func(nap *cattrack.CatNap) {
-		canon := make(chan *cattrack.CatNap)
-		edge := make(chan *cattrack.CatNap)
-		go func() {
-			canon <- nap
-			close(canon)
-			edge <- nap
-			close(edge)
-		}()
-		sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", canon)
-		sinkToCatJSONGZFile(ctx, c, "naps_tmp.geojson.gz", edge)
-		c.rpcClient.Go("Daemon.RequestTiling", tiler.TilingRequestArgs{
-			CatID:    c.CatID,
-			Config:   params.TippeConfigNaps,
-			SourceGZ: filepath.Join(c.State.Flat.Path(), "naps_tmp.geojson.gz"),
-		}, nil, nil)
-	}, filteredNaps)
+	// End of the line for all cat naps...
+	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
+
+	c.State.Waiting.Add(1)
+	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", sinkNaps)
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		features := stream.Collect(ctx, stream.Transform(ctx, func(nap *cattrack.CatNap) *geojson.Feature {
+			return (*geojson.Feature)(nap)
+		}, sendNaps))
+		if len(features) == 0 {
+			return
+		}
+		buf := new(bytes.Buffer)
+		enc := json.NewEncoder(buf)
+		for _, f := range features {
+			if err := enc.Encode(f); err != nil {
+				c.logger.Error("Failed to encode nap feature", "error", err)
+				return
+			}
+		}
+		m := tiler.PushFeaturesRequestArgs{
+			CatID:       c.CatID,
+			SourceName:  "naps",
+			LayerName:   "naps",
+			TippeConfig: params.TippeConfigNameNaps,
+			JSONBytes:   buf.Bytes(),
+		}
+		err := c.rpcClient.Call("Daemon.PushFeatures", m, nil)
+		if err != nil {
+			c.logger.Error("Failed to call RPC client",
+				"method", "Daemon.PushFeatures", "source", "naps", "features.len", len(features), "error", err)
+		}
+	}()
+	//go c.rpcClient.Go("Daemon.PushFeatures", tiler.PushFeaturesRequestArgs{
+	//	CatID:       c.CatID,
+	//	SourceName:  "naps",
+	//	LayerName:   "naps",
+	//	TippeConfig: params.TippeConfigNameNaps,
+	//	JSONBytes: stream.Collect(ctx, stream.Transform(ctx, func(lap *cattrack.CatNap) *geojson.Feature {
+	//		return (*geojson.Feature)(lap)
+	//	}, sendNaps)),
+	//}, nil, nil)
 
 	// Block on tripdetect.
+	cleaned := c.CleanTracks(ctx, in)
+	tripdetected := c.TripDetectTracks(ctx, cleaned)
+
+	c.logger.Info("Trip detector blocking")
 	for detected := range tripdetected {
 		if detected.Properties.MustBool("IsTrip") {
 			lapTracks <- detected
@@ -171,7 +217,6 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
 	c.getOrInitState()
 
-	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()
 
 	defer c.logger.Info("Sunk stream to gz file", "name", name)
@@ -182,7 +227,7 @@ func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-c
 		return
 	}
 
-	sinkJSONToWriter(ctx, c, customWriter, in)
+	sinkJSONToWriter(ctx, c, customWriter.Writer(), in)
 }
 
 func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {

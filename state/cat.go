@@ -36,7 +36,7 @@ type CatState struct {
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
-	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Join(flat.CatsDir, c.CatID.String())
+	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Joining(flat.CatsDir, c.CatID.String())
 
 	if !readOnly {
 		if err := flatCat.MkdirAll(); err != nil {
@@ -74,29 +74,12 @@ func (s *CatState) Close() error {
 	return nil
 }
 
-func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
-	if err := json.NewEncoder(wr).Encode(ct); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *CatState) TrackGZWriter() (io.WriteCloser, error) {
-	gzf, err := s.Flat.TracksGZWriter()
-	if err != nil {
-		return nil, err
-	}
-	return gzf.Writer(), nil
-
-}
-
-func (s *CatState) CustomGZWriter(target string) (io.WriteCloser, error) {
+func (s *CatState) CustomGZWriter(target string) (*flat.GZFileWriter, error) {
 	f, err := s.Flat.NamedGZWriter(target)
 	if err != nil {
 		return nil, err
 	}
-	wr := f.Writer()
-	return wr, nil
+	return f, nil
 }
 
 func (s *CatState) storeKV(key []byte, data []byte) error {

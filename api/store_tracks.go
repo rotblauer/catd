@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -27,7 +29,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 			c.logger.Info("Stored cat tracks gz", "count", storedN)
 		}()
 
-		wr, err := c.State.TrackGZWriter()
+		wr, err := c.State.CustomGZWriter(flat.TracksFileName)
 		if err != nil {
 			c.logger.Error("Failed to create track writer", "error", err)
 			errCh <- err
@@ -40,11 +42,13 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 			}
 		}()
 
+		enc := json.NewEncoder(wr.Writer())
+
 		storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
-			if err := c.State.WriteTrack(wr, ct); err != nil {
+			if err := enc.Encode(ct); err != nil {
+				slog.Error("Failed to encode cat track gz", "error", err)
 				return err
 			}
-
 			c.logger.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
 
 			events.NewStoredTrackFeed.Send(ct)

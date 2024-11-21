@@ -3,6 +3,7 @@ package tiler
 import (
 	"fmt"
 	"github.com/bep/debounce"
+	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"log"
@@ -22,108 +23,202 @@ const RPCNetwork = "tcp"
 const RPCAddress = "localhost:1234"
 
 type Daemon struct {
-	Config       *DaemonConfig
-	logger       *slog.Logger
-	debouncers   map[string]func(func())
-	queue        sync.Map
-	debouncersMu sync.Mutex
-	pending      sync.WaitGroup
-	running      sync.WaitGroup
+	Config *DaemonConfig
+
+	// flat is the flat file storage (root) for the tiler daemon.
+	// Normally it will be nested in the default app datadir (see params.go).
+	// It is necessary for the tiler daemon to maintain its own data store
+	// of source data along with the resulting .mbtiles files.
+	// This is because the tiler daemon is a separate process(es) from the main app
+	// and should not compete on file locks with the main app, which could quickly
+	// result in corrupted data.
+	flat *flat.Flat
+
+	logger        *slog.Logger
+	debouncers    map[string]func(func())
+	tilingQueue   sync.Map
+	writeLock     sync.Map
+	debouncersMu  sync.Mutex
+	tilingPending sync.WaitGroup
+	running       sync.WaitGroup
+
+	Done      chan struct{}
+	Interrupt chan struct{}
 }
 
 type DaemonConfig struct {
-	MBTilesRoot      string
+	RootDir          string
 	DebounceInterval time.Duration
 }
 
 func DefaultDaemonConfig() *DaemonConfig {
 	return &DaemonConfig{
-		MBTilesRoot:      filepath.Join(params.DatadirRoot, "tiles"),
+		// RootDir is the root directory for the tiler daemon.
+		// The daemon will create two subdirectories:
+		// - `tiles` for the final .mbtiles files
+		// - `source` for the associated source files
+		// Each of these subdirectories will be further divided by cat ID.
+		// In this way, the `source` directory will imitate the
+		// cat state directory (datadir/cats/).
+		// This allows an easy `cp -a` to init or reset the tiler daemon's data.
+		RootDir:          filepath.Join(params.DatadirRoot, "tiled"),
 		DebounceInterval: 5 * time.Second,
 	}
 }
 
 func NewDaemon(config *DaemonConfig) *Daemon {
-	return &Daemon{
-		Config:     config,
-		logger:     slog.With("daemon", "tiler"),
-		debouncers: make(map[string]func(func())),
-		queue:      sync.Map{},
-	}
-}
-
-// RunDaemon starts the tiler daemon.
-func RunDaemon(config *DaemonConfig, quit <-chan struct{}) (done chan struct{}) {
-	done = make(chan struct{})
-
 	if config == nil {
 		config = DefaultDaemonConfig()
 	}
 
-	server := rpc.NewServer()
-	daemon := NewDaemon(config)
+	return &Daemon{
+		Config:      config,
+		flat:        flat.NewFlatWithRoot(config.RootDir),
+		logger:      slog.With("daemon", "tiler"),
+		debouncers:  make(map[string]func(func())),
+		tilingQueue: sync.Map{},
+		writeLock:   sync.Map{},
 
-	if err := server.Register(daemon); err != nil {
+		Done:      make(chan struct{}, 1),
+		Interrupt: make(chan struct{}, 1),
+	}
+}
+
+// Run starts the tiler daemon.
+func (d *Daemon) Run() error {
+	server := rpc.NewServer()
+
+	if err := server.Register(d); err != nil {
 		slog.Error("Failed to register tiler daemon", "error", err)
-		return
+		return err
 	}
 
 	server.HandleHTTP(RPCPath, rpc.DefaultDebugPath)
 	l, err := net.Listen(RPCNetwork, RPCAddress)
 	if err != nil {
-		log.Fatal("listen error:", err)
+		return err
 	}
 
 	go func() {
 		if err := http.Serve(l, server); err != nil {
-			log.Fatal("serve error:", err)
+			log.Fatal("TileDaemon RPC HTTP serve error:", err)
 		}
 	}()
 
 	go func() {
 		defer func() {
-			done <- struct{}{}
-			close(done)
+			d.Done <- struct{}{}
+			close(d.Done)
 		}()
-		slog.Info("TilerDaemon RPC HTTP server started")
-		defer slog.Info("TilerDaemon stopped")
+		d.logger.Info("TilerDaemon RPC HTTP server started",
+			slog.Group("listen", "network", RPCNetwork, "address", RPCAddress))
+
 		for {
 			select {
-			case <-quit:
-				daemon.logger.Info("TilerDaemon quitting, waiting on pending tasks...")
-				daemon.pending.Wait()
-				daemon.logger.Info("TilerDaemon quitting, waiting on running tasks...")
-				daemon.running.Wait()
-				daemon.logger.Info("TilerDaemon tasks done, exiting")
+			case <-d.Interrupt:
+				d.logger.Info("TilerDaemon quitting, waiting on tilingPending tasks...")
+				d.tilingPending.Wait()
+				d.logger.Info("TilerDaemon quitting, waiting on running tasks...")
+				d.running.Wait()
+				d.logger.Info("TilerDaemon tasks done, exiting")
 				return
 			}
 		}
 	}()
-	return done
+	return nil
+}
+
+type PushFeaturesRequestArgs struct {
+	CatID       conceptual.CatID
+	SourceName  string
+	LayerName   string
+	TippeConfig params.TippeConfigName
+	JSONBytes   []byte
+}
+
+func (a *PushFeaturesRequestArgs) validate() error {
+	if a.CatID == "" {
+		return fmt.Errorf("missing cat ID")
+	}
+	if a.SourceName == "" {
+		return fmt.Errorf("missing source name")
+	}
+	if a.LayerName == "" {
+		return fmt.Errorf("missing layer name")
+	}
+	if a.TippeConfig == "" {
+		return fmt.Errorf("missing tippe config")
+	}
+	if len(a.JSONBytes) == 0 {
+		return fmt.Errorf("missing features")
+	}
+	return nil
+}
+
+func (d *Daemon) writeGZ(f *flat.Flat, args *PushFeaturesRequestArgs, name string) error {
+
+	wr, err := f.NamedGZWriter(name)
+	if err != nil {
+		return err
+	}
+
+	//if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
+	//	panic(err)
+	//}
+
+	if _, err := wr.Writer().Write(args.JSONBytes); err != nil {
+		return err
+	}
+	if err := wr.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesResponse) error {
+	d.logger.Info("PushFeatures", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName)
+	if err := args.validate(); err != nil {
+		slog.Warn("PushFeatures invalid args", "error", err)
+		return err
+	}
+
+	// Store features in flat gzs.
+	sourceFlat := flat.NewFlatWithRoot(d.flat.Path()).Joining("source", args.CatID.String())
+	if err := sourceFlat.MkdirAll(); err != nil {
+		return err
+	}
+
+	if err := d.writeGZ(sourceFlat, args, args.SourceName+".geojson.gz"); err != nil {
+		return err
+	}
+
+	// Notify tiler daemon to tile the source file.
+
+	return nil
 }
 
 // enqueue registers unique source files for tiling.
 func (d *Daemon) enqueue(source string) {
-	if _, ok := d.queue.Load(source); !ok {
-		d.queue.Store(source, struct{}{})
-		d.pending.Add(1)
+	if _, ok := d.tilingQueue.Load(source); !ok {
+		d.tilingQueue.Store(source, struct{}{})
+		d.tilingPending.Add(1)
 	}
 }
 
-// unqueue unregisters a pending source file.
+// unqueue unregisters a tilingPending source file.
 func (d *Daemon) unqueue(source string) {
-	d.queue.Delete(source)
-	d.pending.Done()
+	d.tilingQueue.Delete(source)
+	d.tilingPending.Done()
 }
 
-type PushFeaturesRequest struct {
-	CatID conceptual.CatID
+type PushFeaturesResponse struct {
+	Success bool
 }
 
 type TilingRequestArgs struct {
 	CatID    conceptual.CatID
 	SourceGZ string
-	Config   params.TippeConfigT
+	Config   params.TippeConfigName
 }
 
 type TilingResponse struct {
@@ -191,14 +286,14 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 
 	cliConfig := params.CLIFlagsT{}
 	switch args.Config {
-	case params.TippeConfigTracks:
+	case params.TippeConfigNameTracks:
 		cliConfig = params.DefaultTippeConfigs.Tracks()
-	case params.TippeConfigSnaps:
+	case params.TippeConfigNameSnaps:
 		// TODO: Implement snaps
 		cliConfig = params.DefaultTippeConfigs.Tracks()
-	case params.TippeConfigLaps:
+	case params.TippeConfigNameLaps:
 		cliConfig = params.DefaultTippeConfigs.Laps()
-	case params.TippeConfigNaps:
+	case params.TippeConfigNameNaps:
 		cliConfig = params.DefaultTippeConfigs.Naps()
 	default:
 		slog.Warn("Unknown tiling config", "config", args.Config)

@@ -115,8 +115,10 @@ Missoula, Montana
 			slog.Info("Import done")
 		}()
 
-		quitTiler := make(chan struct{})
-		tilerDaemonDone := tiler.RunDaemon(nil, quitTiler)
+		d := tiler.NewDaemon(nil)
+		if err := d.Run(); err != nil {
+			log.Fatal(err)
+		}
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
@@ -204,6 +206,7 @@ Missoula, Montana
 					slog.Warn("Received signal", "signal", sig, "i", i)
 					if i == 0 {
 						quit <- struct{}{}
+
 					} else {
 						log.Fatalln("Force exit")
 					}
@@ -235,15 +238,18 @@ Missoula, Montana
 			handleLinesBatch(<-linesCh)
 		}
 
-		slog.Warn("Closing work chan")
+		slog.Info("Interrupting tiler")
+		d.Interrupt <- struct{}{}
+
+		slog.Info("Closing work chan")
 		close(workCh)
-		slog.Warn("Waiting on workers")
+		slog.Info("Waiting on workers")
 		workersWG.Wait()
-		slog.Warn("Canceling context")
+		slog.Info("Canceling context")
 		ctxCanceler()
-		slog.Warn("Quitting tiler")
-		quitTiler <- struct{}{}
-		<-tilerDaemonDone
+		slog.Info("Waiting on tiler")
+		<-d.Done
+		slog.Info("Au revoir!")
 	},
 }
 

@@ -33,6 +33,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 
 	c.State.Waiting.Add(1)
 	go func() {
+		defer c.State.Waiting.Done()
 
 		// Persist the trip detector state on stream completion.
 		defer func() {
@@ -46,7 +47,6 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 				}
 				c.logger.Debug("Stored trip detector state", "last", tdLatest, "lap", td.Tripping)
 			}
-			c.State.Waiting.Done()
 			defer close(out)
 		}()
 
