@@ -124,6 +124,14 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	return (*CatLap)(f)
 }
 
+func (cl *CatLap) DistanceTraversed() float64 {
+	return cl.Properties["Distance"].(map[string]float64)["Traversed"]
+}
+
+func (cl *CatLap) Duration() time.Duration {
+	return time.Duration(cl.Properties["Time"].(map[string]any)["Duration"].(float64)) * time.Second
+}
+
 func ActivityMode(list []*CatTrack) activity.Activity {
 	activities := make([]float64, len(list))
 	for i, f := range list {

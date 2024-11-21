@@ -8,8 +8,8 @@ import (
 	"log/slog"
 )
 
-// Store stores incoming CatTracks for one cat to disk.
-func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
+// StoreTracks stores incoming CatTracks for one cat to disk.
+func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
 	c.getOrInitState()
 
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)

@@ -8,7 +8,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
+func (c *Cat) TrackNaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
 	c.getOrInitState()
 
 	out := make(chan *cattrack.CatNap)

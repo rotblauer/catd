@@ -1,16 +1,5 @@
 package api
 
-import (
-	"context"
-	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/stream"
-	"github.com/rotblauer/catd/tiler"
-	"github.com/rotblauer/catd/types/cattrack"
-	"io"
-	"path/filepath"
-	"time"
-)
-
 // TODO Need global tiling service.
 /*
 Debounce impossible. Eternally out of scope for short-lived Populating API cat.
@@ -27,66 +16,53 @@ And we need to be able to call functions outside the cat hat.
 This is what events are for.
 */
 
-// TileEdgeLaps requires state and is non-blocking.
-func (c *Cat) TileEdgeLaps(ctx context.Context, in <-chan *cattrack.CatLap) {
-	c.getOrInitState()
-
-	laps := stream.Collect(ctx, in)
-	if len(laps) == 0 {
-		return
-	}
-
-	c.logger.Info("TileEdgeLaps", "laps", len(laps))
-
-	edgeGZ := "laps_edge.geojson.gz"
-	sinkToCatJSONGZFile(ctx, c, edgeGZ, stream.Slice(ctx, laps))
-
-	config := &params.TippeConfig{
-		LayerName:     "laps_edge",
-		TilesetName:   "laps_edge",
-		OutputMBTiles: filepath.Join(c.State.Flat.Path(), "laps_edge.mbtiles"),
-		Args:          params.DefaultTippeLapsArgs(),
-	}
-
-	start := time.Now()
-	c.tippeGZ(edgeGZ, config)
-	elapsed := time.Since(start)
-
-	if elapsed > time.Minute {
-
-	}
-}
-
-// tippeGZ tips a GZ file into tippe. Blocking.
-// TODO? Expose an alternate function for tipping arbitrary reader, like HTTP request bodies.
-func (c *Cat) tippeGZ(nameGZ string, config *params.TippeConfig) {
-	r, w := io.Pipe()
-
-	go func() {
-		defer w.Close()
-
-		readEdge, err := c.State.Flat.NamedGZReader(nameGZ)
-		if err != nil {
-			c.logger.Error("Failed to open laps edge file", "error", err)
-			return
-		}
-		defer readEdge.Close()
-
-		_, err = io.Copy(w, readEdge.Reader())
-		if err != nil {
-			c.logger.Error("Failed to copy laps edge file", "error", err)
-		}
-	}()
-
-	config.Args.SetPair("-l", config.LayerName)
-	config.Args.SetPair("-n", config.TilesetName)
-	mbtiles, _ := filepath.Abs(config.OutputMBTiles)
-	config.Args.SetPair("-o", mbtiles)
-
-	c.State.Waiting.Add(1)
-	defer c.State.Waiting.Done()
-	err := tiler.RunTippe(r, config.Args)
-	if err != nil {
-		c.logger.Error("Failed to run tippe laps", "error", err)
-	}
-}
+//// TileEdgeLaps requires state and is non-blocking.
+//func (c *Cat) TileEdgeLaps(ctx context.Context, in <-chan *cattrack.CatLap) {
+//	c.getOrInitState()
+//
+//	laps := stream.Collect(ctx, in)
+//	if len(laps) == 0 {
+//		return
+//	}
+//
+//	c.logger.Info("TileEdgeLaps", "laps", len(laps))
+//
+//	edgeGZ := "laps_edge.geojson.gz"
+//	sinkToCatJSONGZFile(ctx, c, edgeGZ, stream.Slice(ctx, laps))
+//
+//	args := params.DefaultTippeConfigs.Laps().
+//		MustSetPair("--layer", "laps_edge").
+//		MustSetPair("--name", "laps_edge").
+//		MustSetPair("--output", filepath.Join(c.State.Flat.Path(), "laps_edge.mbtiles"))
+//
+//	c.tippeGZ(edgeGZ, args)
+//}
+//
+//// tippeGZ tips a GZ file into tippe. Blocking.
+//// TODO? Expose an alternate function for tipping arbitrary reader, like HTTP request bodies.
+//func (c *Cat) tippeGZ(nameGZ string, args params.CLIFlagsT) {
+//	r, w := io.Pipe()
+//
+//	go func() {
+//		defer w.Close()
+//
+//		readEdge, err := c.State.Flat.NamedGZReader(nameGZ)
+//		if err != nil {
+//			c.logger.Error("Failed to open laps edge file", "error", err)
+//			return
+//		}
+//		defer readEdge.Close()
+//
+//		_, err = io.Copy(w, readEdge.Reader())
+//		if err != nil {
+//			c.logger.Error("Failed to copy laps edge file", "error", err)
+//		}
+//	}()
+//
+//	c.State.Waiting.Add(1)
+//	defer c.State.Waiting.Done()
+//	err := tiler.tipFromReader(r, args)
+//	if err != nil {
+//		c.logger.Error("Failed to run tippe laps", "error", err)
+//	}
+//}

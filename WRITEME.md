@@ -1,4 +1,11 @@
 
+
+- (event) StoreTracks(tracks) -> tpp
+- (event) StoreLap(lap) -> tpl
+- (event) StoreNap(nap) -> tpn
+
+---
+
 Careful with catching signal interruptions with `|& tee run.out`.
 It seems `import` is not able to catch the interrupt and does 
 not exit gracefully, which means important state is lost.

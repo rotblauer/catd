@@ -1,25 +1,32 @@
 package params
 
-import "io"
-
 var TippecanoeCommand = "/usr/local/bin/tippecanoe"
+
+type TippeConfigT string
+
+const (
+	TippeConfigTracks TippeConfigT = "tracks"
+	TippeConfigSnaps  TippeConfigT = "snaps"
+	TippeConfigLaps   TippeConfigT = "laps"
+	TippeConfigNaps   TippeConfigT = "naps"
+)
 
 type CLIFlagsT []string
 
-type TippeConfig struct {
-	LayerName     string
-	TilesetName   string
-	InputGZ       io.Reader
-	OutputMBTiles string
-	Args          CLIFlagsT
-}
-
-func DefaultTippeLapsArgs() CLIFlagsT {
-	return TippeLapsArgs.Copy()
-}
-
-func DefaultTippeNapsArgs() CLIFlagsT {
-	return TippeNapsArgs.Copy()
+var DefaultTippeConfigs = &struct {
+	Tracks func() CLIFlagsT
+	Laps   func() CLIFlagsT
+	Naps   func() CLIFlagsT
+}{
+	Tracks: func() CLIFlagsT {
+		return TippeTracksArgs.Copy()
+	},
+	Laps: func() CLIFlagsT {
+		return TippeLapsArgs.Copy()
+	},
+	Naps: func() CLIFlagsT {
+		return TippeNapsArgs.Copy()
+	},
 }
 
 var (
@@ -50,12 +57,12 @@ var (
 		"--generate-ids",
 		"--read-parallel",
 		"--temporary-directory", "/tmp",
-		"-l", "${LAYER_NAME}",
-		"-n", "${TILESET_NAME}",
-		"-o", "${OUTPUT_FILE}",
+		"--layer", "${LAYER_NAME}",
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
 		"--force",
 	}
-	TippeNapsArgs = &CLIFlagsT{
+	TippeNapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "5000000",
 		"--cluster-densest-as-needed",
 		"--cluster-distance", "1",
@@ -83,9 +90,39 @@ var (
 		"--generate-ids",
 		"--temporary-directory", "/tmp",
 		"--read-parallel",
-		"-l", "${LAYER_NAME}",
-		"-n", "${TILESET_NAME}",
-		"-o", "${OUTPUT_FILE}",
+		"--layer", "${LAYER_NAME}",
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
+		"--force",
+	}
+	// TippeTracksArgs taken from V1 CatTracks procedge, procmaster.
+	TippeTracksArgs = CLIFlagsT{
+		"--maximum-tile-bytes", "330000", // num bytes/tile,default: 500kb=500000
+		"--cluster-densest-as-needed",
+		"--cluster-distance=1",
+		"--calculate-feature-density",
+		"--include", "Alias",
+		"--include", "UUID",
+		"--include", "Name",
+		"--include", "Activity",
+		"--include", "Elevation",
+		"--include", "Speed",
+		"--include", "Accuracy",
+		// "--include", "Heading",
+		"--include", "UnixTime",
+		"-EUnixTime:max",
+		"-EElevation:max",
+		"-ESpeed:max", // mean",
+		"-EAccuracy:mean",
+		"--single-precision",
+		"--drop-rate", "1", // == --drop-rate
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "18",
+		"--json-progress", "--progress-interval", "30",
+		"--read-parallel",
+		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
 		"--force",
 	}
 )
@@ -102,6 +139,11 @@ func (c CLIFlagsT) SetPair(key, value string) (next CLIFlagsT, ok bool) {
 		}
 	}
 	return c, false
+}
+
+func (c CLIFlagsT) MustSetPair(key, value string) CLIFlagsT {
+	next, _ := c.SetPair(key, value)
+	return next
 }
 
 func (c CLIFlagsT) Remove(key string, vN int) (next CLIFlagsT, ok bool) {

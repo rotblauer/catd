@@ -23,6 +23,7 @@ import (
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
+	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/gjson"
@@ -113,6 +114,9 @@ Missoula, Montana
 		defer func() {
 			slog.Info("Import done")
 		}()
+
+		quitTiler := make(chan struct{})
+		go tiler.RunDaemon(quitTiler)
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
@@ -237,6 +241,8 @@ Missoula, Montana
 		workersWG.Wait()
 		slog.Warn("Canceling context")
 		ctxCanceler()
+		slog.Warn("Quitting tiler")
+		quitTiler <- struct{}{}
 	},
 }
 

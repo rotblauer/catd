@@ -8,7 +8,10 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
+	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
+	"path/filepath"
 	"time"
 )
 
@@ -60,16 +63,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// Dedupe with hash cache.
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
-	// Store em! (Handle errors blocks this function).
-	stored, storeErrs := c.Store(ctx, deduped)
+	// StoreTracks em! (Handle errors blocks this function).
+	stored, storeErrs := c.StoreTracks(ctx, deduped)
 
 	indexingCh, tripdetectCh := stream.Tee(ctx, stored)
 
-	// S2 indexing pipeline.
+	// S2 indexing pipeline. Stateful/cat.
 	go c.S2IndexTracks(ctx, indexingCh)
+	// Trip detection pipeline. Laps, naps. Stateful/cat.
 	go c.TripDetectionPipeline(ctx, tripdetectCh)
 
-	// Blocking on store.
+	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")
 	stream.Sink(ctx, func(e error) {
 		lastErr = e
@@ -93,9 +97,9 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// Synthesize new/derivative/aggregate features:
 	// ... LineStrings for laps, Points for naps.
 
-	// LapTracks will send completed laps. Incomplete laps are persisted in KV
+	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
-	completedLaps := c.LapTracks(ctx, lapTracks)
+	completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
 		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
 		return duration > 120
@@ -108,15 +112,24 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		return ct
 	}, filterLaps)
 
-	// Tee the final laps for storage and tiling.
-	sinkLaps, tileLaps := stream.Tee(ctx, simplified)
-	// Storage
-	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", sinkLaps)
-	go sinkToCatJSONGZFile(ctx, c, "laps_edge.geojson.gz", tileLaps)
+	go stream.Sink(ctx, func(lap *cattrack.CatLap) {
+		canon := make(chan *cattrack.CatLap)
+		edge := make(chan *cattrack.CatLap)
+		go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", canon)
+		go sinkToCatJSONGZFile(ctx, c, "laps_edge.geojson.gz", edge)
+		canon <- lap
+		edge <- lap
+		close(canon)
+		close(edge)
+		c.rpcClient.Go("Daemon.RequestTiling", tiler.TilingRequestArgs{
+			Source: filepath.Join(c.State.Flat.Path(), "laps_edge.geojson.gz"),
+			Config: params.TippeConfigLaps,
+		}, nil, nil)
+	}, simplified)
 
-	// NapTracks will send completed naps. Incomplete naps are persisted in KV
+	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
-	completedNaps := c.NapTracks(ctx, napTracks)
+	completedNaps := c.TrackNaps(ctx, napTracks)
 	filteredNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
 		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
 		return duration > 120
@@ -153,19 +166,21 @@ func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-c
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
+
+	sinkJSONToWriter(ctx, c, customWriter, in)
+}
+
+func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {
 	defer func() {
-		if err := customWriter.Close(); err != nil {
+		if err := writer.Close(); err != nil {
 			c.logger.Error("Failed to close writer", "error", err)
 		}
 	}()
 
+	enc := json.NewEncoder(writer)
+
 	// Blocking.
 	stream.Sink(ctx, func(a *T) {
-		if a == nil {
-			c.logger.Warn("Refusing to encode nil to gzip file", "file", name)
-			return
-		}
-		enc := json.NewEncoder(customWriter)
 		if err := enc.Encode(a); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 		}

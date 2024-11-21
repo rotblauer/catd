@@ -1,11 +1,12 @@
 package api
 
 import (
-	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/state"
-	"github.com/rotblauer/catd/types/cattrack"
+	"github.com/rotblauer/catd/tiler"
+	"log"
 	"log/slog"
+	"net/rpc"
 )
 
 // Cat is the API representation of a cat.
@@ -25,18 +26,19 @@ type Cat struct {
 	// logger logs lines with the cat name attached.
 	logger *slog.Logger
 
-	trackCh <-chan cattrack.CatTrack
-	TrackGZ event.Subscription
-
-	snapCh <-chan cattrack.CatTrack
-	SnapGZ event.Subscription
+	rpcClient *rpc.Client
 }
 
 func NewCat(catID conceptual.CatID) *Cat {
-
+	client, err := rpc.DialHTTP(tiler.RPCNetwork, tiler.RPCAddress)
+	if err != nil {
+		// FIXME
+		log.Fatal("RPC dialing:", err)
+	}
 	return &Cat{
-		CatID:  catID,
-		logger: slog.With("cat", catID),
+		CatID:     catID,
+		logger:    slog.With("cat", catID),
+		rpcClient: client,
 	}
 }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
+func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
 	c.getOrInitState()
 
 	out := make(chan *cattrack.CatLap)

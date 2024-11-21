@@ -1,6 +1,7 @@
 package tiler
 
 import (
+	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/params"
 	"io"
 	"log"
@@ -9,7 +10,32 @@ import (
 	"strings"
 )
 
-func RunTippe(reader io.Reader, args params.CLIFlagsT) error {
+func (d *Daemon) tip(source string, args params.CLIFlagsT) {
+	r, w := io.Pipe()
+
+	go func() {
+		defer w.Close()
+
+		reader, err := flat.NewFlatGZReader(source)
+		if err != nil {
+			d.logger.Error("Failed to open source file", "error", err)
+			return
+		}
+		defer reader.Close()
+
+		_, err = io.Copy(w, reader.Reader())
+		if err != nil {
+			d.logger.Error("Failed to copy laps edge file", "error", err)
+		}
+	}()
+
+	err := tipFromReader(r, args)
+	if err != nil {
+		d.logger.Error("Failed to run tippe laps", "error", err)
+	}
+}
+
+func tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
 	tippe := exec.Command(params.TippecanoeCommand, args...)
 	stdin, err := tippe.StdinPipe()
 
