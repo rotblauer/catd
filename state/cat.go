@@ -36,10 +36,10 @@ type CatState struct {
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *Cat) NewCatState(readOnly bool) (*CatState, error) {
-	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).ForCat(c.CatID)
+	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Join(flat.CatsDir, c.CatID.String())
 
 	if !readOnly {
-		if err := flatCat.Ensure(); err != nil {
+		if err := flatCat.MkdirAll(); err != nil {
 			return nil, err
 		}
 	}

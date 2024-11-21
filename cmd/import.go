@@ -152,7 +152,7 @@ Missoula, Montana
 				return ct
 			}, stream.Slice(ctx, w.lines))
 
-			// Ensure ordered cat tracks per cat.
+			// MkdirAll ordered cat tracks per cat.
 			o := sync.Once{}
 			for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
 				o.Do(func() {

@@ -74,8 +74,8 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, fmt.Errorf("no levels provided")
 	}
 
-	f := flat.NewFlatWithRoot(root).ForCat(catID)
-	if err := f.Ensure(); err != nil {
+	f := flat.NewFlatWithRoot(root).Join(flat.CatsDir, catID.String())
+	if err := f.MkdirAll(); err != nil {
 		return nil, err
 	}
 	dbPath := filepath.Join(f.Path(), s2DBName)

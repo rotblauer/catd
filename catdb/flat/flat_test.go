@@ -9,7 +9,7 @@ import (
 
 func TestFlat(t *testing.T) {
 	f := NewFlatWithRoot(cattesting.DefaultTestDir())
-	tracks, err := f.ForCat("kitty1").TracksGZWriter()
+	tracks, err := f.Join(CatsDir, "kitty1").TracksGZWriter()
 	if err != nil {
 		t.Fatal(err)
 	}

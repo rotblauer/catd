@@ -31,7 +31,11 @@ func NewFlatWithRoot(root string) *Flat {
 }
 
 func (f *Flat) ForCat(catID conceptual.CatID) *Flat {
-	f.path = filepath.Join(f.path, CatsDir, catID.String())
+	return f.Join(CatsDir, catID.String())
+}
+
+func (f *Flat) Join(paths ...string) *Flat {
+	f.path = filepath.Join(append([]string{f.path}, paths...)...)
 	return f
 }
 
@@ -41,7 +45,7 @@ func (f *Flat) Exists() bool {
 	return err == nil
 }
 
-func (f *Flat) Ensure() error {
+func (f *Flat) MkdirAll() error {
 	return os.MkdirAll(f.path, 0770)
 }
 
