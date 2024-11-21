@@ -183,7 +183,6 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 	if err := sourceFlat.MkdirAll(); err != nil {
 		return err
 	}
-
 	if err := d.writeGZ(sourceFlat, args, args.SourceName+".geojson.gz"); err != nil {
 		return err
 	}

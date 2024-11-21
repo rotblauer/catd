@@ -192,7 +192,6 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 
 	c.logger.Info("Trip detector blocking")
 	for detected := range tripdetected {
-		detected := detected
 		/*
 			fatal error: concurrent map read and map write
 
@@ -205,6 +204,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 			        /home/ia/dev/rotblauer/catd/api/populate.go:75 +0x4f7
 
 		*/
+		detected := detected // FIXME/FIXED?
 		if detected.Properties.MustBool("IsTrip") {
 			lapTracks <- detected
 		} else {
