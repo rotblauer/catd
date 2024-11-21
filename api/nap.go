@@ -9,21 +9,12 @@ import (
 )
 
 func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
+	c.getOrInitState()
+
 	out := make(chan *cattrack.CatNap)
-
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return nil
-		}
-	}
-	c.State.Waiting.Add(1)
-
 	ns := nap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
-
 	if data, err := c.State.ReadKV([]byte("napstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ns); err != nil {
 			c.logger.Error("Failed to unmarshal nap state", "error", err)
@@ -37,6 +28,7 @@ func (c *Cat) NapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		}
 	}
 
+	c.State.Waiting.Add(1)
 	go func() {
 		defer close(out)
 		defer c.State.Waiting.Done()

@@ -10,19 +10,13 @@ import (
 
 // Store stores incoming CatTracks for one cat to disk.
 func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
+	c.getOrInitState()
 
 	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
 
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return
-		}
-	}
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
-	c.State.Waiting.Add(1)
 
+	c.State.Waiting.Add(1)
 	go func() {
 		defer close(storedCh)
 		defer close(errCh)
@@ -52,6 +46,7 @@ func (c *Cat) Store(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <
 			}
 
 			c.logger.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
+
 			events.NewStoredTrackFeed.Send(ct)
 			storedN++
 

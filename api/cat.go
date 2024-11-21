@@ -1,8 +1,10 @@
 package api
 
 import (
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/state"
+	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 )
 
@@ -20,10 +22,18 @@ type Cat struct {
 	// and they might want to share a state conn.
 	State *state.CatState
 
+	// logger logs lines with the cat name attached.
 	logger *slog.Logger
+
+	trackCh <-chan cattrack.CatTrack
+	TrackGZ event.Subscription
+
+	snapCh <-chan cattrack.CatTrack
+	SnapGZ event.Subscription
 }
 
 func NewCat(catID conceptual.CatID) *Cat {
+
 	return &Cat{
 		CatID:  catID,
 		logger: slog.With("cat", catID),
@@ -40,4 +50,14 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	}
 	c.State = st
 	return c.State, nil
+}
+
+func (c *Cat) getOrInitState() {
+	if c.State == nil {
+		_, err := c.WithState(false)
+		if err != nil {
+			c.logger.Error("Failed to create cat state", "error", err)
+			return
+		}
+	}
 }

@@ -9,14 +9,7 @@ import (
 
 // S2IndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
-
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return
-		}
-	}
+	c.getOrInitState()
 
 	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()

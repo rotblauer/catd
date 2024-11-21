@@ -93,30 +93,42 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// Synthesize new/derivative/aggregate features:
 	// ... LineStrings for laps, Points for naps.
 
-	// Laps
+	// LapTracks will send completed laps. Incomplete laps are persisted in KV
+	// and restored on cat restart.
 	completedLaps := c.LapTracks(ctx, lapTracks)
-	longCompletedLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
+	filterLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
 		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
 		return duration > 120
 	}, completedLaps)
+
+	// Simplify the lap geometry.
 	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
 	simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
 		ct.Geometry = simplifier.Simplify(ct.Geometry)
 		return ct
-	}, longCompletedLaps)
+	}, filterLaps)
 
-	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", simplified)
+	// Tee the final laps for storage and tiling.
+	sinkLaps, tileLaps := stream.Tee(ctx, simplified)
+	// Storage
+	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", sinkLaps)
+	go sinkToCatJSONGZFile(ctx, c, "laps_edge.geojson.gz", tileLaps)
 
-	// Naps
+	// NapTracks will send completed naps. Incomplete naps are persisted in KV
+	// and restored on cat restart.
 	completedNaps := c.NapTracks(ctx, napTracks)
-	longCompletedNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
+	filteredNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
 		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
 		return duration > 120
 	}, completedNaps)
 
-	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", longCompletedNaps)
+	sinkNaps, tileNaps := stream.Tee(ctx, filteredNaps)
+	// Storage
+	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", sinkNaps)
+	go sinkToCatJSONGZFile(ctx, c, "naps_edge.geojson.gz", tileNaps)
+
+	// TODO I tink I want to trigger a global tile update here,
+	// or to fire an event that can be listened to by a global tiling service.
 
 	// Block on tripdetect.
 	for detected := range tripdetected {
@@ -129,15 +141,12 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 }
 
 func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return
-		}
-	}
-	defer c.logger.Info("Sunk stream to gz file", "name", name)
+	c.getOrInitState()
+
+	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()
+
+	defer c.logger.Info("Sunk stream to gz file", "name", name)
 
 	customWriter, err := c.State.CustomGZWriter(name)
 	if err != nil {

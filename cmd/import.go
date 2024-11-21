@@ -48,9 +48,9 @@ var importCmd = &cobra.Command{
 Tracks from mixed cats ARE supported, e.g. master.json.gz.
 
 Tracks are decoded as JSON lines from stdin and grouped by cat before decoding into CatTracks.
-Once the cat batch size is fulfilled, the cat batch is passed to an async Populate worker.
-Because cat.Populate is holds a lock on cat state, same-cat workers will block.
-This can't be helped because we want to process each cat's tracks in order the order they were originally saved.
+Graceful shutdown is MANDATORY for data integrity. Be patient.
+
+This command can run idempotently, and incrementally on the same source.
 
 Flags:
 
@@ -63,7 +63,17 @@ Examples:
 
   zcat master.json.gz | catd import --workers 12 --batch-size 100_000 --sort true
 
-A note on ordering and sorting:
+Notes:
+
+Same-source, re-runs:
+
+A record is stored in /tmp of the number of lines read (and processed), and if that cache is found
+on restart, that number of lines will be skipped (fast!) before processing begins.
+This assumes that the input is consistent between runs through that line number - 
+so interim append-only operations on the source may be OK, but changing the source entirely will 
+cause unexpected and unreasonable outcomes.  
+
+Ordering and sorting:
 
 MOST tracks are ordered defacto -- they were created, listed, pushed, and appended cat-chronologically, 
 and generally close to globally-chronologically (albeit with many riffles at the per-cat edges due to async client recording and pushing).
@@ -85,8 +95,8 @@ But we are still limited by the source input order. For example, if rye cat has 
 then master.json.gz will have 10 batches (of 100_000) to consume before any other cat's tracks can be processed -
 and these will all be serially blocking. This is an inherent limitation of the input format and the way we process it.
 
-Processing goes at the rate of about 8000 tracks/cat/second.
-A master.json.gz with a majority of 2 cats represented flows at around 16000 tracks/second.
+Processing goes at the rate of about 7000-8000 tracks/cat/second, or about 15s/100_000 cat batch.
+A master.json.gz with a majority of 2 cats represented flows at around 15000 tracks/second.
 
 ThinkPad P52. 
 Missoula, Montana
@@ -110,7 +120,7 @@ Missoula, Montana
 
 		// workingWorkN is used to ensure cat chronology.
 		// It permits 2 cats to populate simultaneously,
-		// but does not permit the same cat to Populate out of order.
+		// but does not permit the same cat to Populate out of order (cat.Populate's state lock ensure serial-cats).
 		// It is incremented for each work package received.
 		// Workers then block until their increment matches the latest package number.
 		// Since cat Populators do not block each other, the worker
@@ -139,7 +149,11 @@ Missoula, Montana
 			}, stream.Slice(ctx, w.lines))
 
 			// Ensure ordered cat tracks per cat.
+			o := sync.Once{}
 			for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
+				o.Do(func() {
+					slog.Warn("Worker blocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
+				})
 			}
 
 			// Populate is blocking. It holds a lock on the cat state.

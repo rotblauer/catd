@@ -9,17 +9,9 @@ import (
 )
 
 func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
+	c.getOrInitState()
+
 	out := make(chan *cattrack.CatLap)
-
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return nil
-		}
-	}
-	c.State.Waiting.Add(1)
-
 	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
@@ -36,6 +28,7 @@ func (c *Cat) LapTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		}
 	}
 
+	c.State.Waiting.Add(1)
 	go func() {
 		defer close(out)
 		defer c.State.Waiting.Done()

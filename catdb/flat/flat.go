@@ -49,32 +49,36 @@ func (f *Flat) Path() string {
 	return f.path
 }
 
-func (f *Flat) NamedGZ(name string) (*GZFile, error) {
-	return NewFlatGZ(filepath.Join(f.path, name))
+func (f *Flat) NamedGZWriter(name string) (*GZFileWriter, error) {
+	return NewFlatGZWriter(filepath.Join(f.path, name))
 }
 
-func (f *Flat) TracksGZ() (*GZFile, error) {
-	return NewFlatGZ(filepath.Join(f.path, TracksFileName))
+func (f *Flat) NamedGZReader(name string) (*GZFileReader, error) {
+	return NewFlatGZReader(filepath.Join(f.path, name))
 }
 
-func (f *Flat) SnapsGZ() (*GZFile, error) {
-	return NewFlatGZ(filepath.Join(f.path, SnapsFileName))
+func (f *Flat) TracksGZWriter() (*GZFileWriter, error) {
+	return f.NamedGZWriter(TracksFileName)
 }
 
-func (f *Flat) LapsGZ() (*GZFile, error) {
-	return NewFlatGZ(filepath.Join(f.path, LapsFileName))
+func (f *Flat) SnapsGZWriter() (*GZFileWriter, error) {
+	return f.NamedGZWriter(SnapsFileName)
 }
 
-func (f *Flat) NapsGZ() (*GZFile, error) {
-	return NewFlatGZ(filepath.Join(f.path, NapsFileName))
+func (f *Flat) LapsGZWriter() (*GZFileWriter, error) {
+	return f.NamedGZWriter(LapsFileName)
 }
 
-type GZFile struct {
+func (f *Flat) NapsGZWriter() (*GZFileWriter, error) {
+	return f.NamedGZWriter(NapsFileName)
+}
+
+type GZFileWriter struct {
 	f   *os.File
 	gzw *gzip.Writer
 }
 
-func NewFlatGZ(path string) (*GZFile, error) {
+func NewFlatGZWriter(path string) (*GZFileWriter, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
 		return nil, err
 	}
@@ -86,14 +90,14 @@ func NewFlatGZ(path string) (*GZFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GZFile{f: fi, gzw: gzw}, nil
+	return &GZFileWriter{f: fi, gzw: gzw}, nil
 }
 
-func (g *GZFile) Writer() *gzip.Writer {
+func (g *GZFileWriter) Writer() *gzip.Writer {
 	return g.gzw
 }
 
-func (g *GZFile) Close() error {
+func (g *GZFileWriter) Close() error {
 	if err := g.gzw.Close(); err != nil {
 		return err
 	}
@@ -103,8 +107,45 @@ func (g *GZFile) Close() error {
 	return nil
 }
 
-func (g *GZFile) Path() string {
+func (g *GZFileWriter) Path() string {
 	return g.f.Name()
+}
+
+type GZFileReader struct {
+	f   *os.File
+	gzr *gzip.Reader
+}
+
+func NewFlatGZReader(path string) (*GZFileReader, error) {
+	// If file/path does not exist, return error.
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, err
+	} else if err != nil {
+		return nil, err
+	}
+	fi, err := os.OpenFile(path, os.O_RDONLY, 0660)
+	if err != nil {
+		return nil, err
+	}
+	gzr, err := gzip.NewReader(fi)
+	if err != nil {
+		return nil, err
+	}
+	return &GZFileReader{f: fi, gzr: gzr}, nil
+}
+
+func (g *GZFileReader) Reader() *gzip.Reader {
+	return g.gzr
+}
+
+func (g *GZFileReader) Close() error {
+	if err := g.gzr.Close(); err != nil {
+		return err
+	}
+	if err := g.f.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type TextFile struct {

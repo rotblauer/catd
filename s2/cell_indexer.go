@@ -65,7 +65,7 @@ type CellIndexer struct {
 	Caches    map[CellLevel]*lru.Cache
 	Levels    []CellLevel
 	DB        *bbolt.DB
-	FlatFiles map[CellLevel]*flat.GZFile
+	FlatFiles map[CellLevel]*flat.GZFileWriter
 	BatchSize int
 }
 
@@ -84,9 +84,9 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, err
 	}
 
-	flatFileMap := make(map[CellLevel]*flat.GZFile)
+	flatFileMap := make(map[CellLevel]*flat.GZFileWriter)
 	for _, level := range levels {
-		gzf, err := f.NamedGZ(fmt.Sprintf("s2_level-%02d.geojson.gz", level))
+		gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level))
 		if err != nil {
 			return nil, err
 		}

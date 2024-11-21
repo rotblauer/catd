@@ -82,7 +82,7 @@ func (s *CatState) WriteTrack(wr io.Writer, ct *cattrack.CatTrack) error {
 }
 
 func (s *CatState) TrackGZWriter() (io.WriteCloser, error) {
-	gzf, err := s.Flat.TracksGZ()
+	gzf, err := s.Flat.TracksGZWriter()
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s *CatState) TrackGZWriter() (io.WriteCloser, error) {
 }
 
 func (s *CatState) CustomGZWriter(target string) (io.WriteCloser, error) {
-	f, err := s.Flat.NamedGZ(target)
+	f, err := s.Flat.NamedGZWriter(target)
 	if err != nil {
 		return nil, err
 	}

@@ -12,17 +12,9 @@ import (
 
 // TripDetectTracks detects trips in incoming CatTracks.
 func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
+	c.getOrInitState()
+
 	out := make(chan *cattrack.CatTrack)
-
-	if c.State == nil {
-		_, err := c.WithState(false)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return nil
-		}
-	}
-	c.State.Waiting.Add(1)
-
 	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
 
 	// If possible, read persisted cat tripdetector-state.
@@ -39,6 +31,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 		}
 	}
 
+	c.State.Waiting.Add(1)
 	go func() {
 
 		// Persist the trip detector state on stream completion.
