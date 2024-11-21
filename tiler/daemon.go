@@ -102,6 +102,24 @@ func RunDaemon(config *DaemonConfig, quit <-chan struct{}) (done chan struct{}) 
 	return done
 }
 
+// enqueue registers unique source files for tiling.
+func (d *Daemon) enqueue(source string) {
+	if _, ok := d.queue.Load(source); !ok {
+		d.queue.Store(source, struct{}{})
+		d.pending.Add(1)
+	}
+}
+
+// unqueue unregisters a pending source file.
+func (d *Daemon) unqueue(source string) {
+	d.queue.Delete(source)
+	d.pending.Done()
+}
+
+type PushFeaturesRequest struct {
+	CatID conceptual.CatID
+}
+
 type TilingRequestArgs struct {
 	CatID    conceptual.CatID
 	SourceGZ string
@@ -140,18 +158,6 @@ func (r *TilingRequestArgs) tmpOutput() string {
 func (r *TilingRequestArgs) finalOutput() string {
 	base := conventionalMBTilesBaseName(r.SourceGZ)
 	return filepath.Join(params.DatadirRoot, "tiles", r.CatID.String(), base)
-}
-
-func (d *Daemon) enqueue(source string) {
-	if _, ok := d.queue.Load(source); !ok {
-		d.queue.Store(source, struct{}{})
-		d.pending.Add(1)
-	}
-}
-
-func (d *Daemon) unqueue(source string) {
-	d.queue.Delete(source)
-	d.pending.Done()
 }
 
 func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) error {

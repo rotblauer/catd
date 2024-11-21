@@ -32,10 +32,10 @@ type CatState struct {
 	rOnly   bool
 }
 
-// NewCatState defines data sources, caches, and encoding for a cat.
+// NewCatWithState defines data sources, caches, and encoding for a cat.
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
-func (c *Cat) NewCatState(readOnly bool) (*CatState, error) {
+func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
 	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Join(flat.CatsDir, c.CatID.String())
 
 	if !readOnly {

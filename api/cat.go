@@ -46,7 +46,7 @@ func NewCat(catID conceptual.CatID) *Cat {
 // If readOnly is false it will block.
 func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	s := &state.Cat{CatID: c.CatID}
-	st, err := s.NewCatState(readOnly)
+	st, err := s.NewCatWithState(readOnly)
 	if err != nil {
 		return nil, err
 	}
