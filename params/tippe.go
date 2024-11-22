@@ -15,11 +15,15 @@ type CLIFlagsT []string
 
 var DefaultTippeConfigs = &struct {
 	Tracks func() CLIFlagsT
+	Snaps  func() CLIFlagsT
 	Laps   func() CLIFlagsT
 	Naps   func() CLIFlagsT
 }{
 	Tracks: func() CLIFlagsT {
 		return TippeTracksArgs.Copy()
+	},
+	Snaps: func() CLIFlagsT {
+		return TippeSnapsArgs.Copy()
 	},
 	Laps: func() CLIFlagsT {
 		return TippeLapsArgs.Copy()
@@ -56,6 +60,8 @@ var (
 		"--single-precision",
 		"--generate-ids",
 		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
 		"--temporary-directory", "/tmp",
 		"--layer", "${LAYER_NAME}",
 		"--name", "${TILESET_NAME}",
@@ -90,6 +96,8 @@ var (
 		"--generate-ids",
 		"--temporary-directory", "/tmp",
 		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
 		"--layer", "${LAYER_NAME}",
 		"--name", "${TILESET_NAME}",
 		"--output", "${OUTPUT_FILE}",
@@ -120,6 +128,40 @@ var (
 		"--maximum-zoom", "18",
 		"--json-progress", "--progress-interval", "30",
 		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
+		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
+		"--force",
+	}
+	TippeSnapsArgs = CLIFlagsT{
+		"--maximum-tile-bytes", "330000", // num bytes/tile,default: 500kb=500000
+		"--cluster-densest-as-needed",
+		"--cluster-distance=1",
+		"--calculate-feature-density",
+		"--include", "Alias",
+		"--include", "UUID",
+		"--include", "Name",
+		"--include", "Activity",
+		"--include", "Elevation",
+		"--include", "Speed",
+		"--include", "Accuracy",
+		"--include", "S3URL",
+		// "--include", "Heading",
+		"--include", "UnixTime",
+		"-EUnixTime:max",
+		"-EElevation:max",
+		"-ESpeed:max", // mean",
+		"-EAccuracy:mean",
+		"--single-precision",
+		"--drop-rate", "1", // == --drop-rate
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "18",
+		"--json-progress", "--progress-interval", "30",
+		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
 		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
 		"--name", "${TILESET_NAME}",
 		"--output", "${OUTPUT_FILE}",

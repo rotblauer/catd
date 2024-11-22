@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/tiler"
@@ -113,36 +114,15 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
 
 	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, "laps.geojson.gz", sinkLaps)
+	go sinkToCatJSONGZFile(ctx, c, flat.LapsFileName, sinkLaps)
 
 	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		features := stream.Collect(ctx, sendLaps)
-		if len(features) == 0 {
-			return
-		}
-		buf := new(bytes.Buffer)
-		enc := json.NewEncoder(buf)
-		for _, f := range features {
-			if err := enc.Encode(f); err != nil {
-				c.logger.Error("Failed to encode lap feature", "error", err)
-				return
-			}
-		}
-		m := tiler.PushFeaturesRequestArgs{
-			CatID:       c.CatID,
-			SourceName:  "laps",
-			LayerName:   "laps",
-			TippeConfig: params.TippeConfigNameLaps,
-			JSONBytes:   buf.Bytes(),
-		}
-		err := c.rpcClient.Call("Daemon.PushFeatures", m, nil)
-		if err != nil {
-			c.logger.Error("Failed to call RPC client",
-				"method", "Daemon.PushFeatures", "source", "laps", "features.len", len(features), "error", err)
-		}
-	}()
+	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+		CatID:       c.CatID,
+		SourceName:  "laps",
+		LayerName:   "laps",
+		TippeConfig: params.TippeConfigNameLaps,
+	}, sendLaps)
 
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
@@ -156,35 +136,14 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
 
 	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, "naps.geojson.gz", sinkNaps)
+	go sinkToCatJSONGZFile(ctx, c, flat.NapsFileName, sinkNaps)
 	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		features := stream.Collect(ctx, sendNaps)
-		if len(features) == 0 {
-			return
-		}
-		buf := new(bytes.Buffer)
-		enc := json.NewEncoder(buf)
-		for _, f := range features {
-			if err := enc.Encode(f); err != nil {
-				c.logger.Error("Failed to encode nap feature", "error", err)
-				return
-			}
-		}
-		m := tiler.PushFeaturesRequestArgs{
-			CatID:       c.CatID,
-			SourceName:  "naps",
-			LayerName:   "naps",
-			TippeConfig: params.TippeConfigNameNaps,
-			JSONBytes:   buf.Bytes(),
-		}
-		err := c.rpcClient.Call("Daemon.PushFeatures", m, nil)
-		if err != nil {
-			c.logger.Error("Failed to call RPC client",
-				"method", "Daemon.PushFeatures", "source", "naps", "features.len", len(features), "error", err)
-		}
-	}()
+	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+		CatID:       c.CatID,
+		SourceName:  "naps",
+		LayerName:   "naps",
+		TippeConfig: params.TippeConfigNameNaps,
+	}, sendNaps)
 
 	// Block on tripdetect.
 	cleaned := c.CleanTracks(ctx, in)
@@ -220,7 +179,7 @@ func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-c
 
 	defer c.logger.Info("Sunk stream to gz file", "name", name)
 
-	customWriter, err := c.State.CustomGZWriter(name)
+	customWriter, err := c.State.NamedGZWriter(name)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
@@ -244,4 +203,29 @@ func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser,
 			c.logger.Error("Failed to write", "error", err)
 		}
 	}, in)
+}
+
+func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan *T) {
+	defer c.State.Waiting.Done()
+
+	features := stream.Collect(ctx, in)
+	if len(features) == 0 {
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	enc := json.NewEncoder(buf)
+	for _, f := range features {
+		if err := enc.Encode(f); err != nil {
+			c.logger.Error("Failed to encode nap feature", "error", err)
+			return
+		}
+	}
+	args.JSONBytes = buf.Bytes()
+
+	err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
+	if err != nil {
+		c.logger.Error("Failed to call RPC client",
+			"method", "Daemon.PushFeatures", "source", args.SourceName, "features.len", len(features), "error", err)
+	}
 }

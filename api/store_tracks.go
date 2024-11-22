@@ -29,7 +29,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 			c.logger.Info("Stored cat tracks gz", "count", storedN)
 		}()
 
-		wr, err := c.State.CustomGZWriter(flat.TracksFileName)
+		wr, err := c.State.NamedGZWriter(flat.TracksFileName)
 		if err != nil {
 			c.logger.Error("Failed to create track writer", "error", err)
 			errCh <- err

@@ -74,7 +74,7 @@ func (s *CatState) Close() error {
 	return nil
 }
 
-func (s *CatState) CustomGZWriter(target string) (*flat.GZFileWriter, error) {
+func (s *CatState) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
 	f, err := s.Flat.NamedGZWriter(target)
 	if err != nil {
 		return nil, err

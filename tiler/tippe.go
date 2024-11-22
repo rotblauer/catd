@@ -1,18 +1,18 @@
 package tiler
 
 import (
+	"fmt"
+	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/params"
 	"io"
 	"log"
-	"log/slog"
 	"os/exec"
 	"strings"
 )
 
 func (d *Daemon) tip(source string, args params.CLIFlagsT) error {
 	r, w := io.Pipe()
-
 	go func() {
 		defer w.Close()
 
@@ -29,10 +29,10 @@ func (d *Daemon) tip(source string, args params.CLIFlagsT) error {
 		}
 	}()
 
-	return tipFromReader(r, args)
+	return d.tipFromReader(r, args)
 }
 
-func tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
+func (d *Daemon) tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
 	tippe := exec.Command(params.TippecanoeCommand, args...)
 	stdin, err := tippe.StdinPipe()
 
@@ -40,17 +40,21 @@ func tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
 		defer stdin.Close()
 		n, err := io.Copy(stdin, reader)
 		if err != nil {
-			slog.Warn("Failed to copy reader to tippe", "error", err)
+			d.logger.Warn("Failed to copy reader to tippe", "error", err)
 			return
 		}
-		slog.Info("Copied tippe data", "bytes", n)
+		d.logger.Info("Piped gz data to tippecanoe", "size", humanize.Bytes(uint64(n)))
 	}()
 
 	out, err := tippe.CombinedOutput()
 	if out != nil {
 		// Log output line by line
 		for _, line := range strings.Split(string(out), "\n") {
-			log.Println("tippe |", line)
+			if line == "" {
+				continue
+			}
+			log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))
+			log.Println(line)
 		}
 	}
 	return err
