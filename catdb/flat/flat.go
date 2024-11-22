@@ -155,6 +155,9 @@ func NewFlatGZReader(path string) (*GZFileReader, error) {
 // Reader returns a gzip reader for the file.
 // While the reader is not closed, a shared lock is held on the file.
 func (g *GZFileReader) Reader() *gzip.Reader {
+	if g.closed {
+		panic("closed")
+	}
 	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH); err != nil {
 		panic(err)
 	}
@@ -165,6 +168,9 @@ func (g *GZFileReader) Close() error {
 	if g.closed {
 		return nil
 	}
+	defer func() {
+		g.closed = true
+	}()
 	if err := g.gzr.Close(); err != nil {
 		return err
 	}
@@ -174,6 +180,5 @@ func (g *GZFileReader) Close() error {
 	if err := g.f.Close(); err != nil {
 		return err
 	}
-	g.closed = true
 	return nil
 }

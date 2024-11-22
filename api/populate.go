@@ -92,6 +92,9 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	defer close(lapTracks)
 	defer close(napTracks)
 
+	cleaned := CleanTracks(ctx, in)
+	tripdetected := c.TripDetectTracks(ctx, cleaned)
+
 	// Synthesize new/derivative/aggregate features:
 	// ... LineStrings for laps, Points for naps.
 
@@ -150,9 +153,6 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	}, sendNaps)
 
 	// Block on tripdetect.
-	cleaned := c.CleanTracks(ctx, in)
-	tripdetected := c.TripDetectTracks(ctx, cleaned)
-
 	c.logger.Info("Trip detector blocking")
 	for detected := range tripdetected {
 		/*
@@ -178,27 +178,24 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 
 func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
 	c.getOrInitState()
-
 	defer c.State.Waiting.Done()
-
 	defer c.logger.Info("Sunk stream to gz file", "name", name)
 
-	customWriter, err := c.State.NamedGZWriter(name)
+	wr, err := c.State.NamedGZWriter(name)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
-
-	sinkJSONToWriter(ctx, c, customWriter.Writer(), in)
-}
-
-func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {
 	defer func() {
-		if err := writer.Close(); err != nil {
+		if err := wr.Close(); err != nil {
 			c.logger.Error("Failed to close writer", "error", err)
 		}
 	}()
 
+	sinkJSONToWriter(ctx, c, wr.Writer(), in)
+}
+
+func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {
 	enc := json.NewEncoder(writer)
 
 	// Blocking.

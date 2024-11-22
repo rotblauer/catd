@@ -6,11 +6,13 @@ import (
 	"github.com/paulmach/orb/geo"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
+	"log/slog"
 	"time"
 )
 
 func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
+	defer slog.Info("TeleportationFilter done")
 
 	go func() {
 		defer close(out)

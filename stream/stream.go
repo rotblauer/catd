@@ -137,6 +137,7 @@ func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
 		defer close(a)
 		defer close(b)
 		for element := range in {
+			element := element
 			var out1, out2 = a, b
 			for i := 0; i < 2; i++ {
 				select {
@@ -186,6 +187,7 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 
 func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	for element := range in {
+		element := element
 		select {
 		case <-ctx.Done():
 			return

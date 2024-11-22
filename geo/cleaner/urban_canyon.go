@@ -7,6 +7,7 @@ import (
 	"github.com/paulmach/orb/planar"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
+	"log/slog"
 )
 
 // WangUrbanCanyonFilter filters out spurious points which can occur in urban canyons.
@@ -18,6 +19,7 @@ import (
 // > should be considered as shift points.
 func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
+	defer slog.Info("WangUrbanCanyonFilter done")
 
 	bufferFront, bufferBack := 5, 5
 	bufferSize := bufferFront + 1 + bufferBack
@@ -26,6 +28,8 @@ func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-
 	go func() {
 		defer close(out)
 		for track := range in {
+			track := track
+
 			buffer = append(buffer, track)
 			if len(buffer) < bufferSize {
 				// The first points get automatically flushed without filtering
@@ -62,7 +66,11 @@ func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-
 		// Any and all tailing points get sent.
 		if len(buffer) > bufferFront+1 {
 			for _, track := range buffer[bufferFront:] {
-				out <- track
+				select {
+				case <-ctx.Done():
+					return
+				case out <- track:
+				}
 			}
 		}
 	}()

@@ -16,7 +16,7 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 	go func() {
 		defer w.Close()
 		for _, source := range sources {
-			d.logger.Info("Tipping...", "source", sources, "args", args)
+			d.logger.Info("Tipping...", "source", sources)
 			reader, err := flat.NewFlatGZReader(source)
 			if err != nil {
 				d.logger.Error("Failed to open source file", "error", err)

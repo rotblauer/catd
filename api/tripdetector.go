@@ -83,6 +83,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 
 		// Will block on send unless interrupted. Needs reader.
 		for element := range res {
+			element := element
 			select {
 			case <-ctx.Done():
 				return
