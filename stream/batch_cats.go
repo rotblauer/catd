@@ -44,6 +44,9 @@ func (rl *readTrackLogger) log() {
 }
 
 func (rl *readTrackLogger) done() {
+	if rl == nil || rl.ticker == nil {
+		return
+	}
 	rl.ticker.Stop()
 }
 
@@ -194,3 +197,19 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 
 	return ch, errs, nil
 }
+
+/*
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x5b58f1]
+
+goroutine 14 [running]:
+time.(*Ticker).Stop(...)
+        /home/ia/go1.22.2.linux-amd64/go/src/time/tick.go:45
+github.com/rotblauer/catd/stream.(*readTrackLogger).done(...)
+        /home/ia/dev/rotblauer/catd/stream/batch_cats.go:47
+github.com/rotblauer/catd/stream.ScanLinesBatchingCats.func1(0xc00005e780, 0xc000032660, {0xb3c880, 0xc00011a018})
+        /home/ia/dev/rotblauer/catd/stream/batch_cats.go:176 +0xc71
+created by github.com/rotblauer/catd/stream.ScanLinesBatchingCats in goroutine 1
+        /home/ia/dev/rotblauer/catd/stream/batch_cats.go:89 +0x255
+
+*/

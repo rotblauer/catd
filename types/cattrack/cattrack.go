@@ -49,7 +49,9 @@ func (ct *CatTrack) Time() (time.Time, error) {
 }
 
 func (ct *CatTrack) MustTime() time.Time {
-	t, err := ct.Time()
+	cp := &CatTrack{}
+	*cp = *ct
+	t, err := cp.Time()
 	if err != nil {
 		panic(err)
 	}
