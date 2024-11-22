@@ -10,7 +10,6 @@ package lap
 import (
 	"context"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 	"time"
 )
 
@@ -48,11 +47,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	}
 	span := current.Sub(s.TimeLast)
 	s.TimeLast = current
-	discontinuous := span > s.Interval || span < -1*time.Second
-	if discontinuous {
-		slog.Warn("Lap.IsDiscontinuous", "discontinuous", discontinuous, "span", span, "interval", s.Interval)
-	}
-	return discontinuous
+	return span > s.Interval || span < -1*time.Second
 }
 
 func (s *State) Flush() {

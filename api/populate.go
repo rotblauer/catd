@@ -102,7 +102,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// and restored on cat restart.
 	completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
-		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+		duration := ct.Properties["Duration"].(float64)
 		return duration > 120
 	}, completedLaps)
 
@@ -133,7 +133,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// and restored on cat restart.
 	completedNaps := c.TrackNaps(ctx, napTracks)
 	filteredNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
-		duration := ct.Properties["Time"].(map[string]any)["Duration"].(float64)
+		duration := ct.Properties["Duration"].(float64)
 		return duration > 120
 	}, completedNaps)
 

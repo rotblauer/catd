@@ -33,25 +33,21 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 
 	f := geojson.NewFeature(orb.LineString{})
 
+	first, last := tracks[0], tracks[len(tracks)-1]
+
 	// FIXME: Another list iteration and awkward type assertions.
 	f.Properties["Activity"] = ActivityModeNotUnknownNorStationary(tracks).String()
 
-	first, last := tracks[0], tracks[len(tracks)-1]
-	firstTime, lastTime := first.MustTime(), last.MustTime()
 	f.Properties["Name"] = first.Properties.MustString("Name")
 	f.Properties["UUID"] = first.Properties.MustString("UUID")
 	f.Properties["RawPointCount"] = len(tracks) // unsimplified
-	f.Properties["Time"] = map[string]any{
-		"Start": map[string]any{
-			"Unix":    firstTime.Unix(),
-			"RFC3339": firstTime.Format(time.RFC3339),
-		},
-		"End": map[string]any{
-			"Unix":    lastTime.Unix(),
-			"RFC3339": lastTime.Format(time.RFC3339),
-		},
-		"Duration": lastTime.Sub(firstTime).Round(time.Second).Seconds(),
-	}
+
+	firstTime, lastTime := first.MustTime(), last.MustTime()
+	f.Properties["Time_Start_Unix"] = firstTime.Unix()
+	f.Properties["Time_Start_RFC339"] = firstTime.Format(time.RFC3339)
+	f.Properties["Time_End_Unix"] = lastTime.Unix()
+	f.Properties["Time_End_RFC339"] = lastTime.Format(time.RFC3339)
+	f.Properties["Duration"] = lastTime.Sub(firstTime).Round(time.Second).Seconds()
 
 	accuracies := make([]float64, 0, len(tracks))
 	activities := make([]activity.Activity, 0, len(tracks))
@@ -97,53 +93,33 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		return out
 	}
 
-	mustGetStats := func(data []float64, precision int) map[string]float64 {
+	installStats := func(key string, data []float64, precision int) {
 		statsData := stats.Float64Data(data)
-		return map[string]float64{
-			"Mean":   common.DecimalToFixed(statsMustFloat(statsData.Mean), precision),
-			"Median": common.DecimalToFixed(statsMustFloat(statsData.Median), precision),
-			"Min":    common.DecimalToFixed(statsMustFloat(statsData.Min), precision),
-			"Max":    common.DecimalToFixed(statsMustFloat(statsData.Max), precision),
-		}
+		f.Properties[key+"_Mean"] = common.DecimalToFixed(statsMustFloat(statsData.Mean), precision)
+		f.Properties[key+"_Median"] = common.DecimalToFixed(statsMustFloat(statsData.Median), precision)
+		f.Properties[key+"_Min"] = common.DecimalToFixed(statsMustFloat(statsData.Min), precision)
+		f.Properties[key+"_Max"] = common.DecimalToFixed(statsMustFloat(statsData.Max), precision)
 	}
 
-	f.Properties["Accuracy"] = mustGetStats(accuracies, 0)
-	f.Properties["Speed"] = map[string]any{
-		"Reported":   mustGetStats(reportedSpeeds, 2),
-		"Calculated": mustGetStats(calculatedSpeeds, 2),
-	}
-	f.Properties["Distance"] = map[string]float64{
-		"Traversed": math.Round(distanceTraversed),
-		"Absolute":  math.Round(geo.Distance(tracks[0].Point(), tracks[len(tracks)-1].Point())),
-	}
-	f.Properties["Elevation"] = map[string]float64{
-		"Gain": math.Floor(elevationGain),
-		"Loss": math.Floor(elevationLoss),
-	}
+	installStats("Accuracy", accuracies, 0)
+	installStats("Elevation", elevations, 0)
+	installStats("Speed_Reported", reportedSpeeds, 2)
+	installStats("Speed_Calculated", calculatedSpeeds, 2)
+
+	f.Properties["Distance_Traversed"] = math.Round(distanceTraversed)
+	f.Properties["Distance_Absolute"] = math.Round(geo.Distance(tracks[0].Point(), tracks[len(tracks)-1].Point()))
+	f.Properties["Elevation_Gain"] = math.Floor(elevationGain)
+	f.Properties["Elevation_Loss"] = math.Floor(elevationLoss)
 
 	return (*CatLap)(f)
 }
 
 func (cl *CatLap) DistanceTraversed() float64 {
-	return cl.Properties["Distance"].(map[string]float64)["Traversed"]
+	return cl.Properties.MustFloat64("Distance_Traversed")
 }
 
 func (cl *CatLap) Duration() time.Duration {
-	return time.Duration(cl.Properties["Time"].(map[string]any)["Duration"].(float64)) * time.Second
-}
-
-func ActivityMode(list []*CatTrack) activity.Activity {
-	activities := make([]float64, len(list))
-	for i, f := range list {
-		act := activity.FromAny(f.Properties["Activity"])
-		activities[i] = float64(act)
-	}
-	activitiesStats := stats.Float64Data(activities)
-	mode, _ := activitiesStats.Mode()
-	if len(mode) == 0 {
-		return activity.TrackerStateUnknown
-	}
-	return activity.Activity(mode[0])
+	return time.Duration(cl.Properties.MustFloat64("Duration")) * time.Second
 }
 
 func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {

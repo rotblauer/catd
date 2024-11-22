@@ -36,17 +36,12 @@ func NewCatNap(tracks []*CatTrack) *CatNap {
 	f.Properties["UUID"] = tracks[0].Properties.MustString("UUID")
 	f.Properties["RawPointCount"] = len(tracks)
 
-	f.Properties["Time"] = map[string]any{
-		"Start": map[string]any{
-			"Unix":    tracks[0].MustTime().Unix(),
-			"RFC3339": tracks[0].MustTime().Format(time.RFC3339),
-		},
-		"End": map[string]any{
-			"Unix":    tracks[len(tracks)-1].MustTime().Unix(),
-			"RFC3339": tracks[len(tracks)-1].MustTime().Format(time.RFC3339),
-		},
-		"Duration": tracks[len(tracks)-1].MustTime().Sub(tracks[0].MustTime()).Round(time.Second).Seconds(),
-	}
+	firstTime, lastTime := tracks[0].MustTime(), tracks[len(tracks)-1].MustTime()
+	f.Properties["Time_Start_Unix"] = firstTime.Unix()
+	f.Properties["Time_Start_RFC339"] = firstTime.Format(time.RFC3339)
+	f.Properties["Time_End_Unix"] = lastTime.Unix()
+	f.Properties["Time_End_RFC339"] = lastTime.Format(time.RFC3339)
+	f.Properties["Duration"] = lastTime.Sub(firstTime).Round(time.Second).Seconds()
 
 	accuracies := make([]float64, 0, len(tracks))
 	elevations := make([]float64, 0, len(tracks))
@@ -65,12 +60,10 @@ func NewCatNap(tracks []*CatTrack) *CatNap {
 
 	installStats := func(key string, data []float64, precision int) {
 		statsData := stats.Float64Data(data)
-		f.Properties[key] = map[string]float64{
-			"Mean":   common.DecimalToFixed(statsMustFloat(statsData.Mean), precision),
-			"Median": common.DecimalToFixed(statsMustFloat(statsData.Median), precision),
-			"Min":    common.DecimalToFixed(statsMustFloat(statsData.Min), precision),
-			"Max":    common.DecimalToFixed(statsMustFloat(statsData.Max), precision),
-		}
+		f.Properties[key+"_Mean"] = common.DecimalToFixed(statsMustFloat(statsData.Mean), precision)
+		f.Properties[key+"_Median"] = common.DecimalToFixed(statsMustFloat(statsData.Median), precision)
+		f.Properties[key+"_Min"] = common.DecimalToFixed(statsMustFloat(statsData.Min), precision)
+		f.Properties[key+"_Max"] = common.DecimalToFixed(statsMustFloat(statsData.Max), precision)
 	}
 
 	installStats("Accuracy", accuracies, 0)
