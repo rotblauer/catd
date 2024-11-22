@@ -92,7 +92,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	defer close(lapTracks)
 	defer close(napTracks)
 
-	cleaned := CleanTracks(ctx, in)
+	cleaned := c.CleanTracks(ctx, in)
 	tripdetected := c.TripDetectTracks(ctx, cleaned)
 
 	// Synthesize new/derivative/aggregate features:

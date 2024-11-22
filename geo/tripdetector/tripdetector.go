@@ -129,8 +129,9 @@ func (d *TripDetector) Add(ct *cattrack.CatTrack) error {
 
 	last := d.LastPointN(0)
 	if last != nil {
-		// MkdirAll chronology or reset and return.
-		if last.MustTime().After(ct.MustTime()) {
+		// Ensure chronology or reset and return.
+		span := ct.MustTime().Sub(last.MustTime())
+		if span < -1*time.Second {
 			d.ResetState()
 			return nil
 		}

@@ -7,19 +7,21 @@ import (
 	"github.com/paulmach/orb/planar"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 )
 
-// WangUrbanCanyonFilter filters out spurious points which can occur in urban canyons.
+type WangUrbanCanyonFilter struct {
+	Filtered int
+}
+
+// Filter filters out spurious points which can occur in urban canyons.
 // > Wang: Third, GPS points away from
 // > the adjacent points due to the signal shift caused by
 // > blocking or ‘‘urban canyon’’ effect are also deleted. As
 // > is shown in Figure 2, GPS points away from both the
 // > before and after 5 points center for more than 200 m
 // > should be considered as shift points.
-func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
+func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
 	out := make(chan *cattrack.CatTrack)
-	defer slog.Info("WangUrbanCanyonFilter done")
 
 	bufferFront, bufferBack := 5, 5
 	bufferSize := bufferFront + 1 + bufferBack
@@ -53,6 +55,7 @@ func WangUrbanCanyonFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-
 			headCenter, _ := planar.CentroidArea(orb.MultiPoint{head[0].Point(), head[1].Point(), head[2].Point(), head[3].Point(), head[4].Point()})
 			// If the distances from the target to the tail and head centroids are more than 200m, it's a shift point.
 			if geo.Distance(tailCenter, target.Point()) > params.DefaultCleanConfig.WangUrbanCanyonDistance && geo.Distance(headCenter, target.Point()) > params.DefaultCleanConfig.WangUrbanCanyonDistance {
+				f.Filtered++
 				continue
 			}
 

@@ -19,12 +19,7 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		if err := json.Unmarshal(data, ns); err != nil {
 			c.logger.Error("Failed to unmarshal nap state", "error", err)
 		} else {
-			if len(ns.Tracks) > 0 {
-				last := ns.Tracks[len(ns.Tracks)-1].MustTime()
-				c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", last)
-			} else {
-				c.logger.Info("Restored nap state", "len", len(ns.Tracks))
-			}
+			c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", ns.TimeLast)
 		}
 	}
 

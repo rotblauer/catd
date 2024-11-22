@@ -16,6 +16,7 @@ import (
 type State struct {
 	Interval time.Duration
 	Tracks   []*cattrack.CatTrack // the points represented by the linestring
+	TimeLast time.Time
 	ch       chan *cattrack.CatLap
 }
 
@@ -23,6 +24,7 @@ func NewState(interval time.Duration) *State {
 	return &State{
 		Interval: interval,
 		Tracks:   make([]*cattrack.CatTrack, 0),
+		TimeLast: time.Time{},
 		ch:       make(chan *cattrack.CatLap),
 	}
 }
@@ -35,11 +37,14 @@ func (s *State) Add(ct *cattrack.CatTrack) {
 }
 
 func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
-	if len(s.Tracks) == 0 {
+	current := ct.MustTime()
+	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
+		s.TimeLast = current
 		return false
 	}
-	span := ct.MustTime().Sub(s.Tracks[len(s.Tracks)-1].MustTime())
-	return span > s.Interval || span < -1
+	span := current.Sub(s.TimeLast)
+	s.TimeLast = current
+	return span > s.Interval || span < -1*time.Second
 }
 
 func (s *State) Flush() {
@@ -49,6 +54,7 @@ func (s *State) Flush() {
 			s.ch <- lap
 		}
 	}
+	s.TimeLast = time.Time{}
 	s.Tracks = make([]*cattrack.CatTrack, 0)
 }
 

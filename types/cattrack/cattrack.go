@@ -30,12 +30,16 @@ func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {
-	if v, ok := ct.Properties["Time"].(time.Time); ok {
+	pt, ok := ct.Properties["Time"]
+	if !ok {
+		return time.Time{}, fmt.Errorf("missing Time property")
+	}
+	if v, ok := pt.(time.Time); ok {
 		return v, nil
 	}
-	ts, ok := ct.Properties["Time"].(string)
+	ts, ok := pt.(string)
 	if !ok {
-		return time.Time{}, fmt.Errorf("missing Time property (string)")
+		return time.Time{}, fmt.Errorf("property Time is not a string")
 	}
 	t, err := time.Parse(time.RFC3339, ts)
 	if err != nil {

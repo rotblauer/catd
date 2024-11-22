@@ -17,14 +17,9 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	// Attempt to restore lap-builder state.
 	if data, err := c.State.ReadKV([]byte("lapstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ls); err != nil {
-			c.logger.Error("Failed to unmarshal lap state", "error", err)
+			c.logger.Error("Failed to unmarshal lap state (new cat?)", "error", err)
 		} else {
-			if len(ls.Tracks) > 0 {
-				last := ls.Tracks[len(ls.Tracks)-1].MustTime()
-				c.logger.Info("Restored lap state", "len", len(ls.Tracks), "last", last)
-			} else {
-				c.logger.Info("Restored lap state", "len", len(ls.Tracks))
-			}
+			c.logger.Info("Restored lap state", "len", len(ls.Tracks), "last", ls.TimeLast)
 		}
 	}
 
