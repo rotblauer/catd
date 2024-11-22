@@ -79,8 +79,9 @@ func (f *Flat) NapsGZWriter() (*GZFileWriter, error) {
 }
 
 type GZFileWriter struct {
-	f   *os.File
-	gzw *gzip.Writer
+	f      *os.File
+	gzw    *gzip.Writer
+	locked bool
 }
 
 func NewFlatGZWriter(path string) (*GZFileWriter, error) {
@@ -101,8 +102,11 @@ func NewFlatGZWriter(path string) (*GZFileWriter, error) {
 // Writer returns a gzip writer for the file.
 // While the writer is not closed, an exclusive lock is held on the file.
 func (g *GZFileWriter) Writer() *gzip.Writer {
-	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
-		panic(err)
+	if !g.locked && g.f != nil {
+		if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
+			panic(err)
+		}
+		g.locked = true
 	}
 	return g.gzw
 }

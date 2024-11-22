@@ -118,9 +118,11 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 
 	c.State.Waiting.Add(1)
 	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		CatID:       c.CatID,
-		SourceName:  "laps",
-		LayerName:   "laps",
+		SourceSchema: tiler.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "laps",
+			LayerName:  "laps",
+		},
 		TippeConfig: params.TippeConfigNameLaps,
 	}, sendLaps)
 
@@ -139,9 +141,11 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	go sinkToCatJSONGZFile(ctx, c, flat.NapsFileName, sinkNaps)
 	c.State.Waiting.Add(1)
 	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		CatID:       c.CatID,
-		SourceName:  "naps",
-		LayerName:   "naps",
+		SourceSchema: tiler.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "naps",
+			LayerName:  "naps",
+		},
 		TippeConfig: params.TippeConfigNameNaps,
 	}, sendNaps)
 

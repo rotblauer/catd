@@ -11,6 +11,20 @@ const (
 	TippeConfigNameNaps   TippeConfigName = "naps"
 )
 
+func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
+	switch name {
+	case TippeConfigNameTracks:
+		return DefaultTippeConfigs.Tracks(), true
+	case TippeConfigNameSnaps:
+		return DefaultTippeConfigs.Snaps(), true
+	case TippeConfigNameLaps:
+		return DefaultTippeConfigs.Laps(), true
+	case TippeConfigNameNaps:
+		return DefaultTippeConfigs.Naps(), true
+	}
+	return nil, false
+}
+
 type CLIFlagsT []string
 
 var DefaultTippeConfigs = &struct {

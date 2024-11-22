@@ -12,6 +12,7 @@ import (
 )
 
 func (d *Daemon) tip(source string, args params.CLIFlagsT) error {
+	d.logger.Info("Tipping...", "source", source, "args", args)
 	r, w := io.Pipe()
 	go func() {
 		defer w.Close()
