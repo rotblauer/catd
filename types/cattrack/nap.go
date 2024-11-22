@@ -38,9 +38,9 @@ func NewCatNap(tracks []*CatTrack) *CatNap {
 
 	firstTime, lastTime := tracks[0].MustTime(), tracks[len(tracks)-1].MustTime()
 	f.Properties["Time_Start_Unix"] = firstTime.Unix()
-	f.Properties["Time_Start_RFC339"] = firstTime.Format(time.RFC3339)
+	f.Properties["Time_Start_RFC3339"] = firstTime.Format(time.RFC3339)
 	f.Properties["Time_End_Unix"] = lastTime.Unix()
-	f.Properties["Time_End_RFC339"] = lastTime.Format(time.RFC3339)
+	f.Properties["Time_End_RFC3339"] = lastTime.Format(time.RFC3339)
 	f.Properties["Duration"] = lastTime.Sub(firstTime).Round(time.Second).Seconds()
 
 	accuracies := make([]float64, 0, len(tracks))

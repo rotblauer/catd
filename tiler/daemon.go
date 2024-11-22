@@ -176,7 +176,9 @@ func (d *Daemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(d.Config.TmpDir, rel), nil
+	full := filepath.Join(d.Config.TmpDir, rel)
+	full += fmt.Sprintf(".%d", time.Now().UnixNano())
+	return full, nil
 }
 
 type PushFeaturesRequestArgs struct {
