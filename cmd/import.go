@@ -238,17 +238,16 @@ Missoula, Montana
 			handleLinesBatch(<-linesCh)
 		}
 
-		slog.Info("Interrupting tiler")
-		d.Interrupt <- struct{}{}
-
 		slog.Info("Closing work chan")
 		close(workCh)
 		slog.Info("Waiting on workers")
 		workersWG.Wait()
-		slog.Info("Canceling context")
-		ctxCanceler()
+		slog.Info("Interrupting tiler")
+		d.Interrupt <- struct{}{}
 		slog.Info("Waiting on tiler")
 		<-d.Done
+		slog.Info("Canceling context")
+		ctxCanceler()
 		slog.Info("Au revoir!")
 	},
 }

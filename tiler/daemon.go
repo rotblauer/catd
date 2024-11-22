@@ -98,6 +98,7 @@ func (d *Daemon) Run() error {
 			case <-d.Interrupt:
 				// Running pending tiling is important for `import` porting in.
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
+
 				d.tilingPendingM.Range(func(key, value any) bool {
 					args := value.(*TilingRequestArgs)
 					slog.Warn("Running pending tiling",
