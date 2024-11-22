@@ -11,22 +11,24 @@ import (
 	"strings"
 )
 
-func (d *Daemon) tip(source string, args params.CLIFlagsT) error {
-	d.logger.Info("Tipping...", "source", source, "args", args)
+func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 	r, w := io.Pipe()
 	go func() {
 		defer w.Close()
+		for _, source := range sources {
+			d.logger.Info("Tipping...", "source", sources, "args", args)
+			reader, err := flat.NewFlatGZReader(source)
+			if err != nil {
+				d.logger.Error("Failed to open source file", "error", err)
+				return
+			}
+			defer reader.Close()
 
-		reader, err := flat.NewFlatGZReader(source)
-		if err != nil {
-			d.logger.Error("Failed to open source file", "error", err)
-			return
-		}
-		defer reader.Close()
-
-		_, err = io.Copy(w, reader.Reader())
-		if err != nil {
-			d.logger.Error("Failed to copy source gz file", "error", err)
+			_, err = io.Copy(w, reader.Reader())
+			if err != nil {
+				d.logger.Error("Failed to copy source gz file", "error", err)
+			}
+			reader.Close() // Dupe calls to close, but OK. Safer.
 		}
 	}()
 

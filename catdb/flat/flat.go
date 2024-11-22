@@ -129,8 +129,9 @@ func (g *GZFileWriter) Path() string {
 }
 
 type GZFileReader struct {
-	f   *os.File
-	gzr *gzip.Reader
+	f      *os.File
+	gzr    *gzip.Reader
+	closed bool
 }
 
 func NewFlatGZReader(path string) (*GZFileReader, error) {
@@ -161,6 +162,9 @@ func (g *GZFileReader) Reader() *gzip.Reader {
 }
 
 func (g *GZFileReader) Close() error {
+	if g.closed {
+		return nil
+	}
 	if err := g.gzr.Close(); err != nil {
 		return err
 	}
@@ -170,5 +174,6 @@ func (g *GZFileReader) Close() error {
 	if err := g.f.Close(); err != nil {
 		return err
 	}
+	g.closed = true
 	return nil
 }

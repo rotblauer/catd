@@ -628,9 +628,19 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 		MustSetPair("--name", args.SourceName).
 		MustSetPair("--output", tmpTarget)
 
+	// If we're running Edge and the backup Edge source exists, use it too.
+	// This way we're able to serve WIP-tiling canonical data. (async)
+	sources := []string{args.parsedSourcePath}
+	if args.Version == SourceVersionEdge {
+		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
+		if _, err := os.Stat(edgeBackupPath); err == nil {
+			sources = append(sources, edgeBackupPath)
+		}
+	}
+
 	// Run tippecanoe!
 	start := time.Now()
-	if err := d.tip(args.parsedSourcePath, cliConfig); err != nil {
+	if err := d.tip(cliConfig, sources...); err != nil {
 		d.logger.Error("Failed to tip", "error", err)
 		return err
 	}

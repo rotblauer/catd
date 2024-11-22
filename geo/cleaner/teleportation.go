@@ -19,6 +19,7 @@ func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-ch
 		var lastPoint orb.Point
 
 		for track := range in {
+			track := track
 
 			// The first track is always sent.
 			if lastTime.IsZero() {
@@ -28,6 +29,19 @@ func TeleportationFilter(ctx context.Context, in <-chan *cattrack.CatTrack) <-ch
 				continue
 			}
 
+			/*
+				fatal error: concurrent map read and map write
+
+				goroutine 207 [running]:
+				github.com/rotblauer/catd/types/cattrack.(*CatTrack).Time(0xc001cda3c0)
+				        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:36 +0x7f
+				github.com/rotblauer/catd/types/cattrack.(*CatTrack).MustTime(...)
+				        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:48
+				github.com/rotblauer/catd/geo/cleaner.TeleportationFilter.func1()
+				        /home/ia/dev/rotblauer/catd/geo/cleaner/teleportation.go:32 +0x1d9
+				created by github.com/rotblauer/catd/geo/cleaner.TeleportationFilter in goroutine 470
+				        /home/ia/dev/rotblauer/catd/geo/cleaner/teleportation.go:15 +0xa5
+			*/
 			// Signal loss is not teleportation.
 			trackTime := track.MustTime()
 			interval := trackTime.Sub(lastTime)
