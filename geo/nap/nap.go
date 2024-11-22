@@ -3,12 +3,13 @@ package nap
 import (
 	"context"
 	"github.com/rotblauer/catd/types/cattrack"
+	"log/slog"
 	"time"
 )
 
 type State struct {
 	Interval time.Duration
-	Tracks   []*cattrack.CatTrack // the points represented by the linestring
+	Tracks   []*cattrack.CatTrack // the points represented by the nap
 	TimeLast time.Time
 	ch       chan *cattrack.CatNap
 }
@@ -36,7 +37,11 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	}
 	span := current.Sub(s.TimeLast)
 	s.TimeLast = current
-	return span > s.Interval || span < -1*time.Second
+	discontinuous := span > s.Interval || span < -1*time.Second
+	if discontinuous {
+		slog.Warn("Nap.IsDiscontinuous", "discontinuous", discontinuous, "span", span, "interval", s.Interval)
+	}
+	return discontinuous
 }
 
 func (s *State) Flush() {
