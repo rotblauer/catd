@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"github.com/gorilla/mux"
+	"github.com/rotblauer/catd/params"
 	"io"
 	"log"
 	"net"
@@ -16,15 +17,19 @@ import (
 	ghandlers "github.com/gorilla/handlers"
 )
 
-func StartWebserver(addr string, port int) {
-	router := NewRouter()
+type WebServer struct {
+	DaemonConfig *params.DaemonConfig
+}
+
+func (s *WebServer) Start(addr string, port int) {
+	router := s.NewRouter()
 	http.Handle("/", router)
 
 	log.Printf("Starting web server on %s:%d", addr, port)
 	log.Fatal(http.ListenAndServe(addr+":"+strconv.Itoa(port), nil))
 }
 
-func NewRouter() *mux.Router {
+func (s *WebServer) NewRouter() *mux.Router {
 
 	m := InitMelody()
 	http.HandleFunc("/socat", func(w http.ResponseWriter, r *http.Request) {
@@ -61,8 +66,10 @@ func NewRouter() *mux.Router {
 
 	populateRoutes := authenticatedAPIRoutes.NewRoute().Subrouter()
 
-	populateRoutes.Path("/populate/").HandlerFunc(handlePopulate).Methods(http.MethodPost)
-	populateRoutes.Path("/populate").HandlerFunc(handlePopulate).Methods(http.MethodPost)
+	populateRoutes.Path("/populate/").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
+	populateRoutes.Path("/populate").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
+
+	// TODO: Proxy to the tiler daemon's RPC server
 
 	return router
 }

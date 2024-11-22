@@ -139,7 +139,7 @@ Missoula, Montana
 				return
 			}
 
-			cat := api.NewCat(conceptual.CatID(w.name))
+			cat := api.NewCat(conceptual.CatID(w.name), d.Config)
 			slog.Info("Populating",
 				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
 				"work-n", w.n,

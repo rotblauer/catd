@@ -2,8 +2,8 @@ package api
 
 import (
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/state"
-	"github.com/rotblauer/catd/tiler"
 	"log"
 	"log/slog"
 	"net/rpc"
@@ -29,8 +29,8 @@ type Cat struct {
 	rpcClient *rpc.Client
 }
 
-func NewCat(catID conceptual.CatID) *Cat {
-	client, err := rpc.DialHTTP(tiler.RPCNetwork, tiler.RPCAddress)
+func NewCat(catID conceptual.CatID, daemonConf *params.DaemonConfig) *Cat {
+	client, err := rpc.DialHTTP(daemonConf.RPCNetwork, daemonConf.RPCAddress)
 	if err != nil {
 		// FIXME
 		log.Fatal("RPC dialing:", err)

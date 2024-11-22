@@ -17,6 +17,8 @@ package cmd
 
 import (
 	"github.com/rotblauer/catd/node"
+	"github.com/rotblauer/catd/tiler"
+	"log"
 
 	"github.com/spf13/cobra"
 )
@@ -29,8 +31,18 @@ var serveCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 
+		d := tiler.NewDaemon(nil)
+		if err := d.Run(); err != nil {
+			log.Fatalln(err)
+		}
+
+		server := &node.WebServer{
+			DaemonConfig: d.Config,
+		}
+
 		port, _ := cmd.Flags().GetInt("http.port")
-		node.StartWebserver("localhost", port)
+		server.Start("localhost", port)
+		d.Interrupt <- struct{}{}
 	},
 }
 

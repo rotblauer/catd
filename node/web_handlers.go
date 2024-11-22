@@ -40,7 +40,7 @@ func handleGetCatSnaps(w http.ResponseWriter, r *http.Request) {
 // input formats.
 // Android (GCPS) posts a GeoJSON FeatureCollection.
 // iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
-func handlePopulate(w http.ResponseWriter, r *http.Request) {
+func (s *WebServer) handlePopulate(w http.ResponseWriter, r *http.Request) {
 
 	var body []byte
 	var err error
@@ -69,7 +69,7 @@ func handlePopulate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT better.
 	catID := features[0].CatID()
-	cat := api.NewCat(catID)
+	cat := api.NewCat(catID, s.DaemonConfig)
 
 	ctx := context.Background()
 	ch := stream.Slice(ctx, features)

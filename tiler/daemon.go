@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/bep/debounce"
+	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
@@ -21,7 +22,7 @@ import (
 )
 
 type Daemon struct {
-	Config *DaemonConfig
+	Config *params.DaemonConfig
 
 	// flat is the flat file storage (root) for the tiler daemon.
 	// Normally it will be nested in the default app datadir (see params.go).
@@ -43,41 +44,9 @@ type Daemon struct {
 	Interrupt chan struct{}
 }
 
-type DaemonConfig struct {
-	RootDir          string
-	DebounceInterval time.Duration
-
-	// EdgeEpsilon is the time threshold for edge tiling to complete.
-	// If edge tiling takes longer than this, the canonical source is tiled.
-	EdgeEpsilon time.Duration
-
-	RPCPath    string
-	RPCNetwork string
-	RPCAddress string
-}
-
-func DefaultDaemonConfig() *DaemonConfig {
-	return &DaemonConfig{
-		// RootDir is the root directory for the tiler daemon.
-		// The daemon will create two subdirectories:
-		// - `tiles` for the final .mbtiles files
-		// - `source` for the associated source files
-		// Each of these subdirectories will be further divided by cat ID.
-		// In this way, the `source` directory will imitate the
-		// cat state directory (datadir/cats/).
-		// This allows an easy `cp -a` to init or reset the tiler daemon's data.
-		RootDir:          filepath.Join(params.DatadirRoot, "tiled"),
-		DebounceInterval: 5 * time.Second,
-		EdgeEpsilon:      1 * time.Minute,
-		RPCPath:          "/tiler_rpc",
-		RPCNetwork:       "tcp",
-		RPCAddress:       "localhost:1234",
-	}
-}
-
-func NewDaemon(config *DaemonConfig) *Daemon {
+func NewDaemon(config *params.DaemonConfig) *Daemon {
 	if config == nil {
-		config = DefaultDaemonConfig()
+		config = params.DefaultDaemonConfig()
 	}
 
 	return &Daemon{
@@ -133,7 +102,7 @@ func (d *Daemon) Run() error {
 					args := value.(*TilingRequestArgs)
 					slog.Warn("Running pending tiling",
 						slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
-					if err := d.doTiling(args, nil); err != nil {
+					if err := d.runTiling(args, nil); err != nil {
 						slog.Error("Failed to run pending tiling", "error", err)
 					}
 					return true
@@ -159,8 +128,10 @@ type SourceSchema struct {
 	// Only one layer is supported per source file. FIXME?
 	LayerName string
 
-	// version conventionalizes how this daemon handles source versions, re: tiling.
-	version TileSourceVersion
+	//// version conventionalizes how this daemon handles source versions, re: tiling.
+	//// Unexported because clients do not get to set it.
+	//// This is program logic, behavior.
+	//version TileSourceVersion
 }
 
 func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
@@ -171,6 +142,8 @@ func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (
 		out = filepath.Join(root, "source", schema.CatID.String(), schema.SourceName, schema.LayerName) + ".geojson.gz"
 	case SourceVersionEdge:
 		out = filepath.Join(root, "source", schema.CatID.String(), schema.SourceName, schema.LayerName) + "_edge.geojson.gz"
+	case sourceVersionBackup:
+		out = filepath.Join(root, "source", schema.CatID.String(), schema.SourceName, schema.LayerName) + "_edge.bak.geojson.gz"
 	default:
 		panic(fmt.Sprintf("unknown source version %q", version))
 	}
@@ -178,15 +151,31 @@ func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (
 	return filepath.Abs(clean)
 }
 
-func (d *Daemon) TargetPathFor(schema SourceSchema) (string, error) {
-	root := d.flat.Path()
-	out := filepath.Join(root, "tiles", schema.CatID.String(), schema.SourceName, schema.LayerName) + ".mbtiles"
-	clean := filepath.Clean(out)
-	return filepath.Abs(clean)
+func (d *Daemon) TargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
+	source, err := d.SourcePathFor(schema, version)
+	if err != nil {
+		return "", err
+	}
+	// base=root/source  rel=catid/source/layer/...geojson.gz
+	base := filepath.Join(d.flat.Path(), "source")
+	rel, err := filepath.Rel(base, source)
+	if err != nil {
+		return "", err
+	}
+	rel = strings.TrimSuffix(rel, ".geojson.gz") + ".mbtiles"
+	return filepath.Join(d.flat.Path(), "tiles", rel), nil
 }
 
-func (s SourceSchema) attributes() []string {
-	return []string{"catID", s.CatID.String(), "source", s.SourceName, "layr", s.LayerName}
+func (d *Daemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
+	target, err := d.TargetPathFor(schema, version)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(d.flat.Path(), target)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d.Config.TmpDir, rel), nil
 }
 
 type PushFeaturesRequestArgs struct {
@@ -287,9 +276,12 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		if err := os.MkdirAll(filepath.Dir(source), os.ModePerm); err != nil {
 			return err
 		}
-		if err := d.writeGZ(source, args.JSONBytes); err != nil {
+		b := make([]byte, len(args.JSONBytes))
+		copy(b, args.JSONBytes)
+		if err := d.writeGZ(source, b); err != nil {
 			return err
 		}
+		d.logger.Info("Wrote source", "source", source, "size", humanize.Bytes(uint64(len(args.JSONBytes))))
 	}
 
 	// Request tiling. Will get debounced.
@@ -301,8 +293,8 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 			CatID:      args.CatID,
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
-			version:    SourceVersionEdge,
 		},
+		Version:     SourceVersionEdge,
 		TippeConfig: args.TippeConfig,
 	}, res)
 
@@ -327,6 +319,7 @@ type TileSourceVersion string
 const (
 	SourceVersionCanonical TileSourceVersion = "canonical"
 	SourceVersionEdge      TileSourceVersion = "edge"
+	sourceVersionBackup    TileSourceVersion = "backup"
 )
 
 type TilingRequestArgs struct {
@@ -334,10 +327,10 @@ type TilingRequestArgs struct {
 
 	TippeConfig params.TippeConfigName
 
-	// SkipCanon can be used to override the default version tiling behavior.
-	SkipCanon bool
-	// CanonOnly can be used to skip edge version tiling.
-	CanonOnly bool
+	Version TileSourceVersion
+
+	// parsedSourcePath is the source file path, parsed and validated.
+	parsedSourcePath string
 }
 
 func (s SourceSchema) Validate() error {
@@ -418,12 +411,16 @@ func validateSourcePathFile(source string) error {
 // It uses a combination of debouncing and enqueuing to cause it to run
 // at most end-to-end per source file. (Once it finishes, it can be run again.)
 func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+	if args == nil {
+		return fmt.Errorf("nil args")
+	}
+
 	d.logger.Info("Requesting tiling",
 		slog.Group("args",
 			"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
 			"config", args.TippeConfig))
 
-	source, err := d.SourcePathFor(args.SourceSchema, args.version)
+	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		return fmt.Errorf("failed to get source path: %w", err)
 	}
@@ -464,17 +461,23 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 
 	debouncer(func() {
 		reply := reply
-		if err := d.doTiling(args, reply); err != nil {
+		if err := d.runTiling(args, reply); err != nil {
 			d.logger.Error("Tiling errored", "error", err)
 		}
 	})
 	return nil
 }
 
-func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.running.Add(1)
 
-	source, _ := d.SourcePathFor(args.SourceSchema, args.version)
+	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
+	if err != nil {
+		d.unpending(source)
+		d.running.Done()
+		return fmt.Errorf("failed to get source path: %w", err)
+	}
+	args.parsedSourcePath = source
 
 	defer func() {
 		if value, ok := d.tilingPendingM.Load(source); ok {
@@ -490,10 +493,107 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 
 	d.unpending(source)
 
-	d.logger.Info("doTiling", "source", source, slog.Group("schema",
-		"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName, "config", args.TippeConfig))
+	if reply == nil {
+		reply = &TilingResponse{}
+	}
 
-	target, err := d.TargetPathFor(args.SourceSchema)
+	// If we're about to run tippe for the canonical data set,
+	// move the edge data to a backup, since we're about to process
+	// a canonical version which includes all this data.
+	// If the canon run fails, the backup will be restored.
+	var restoreBackup func()
+	if args.Version == SourceVersionCanonical {
+		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
+		if err := os.MkdirAll(filepath.Dir(edgeBackupPath), os.ModePerm); err != nil {
+			d.logger.Error("Failed to create edge backup dir", "error", err)
+			return err
+		}
+		edgePath, _ := d.SourcePathFor(args.SourceSchema, SourceVersionEdge)
+		restoreBackup = func() {
+			d.logger.Warn("Restoring edge source from backup", "bak", edgeBackupPath, "to", edgePath)
+			if err := os.Rename(edgeBackupPath, edgePath); err != nil {
+				d.logger.Error("Failed to restore edge source", "error", err)
+			}
+		}
+		if err := os.Rename(edgePath, edgeBackupPath); err != nil {
+			d.logger.Error("Failed to backup edge source", "error", err)
+			return err
+		}
+	}
+
+	// Actually do tippecanoe.
+	if err := d.doTiling(args, reply); err != nil {
+		d.logger.Error("Failed to tile", "error", err)
+		if restoreBackup != nil {
+			restoreBackup()
+		}
+		return err
+	}
+
+	// If the canonical run was successful, remove the edge backup.
+	// This isn't necessary. It's just a cleanup.
+	if args.Version == SourceVersionCanonical {
+		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
+		if err := os.Remove(edgeBackupPath); err != nil {
+			d.logger.Error("Failed to remove edge backup", "error", err)
+		}
+	}
+
+	// We want to trigger an edge->canonical run if:
+	// - the edge run took too long
+	// - canonical doesn't exist
+	if args.Version == SourceVersionCanonical {
+		return nil
+	}
+
+	var triggerCanon bool
+
+	// If the canonical (output) file doesn't exist, we need to run it.
+	canonMBTiles, _ := d.TargetPathFor(args.SourceSchema, SourceVersionCanonical)
+	if _, err := os.Stat(canonMBTiles); os.IsNotExist(err) {
+		d.logger.Warn("Canonical tiling does not exist", "source", source)
+		triggerCanon = true
+	}
+
+	if reply.Elapsed > d.Config.EdgeEpsilon {
+		d.logger.Warn("Edge tiling exceeded epsilon", "elapsed", reply.Elapsed.Round(time.Millisecond),
+			"epsilon", d.Config.EdgeEpsilon.Round(time.Millisecond))
+		triggerCanon = true
+	}
+
+	if !triggerCanon {
+		return nil
+	}
+
+	d.logger.Info("Running canonical tiling...", "source", source)
+	return d.runTiling(&TilingRequestArgs{
+		SourceSchema: SourceSchema{
+			CatID:      args.CatID,
+			SourceName: args.SourceName,
+			LayerName:  args.LayerName,
+		},
+		Version:     SourceVersionCanonical,
+		TippeConfig: args.TippeConfig,
+	}, reply)
+}
+
+func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+	d.logger.Info("runTiling", "source", args.parsedSourcePath, slog.Group("args",
+		"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
+		"version", args.Version, "config", args.TippeConfig))
+
+	// Sanity check.
+	// The source file must exist and be a file.
+	// It is possible, in the Edge case, that the source file does not exist.
+	// This could happen if the canonical run just finished, and no new
+	// features have been written to edge.
+	if stat, err := os.Stat(args.parsedSourcePath); err != nil {
+		return fmt.Errorf("source file error: %w", err)
+	} else if stat.IsDir() {
+		return fmt.Errorf("source file is a directory")
+	}
+
+	target, err := d.TargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		d.logger.Error("Failed to get target path", "error", err)
 	}
@@ -505,16 +605,18 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 	// mkdir -p /datadir/tiles/catid
 	// mv /tmp/tiler-daemon/catid/laps.mbtiles /datadir/tiles/catid/laps.mbtiles
 
-	// args  tmpTarget string, cliConfig params.CLIFlagsT
-
 	// Use and then rename a temporary output file to avoid
 	// overwriting/deleting/modifying the final output file
 	// - in case of failure
 	// - in case the final output is being used by another process
-	tmpTarget := filepath.Join(os.TempDir(), "catd-tilerd", "tiles_tmp",
-		args.CatID.String(), args.SourceName, args.LayerName+"_"+string(args.version)+".mbtiles")
+
+	tmpTarget, err := d.TmpTargetPathFor(args.SourceSchema, args.Version)
+	if err != nil {
+		d.logger.Error("Failed to get tmp target path", "error", err)
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(tmpTarget), os.ModePerm); err != nil {
-		slog.Error("Failed to create temp dir", "error", err)
+		d.logger.Error("Failed to create temp dir", "error", err)
 		return err
 	}
 
@@ -528,7 +630,7 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 
 	// Run tippecanoe!
 	start := time.Now()
-	if err := d.tip(source, cliConfig); err != nil {
+	if err := d.tip(args.parsedSourcePath, cliConfig); err != nil {
 		d.logger.Error("Failed to tip", "error", err)
 		return err
 	}
@@ -541,12 +643,12 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 
 	if err := os.Rename(tmpTarget, target); err != nil {
 		d.logger.Error("Failed to move tmp to final", "error", err)
+		return err
 	}
 
-	d.logger.Info("Tiling done", "source", source, "target", target,
-		"version", args.version, "elapsed", elapsed.Round(time.Millisecond))
+	d.logger.Info("Tiling done", "source", args.parsedSourcePath, "target", target,
+		"version", args.Version, "elapsed", elapsed.Round(time.Millisecond))
 
-	// Nobody is going to be waiting around long enough for this to be useful...
 	if reply != nil {
 		reply.Success = true
 		reply.Elapsed = elapsed
