@@ -20,10 +20,6 @@ import (
 	"time"
 )
 
-const RPCPath = "/tiler_rpc"
-const RPCNetwork = "tcp"
-const RPCAddress = "localhost:1234"
-
 type Daemon struct {
 	Config *DaemonConfig
 
@@ -54,6 +50,10 @@ type DaemonConfig struct {
 	// EdgeEpsilon is the time threshold for edge tiling to complete.
 	// If edge tiling takes longer than this, the canonical source is tiled.
 	EdgeEpsilon time.Duration
+
+	RPCPath    string
+	RPCNetwork string
+	RPCAddress string
 }
 
 func DefaultDaemonConfig() *DaemonConfig {
@@ -69,6 +69,9 @@ func DefaultDaemonConfig() *DaemonConfig {
 		RootDir:          filepath.Join(params.DatadirRoot, "tiled"),
 		DebounceInterval: 5 * time.Second,
 		EdgeEpsilon:      1 * time.Minute,
+		RPCPath:          "/tiler_rpc",
+		RPCNetwork:       "tcp",
+		RPCAddress:       "localhost:1234",
 	}
 }
 
@@ -99,8 +102,8 @@ func (d *Daemon) Run() error {
 		return err
 	}
 
-	server.HandleHTTP(RPCPath, rpc.DefaultDebugPath)
-	l, err := net.Listen(RPCNetwork, RPCAddress)
+	server.HandleHTTP(d.Config.RPCPath, rpc.DefaultDebugPath)
+	l, err := net.Listen(d.Config.RPCNetwork, d.Config.RPCAddress)
 	if err != nil {
 		return err
 	}
@@ -119,7 +122,7 @@ func (d *Daemon) Run() error {
 			close(d.Done)
 		}()
 		d.logger.Info("TilerDaemon RPC HTTP server started",
-			slog.Group("listen", "network", RPCNetwork, "address", RPCAddress))
+			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
 
 		for {
 			select {
