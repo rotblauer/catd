@@ -37,6 +37,9 @@ func (s *State) Add(ct *cattrack.CatTrack) {
 	s.Tracks = append(s.Tracks, ct)
 }
 
+// IsDiscontinuous returns true if the CatTrack is not contiguous with the last.
+// Continuity is determined by the time of the CatTrack versus the permissible interval.
+// Time is the only thing that matters here.
 func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	current := ct.MustTime()
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {

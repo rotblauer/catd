@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/geo/nap"
-	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -12,7 +11,7 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	c.getOrInitState()
 
 	out := make(chan *cattrack.CatNap)
-	ns := nap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
+	ns := nap.NewState(nil)
 
 	// Attempt to restore lap-builder state.
 	if data, err := c.State.ReadKV([]byte("napstate")); err == nil && data != nil {

@@ -52,6 +52,9 @@ func timespan(pts []*cattrack.CatTrack) time.Duration {
 }
 
 func NewTripDetector(config *params.TripDetectorConfig) *TripDetector {
+	if config == nil {
+		config = params.DefaultTripDetectorConfig
+	}
 	return &TripDetector{
 		DwellTime:      config.DwellInterval,
 		SpeedThreshold: config.SpeedThreshold,

@@ -52,3 +52,13 @@ type SimplificationConfig struct {
 var DefaultSimplifierConfig = &SimplificationConfig{
 	DouglasPeuckerThreshold: 0.00008,
 }
+
+type NapConfig struct {
+	DwellInterval time.Duration
+	DwellDistance float64
+}
+
+var DefaultNapConfig = &NapConfig{
+	DwellInterval: 2 * time.Minute,
+	DwellDistance: 100,
+}

@@ -112,7 +112,13 @@ func (g *GZFileWriter) Writer() *gzip.Writer {
 }
 
 func (g *GZFileWriter) Close() error {
+	if err := g.gzw.Flush(); err != nil {
+		return err
+	}
 	if err := g.gzw.Close(); err != nil {
+		return err
+	}
+	if err := g.f.Sync(); err != nil {
 		return err
 	}
 	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {

@@ -2,23 +2,32 @@ package nap
 
 import (
 	"context"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/geo"
+	"github.com/paulmach/orb/planar"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 	"time"
 )
 
 type State struct {
-	Interval time.Duration
-	Tracks   []*cattrack.CatTrack // the points represented by the nap
-	TimeLast time.Time
-	ch       chan *cattrack.CatNap
+	DwellInterval time.Duration
+	DwellDistance float64
+	Tracks        []*cattrack.CatTrack // the points represented by the nap
+	Centroid      orb.Point
+	TimeLast      time.Time
+	ch            chan *cattrack.CatNap
 }
 
-func NewState(interval time.Duration) *State {
+func NewState(config *params.NapConfig) *State {
+	if config == nil {
+		config = params.DefaultNapConfig
+	}
 	return &State{
-		Interval: interval,
-		Tracks:   make([]*cattrack.CatTrack, 0),
-		ch:       make(chan *cattrack.CatNap),
+		DwellInterval: config.DwellInterval,
+		DwellDistance: config.DwellDistance,
+		Tracks:        make([]*cattrack.CatTrack, 0),
+		ch:            make(chan *cattrack.CatNap),
 	}
 }
 
@@ -30,18 +39,32 @@ func (s *State) Add(ct *cattrack.CatTrack) {
 }
 
 func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
-	current := ct.MustTime()
+	currentTime := ct.MustTime()
+	currentPoint := ct.Geometry.(orb.Point)
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
-		s.TimeLast = current
+		s.TimeLast = currentTime
+		s.Centroid = currentPoint
 		return false
 	}
-	span := current.Sub(s.TimeLast)
-	s.TimeLast = current
-	discontinuous := span > s.Interval || span < -1*time.Second
+
+	// Time
+	span := currentTime.Sub(s.TimeLast)
+	s.TimeLast = currentTime
+
+	discontinuous := span < -1*time.Second || span > s.DwellInterval
 	if discontinuous {
-		slog.Warn("Nap.IsDiscontinuous", "discontinuous", discontinuous, "span", span, "interval", s.Interval)
+		return discontinuous
 	}
-	return discontinuous
+
+	// Space
+	mp := orb.MultiPoint{}
+	for _, t := range s.Tracks {
+		mp = append(mp, t.Geometry.(orb.Point))
+	}
+	s.Centroid, _ = planar.CentroidArea(mp)
+	dist := geo.Distance(s.Centroid, currentPoint)
+
+	return dist > s.DwellDistance
 }
 
 func (s *State) Flush() {
@@ -51,8 +74,9 @@ func (s *State) Flush() {
 			s.ch <- nap
 		}
 	}
-	s.TimeLast = time.Time{}
 	s.Tracks = make([]*cattrack.CatTrack, 0)
+	s.Centroid = orb.Point{}
+	s.TimeLast = time.Time{}
 }
 
 func (s *State) Stream(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
