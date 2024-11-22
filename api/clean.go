@@ -18,14 +18,14 @@ func (c *Cat) CleanTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-c
 			c.logger.Info("CleanTracks filters done", "wang", wang.Filtered, "teleportation", teleportation.Filtered)
 		}()
 
-		accurate := stream.Filter(ctx, cleaner.FilterAccuracy, in)
-		slow := stream.Filter(ctx, cleaner.FilterSpeed, accurate)
+		//accurate := stream.Filter(ctx, cleaner.FilterAccuracy, in)
+		slow := stream.Filter(ctx, cleaner.FilterSpeed, in)
 		low := stream.Filter(ctx, cleaner.FilterElevation, slow)
 		uncanyoned := wang.Filter(ctx, low)
 		unteleported := teleportation.Filter(ctx, uncanyoned)
 
 		for element := range unteleported {
-			element := element
+
 			// Will block on send. Needs reader.
 			out <- element
 		}

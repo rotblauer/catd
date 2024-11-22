@@ -3,6 +3,7 @@ package tiler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/bep/debounce"
 	"github.com/dustin/go-humanize"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -39,6 +41,7 @@ type Daemon struct {
 	writeLock      sync.Map
 	debouncersMu   sync.Mutex
 	running        sync.WaitGroup
+	requestIDIndex int32
 
 	Done      chan struct{}
 	Interrupt chan struct{}
@@ -101,7 +104,7 @@ func (d *Daemon) Run() error {
 
 				d.tilingPendingM.Range(func(key, value any) bool {
 					args := value.(*TilingRequestArgs)
-					slog.Warn("Running pending tiling",
+					slog.Info("Running pending tiling",
 						slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
 					if err := d.runTiling(args, nil); err != nil {
 						slog.Error("Failed to run pending tiling", "error", err)
@@ -129,10 +132,9 @@ type SourceSchema struct {
 	// Only one layer is supported per source file. FIXME?
 	LayerName string
 
-	//// version conventionalizes how this daemon handles source versions, re: tiling.
-	//// Unexported because clients do not get to set it.
-	//// This is program logic, behavior.
-	//version TileSourceVersion
+	// requestID is a unique identifier for the request.
+	// It is used to provide a consistent file name for temporary files.
+	requestID int32
 }
 
 func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
@@ -177,7 +179,7 @@ func (d *Daemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion
 		return "", err
 	}
 	full := filepath.Join(d.Config.TmpDir, rel)
-	full += fmt.Sprintf(".%d", time.Now().UnixNano())
+	//full += fmt.Sprintf(".%d", schema.requestID)
 	return full, nil
 }
 
@@ -265,11 +267,18 @@ func (d *Daemon) writeGZ(source string, data []byte) error {
 }
 
 func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesResponse) error {
+	if args == nil {
+		return fmt.Errorf("nil args")
+	}
+
 	d.logger.Info("PushFeatures", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName)
+
 	if err := args.validate(); err != nil {
 		slog.Warn("PushFeatures invalid args", "error", err)
 		return err
 	}
+
+	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
 
 	for _, version := range []TileSourceVersion{SourceVersionCanonical, SourceVersionEdge} {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
@@ -396,6 +405,8 @@ trimming:
 	return out
 }
 
+var ErrEmptyFile = errors.New("empty file (nothing to tile)")
+
 func validateSourcePathFile(source string) error {
 	stat, err := os.Stat(source)
 	if err != nil {
@@ -405,7 +416,7 @@ func validateSourcePathFile(source string) error {
 		return fmt.Errorf("source file is a directory")
 	}
 	if stat.Size() == 0 {
-		return fmt.Errorf("source file is empty")
+		return ErrEmptyFile
 	}
 	return nil
 }
@@ -417,6 +428,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 	if args == nil {
 		return fmt.Errorf("nil args")
 	}
+	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
 
 	d.logger.Info("Requesting tiling",
 		slog.Group("args",
@@ -428,8 +440,13 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 		return fmt.Errorf("failed to get source path: %w", err)
 	}
 
+	// Check that the file exists, is a file, and is not empty.
 	if err := validateSourcePathFile(source); err != nil {
-		return fmt.Errorf("invalid source file: %w", err)
+		if errors.Is(err, ErrEmptyFile) {
+			d.logger.Warn("RequestTiling empty source file", "source", source)
+			return nil
+		}
+		return err
 	}
 
 	// The debouncer prevents the first of multiple requests from being tiled.
@@ -473,6 +490,11 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 
 func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.running.Add(1)
+	defer d.running.Done()
+
+	if args == nil {
+		return fmt.Errorf("nil args")
+	}
 
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
@@ -480,6 +502,8 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 		d.running.Done()
 		return fmt.Errorf("failed to get source path: %w", err)
 	}
+	d.unpending(source)
+
 	args.parsedSourcePath = source
 
 	defer func() {
@@ -492,9 +516,6 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 			}
 		}
 	}()
-	defer d.running.Done()
-
-	d.unpending(source)
 
 	if reply == nil {
 		reply = &TilingResponse{}
@@ -522,6 +543,10 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 			d.logger.Error("Failed to backup edge source", "error", err)
 			return err
 		}
+		if _, err := os.Create(edgePath); err != nil {
+			d.logger.Error("Failed to (re-)create edge source", "error", err)
+			return err
+		}
 	}
 
 	// Actually do tippecanoe.
@@ -533,42 +558,58 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 		return err
 	}
 
+	d.logger.Info("Tiling done", "source", source, "elapsed", reply.Elapsed.Round(time.Millisecond))
+
 	// If the canonical run was successful, remove the edge backup.
-	// This isn't necessary. It's just a cleanup.
+	// This isn't necessary (it would be overwritten). It's just a cleanup.
 	if args.Version == SourceVersionCanonical {
 		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
-		if err := os.Remove(edgeBackupPath); err != nil {
-			d.logger.Error("Failed to remove edge backup", "error", err)
-		}
-	}
+		d.logger.Debug("Removing edge backup", "path", edgeBackupPath)
 
-	// We want to trigger an edge->canonical run if:
-	// - the edge run took too long
-	// - canonical doesn't exist
-	if args.Version == SourceVersionCanonical {
+		// Truncate the file instead of removing it.
+		// This will help the to-tippecanoe reader handle errors more safely.
+		if f, err := os.OpenFile(edgeBackupPath, os.O_RDWR|os.O_TRUNC, 0660); err != nil {
+			return err
+		} else {
+
+			if err := f.Close(); err != nil {
+				return err
+			}
+		}
+		//if err := os.Remove(edgeBackupPath); err != nil {
+		//	d.logger.Error("Failed to remove edge backup", "error", err)
+		//}
+
+		// We can safely return now because this was a canonical run.
+		// There is no logic left; no magic after a canon run.
 		return nil
 	}
 
+	// We want to trigger an edge->canonical run iff:
+	// - the edge run took too long
+	// - canonical tiles don't exist yet for the source
 	var triggerCanon bool
+	var triggerCanonReason string
 
 	// If the canonical (output) file doesn't exist, we need to run it.
-	canonMBTiles, _ := d.TargetPathFor(args.SourceSchema, SourceVersionCanonical)
-	if _, err := os.Stat(canonMBTiles); os.IsNotExist(err) {
-		d.logger.Warn("Canonical tiling does not exist", "source", source)
+	canonMBTilesPath, _ := d.TargetPathFor(args.SourceSchema, SourceVersionCanonical)
+	if _, err := os.Stat(canonMBTilesPath); os.IsNotExist(err) {
+		triggerCanonReason = "does not exist yet"
 		triggerCanon = true
 	}
 
 	if reply.Elapsed > d.Config.EdgeEpsilon {
-		d.logger.Warn("Edge tiling exceeded epsilon", "elapsed", reply.Elapsed.Round(time.Millisecond),
-			"epsilon", d.Config.EdgeEpsilon.Round(time.Millisecond))
+		triggerCanonReason = fmt.Sprintf("edge tiling exceeded threshold epsilon=%v", d.Config.EdgeEpsilon.Round(time.Millisecond))
 		triggerCanon = true
 	}
 
 	if !triggerCanon {
+		// We're done here.
 		return nil
 	}
 
-	d.logger.Info("Running canonical tiling...", "source", source)
+	d.logger.Info("Triggering canon tiling", "reason", triggerCanonReason, "source", source)
+
 	return d.runTiling(&TilingRequestArgs{
 		SourceSchema: SourceSchema{
 			CatID:      args.CatID,
@@ -613,11 +654,14 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 	// - in case of failure
 	// - in case the final output is being used by another process
 
+	// Give tmp target a unique name so it doesn't get fucked with.
 	tmpTarget, err := d.TmpTargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		d.logger.Error("Failed to get tmp target path", "error", err)
 		return err
 	}
+	tmpTarget = tmpTarget + fmt.Sprintf(".%d", time.Now().UnixNano())
+
 	if err := os.MkdirAll(filepath.Dir(tmpTarget), os.ModePerm); err != nil {
 		d.logger.Error("Failed to create temp dir", "error", err)
 		return err

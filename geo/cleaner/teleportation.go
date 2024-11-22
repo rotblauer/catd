@@ -23,7 +23,6 @@ func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan *cattrack.Ca
 		var lastPoint orb.Point
 
 		for track := range in {
-			track := track
 
 			// The first track is always sent.
 			if lastTime.IsZero() {
@@ -60,6 +59,10 @@ func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan *cattrack.Ca
 			calculatedSpeed := dist / interval.Seconds()
 			reportedSpeed := track.Properties.MustFloat64("Speed")
 			if calculatedSpeed > reportedSpeed*params.DefaultCleanConfig.TeleportSpeedFactor {
+
+				lastTime = trackTime
+				lastPoint = track.Point()
+
 				f.Filtered++
 				continue
 			}

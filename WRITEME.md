@@ -1,4 +1,16 @@
 
+cattracks-explorer
+```
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/naps/naps/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/tracks/tracks/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tracks/tracks/tiles/{z}/{x}/{y}.pbf
+
+compare tripdetected vs raw tracks
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/tracks/tracks/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tripdetected/tripdetected/tiles/{z}/{x}/{y}.pbf
+
+http://localhost:8080/public/?vector=http://localhost:3001/services/ia/laps/laps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/naps/naps/tiles/{z}/{x}/{y}.pbf
+```
+
 ```shell
 fatal error: concurrent map read and map write
 
