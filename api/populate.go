@@ -163,6 +163,22 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		TippeConfig: params.TippeConfigNameNaps,
 	}, sendNaps)
 
+	tripDetectedFork, tripDetectedPass := stream.Tee(ctx, tripdetected)
+	tripDetectedSink, tripDetectedSend := stream.Tee(ctx, tripDetectedPass)
+
+	c.State.Waiting.Add(1)
+	go sinkToCatJSONGZFile(ctx, c, "tripdetected.geojson.gz", tripDetectedSink)
+
+	c.State.Waiting.Add(1)
+	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+		SourceSchema: tiler.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "tripdetected",
+			LayerName:  "tripdetected",
+		},
+		TippeConfig: params.TippeConfigNameTripDetected,
+	}, tripDetectedSend)
+
 	// Block on tripdetect.
 	c.logger.Info("Trip detector blocking")
 	stream.Sink(ctx, func(ct *cattrack.CatTrack) {
@@ -171,7 +187,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 		} else {
 			napTracks <- ct
 		}
-	}, tripdetected)
+	}, tripDetectedFork)
 }
 
 func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {

@@ -5,10 +5,11 @@ var TippecanoeCommand = "/usr/local/bin/tippecanoe"
 type TippeConfigName string
 
 const (
-	TippeConfigNameTracks TippeConfigName = "tracks"
-	TippeConfigNameSnaps  TippeConfigName = "snaps"
-	TippeConfigNameLaps   TippeConfigName = "laps"
-	TippeConfigNameNaps   TippeConfigName = "naps"
+	TippeConfigNameTracks       TippeConfigName = "tracks"
+	TippeConfigNameSnaps        TippeConfigName = "snaps"
+	TippeConfigNameLaps         TippeConfigName = "laps"
+	TippeConfigNameNaps         TippeConfigName = "naps"
+	TippeConfigNameTripDetected TippeConfigName = "tripdetected"
 )
 
 func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
@@ -21,6 +22,8 @@ func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
 		return DefaultTippeConfigs.Laps(), true
 	case TippeConfigNameNaps:
 		return DefaultTippeConfigs.Naps(), true
+	case TippeConfigNameTripDetected:
+		return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	}
 	return nil, false
 }
