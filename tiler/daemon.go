@@ -316,7 +316,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 }
 
 func (d *Daemon) writeGZ(source string, data []byte) error {
-	wr, err := flat.NewFlatGZWriter(source)
+	wr, err := flat.NewFlatGZWriter(source, flat.DefaultGZFileWriterConfig())
 	if err != nil {
 		return err
 	}

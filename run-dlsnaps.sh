@@ -8,8 +8,8 @@ run() {
 #  local source_gz="edge.20241008.json.gz"
   local source_gz="edge.json.gz"
 
-  export AWS_BUCKETNAME=rotblauercatsnaps
-  export AWS_REGION=us-east-2
+  env AWS_BUCKETNAME=rotblauercatsnaps
+  env AWS_REGION=us-east-2
 
   go install . &&\
   zcat ~/tdata/"${source_gz}" \
@@ -22,8 +22,8 @@ review() {
   for i in 100000; do
     echo
     echo "--- ${i} ---";
-    for f in {ia,rye}/{tracks,laps,naps}; do
-      t=/tmp/catd${i}/cats/$f.geojson.gz; echo "$t"; zcat "$t" \
+    for f in {ia,rye}/*.geojson.gz; do
+      t=/tmp/catd${i}/cats/$f; echo "$t"; zcat "$t" \
       | wc -l ;
       done;
       done

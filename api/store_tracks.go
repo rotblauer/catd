@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/catdb/flat"
-	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
@@ -51,7 +50,6 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 			}
 			c.logger.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
 
-			events.NewStoredTrackFeed.Send(ct)
 			storedN++
 
 			return ct

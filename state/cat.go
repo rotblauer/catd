@@ -71,7 +71,7 @@ func (s *State) Close() error {
 }
 
 func (s *State) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
-	f, err := s.Flat.NamedGZWriter(target)
+	f, err := s.Flat.NamedGZWriter(target, nil)
 	if err != nil {
 		return nil, err
 	}

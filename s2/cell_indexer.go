@@ -91,7 +91,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
 
 	for _, level := range levels {
-		gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level))
+		gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
 		if err != nil {
 			return nil, err
 		}

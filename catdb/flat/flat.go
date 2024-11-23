@@ -54,28 +54,15 @@ func (f *Flat) Path() string {
 	return f.path
 }
 
-func (f *Flat) NamedGZWriter(name string) (*GZFileWriter, error) {
-	return NewFlatGZWriter(filepath.Join(f.path, name))
+func (f *Flat) NamedGZWriter(name string, config *GZFileWriterConfig) (*GZFileWriter, error) {
+	if config == nil {
+		config = DefaultGZFileWriterConfig()
+	}
+	return NewFlatGZWriter(filepath.Join(f.path, name), config)
 }
 
 func (f *Flat) NamedGZReader(name string) (*GZFileReader, error) {
 	return NewFlatGZReader(filepath.Join(f.path, name))
-}
-
-func (f *Flat) TracksGZWriter() (*GZFileWriter, error) {
-	return f.NamedGZWriter(TracksFileName)
-}
-
-func (f *Flat) SnapsGZWriter() (*GZFileWriter, error) {
-	return f.NamedGZWriter(SnapsFileName)
-}
-
-func (f *Flat) LapsGZWriter() (*GZFileWriter, error) {
-	return f.NamedGZWriter(LapsFileName)
-}
-
-func (f *Flat) NapsGZWriter() (*GZFileWriter, error) {
-	return f.NamedGZWriter(NapsFileName)
 }
 
 type GZFileWriter struct {
@@ -93,15 +80,24 @@ type GZFileWriterConfig struct {
 	DirPerm          os.FileMode
 }
 
-func NewFlatGZWriter(path string) (*GZFileWriter, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0770); err != nil {
+func DefaultGZFileWriterConfig() *GZFileWriterConfig {
+	return &GZFileWriterConfig{
+		CompressionLevel: gzip.BestCompression,
+		Flag:             os.O_WRONLY | os.O_APPEND | os.O_CREATE,
+		FilePerm:         0660,
+		DirPerm:          0770,
+	}
+}
+
+func NewFlatGZWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, error) {
+	if err := os.MkdirAll(filepath.Dir(path), config.DirPerm); err != nil {
 		return nil, err
 	}
-	fi, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0660)
+	fi, err := os.OpenFile(path, config.Flag, config.FilePerm)
 	if err != nil {
 		return nil, err
 	}
-	gzw, err := gzip.NewWriterLevel(fi, gzip.BestCompression)
+	gzw, err := gzip.NewWriterLevel(fi, config.CompressionLevel)
 	if err != nil {
 		return nil, err
 	}

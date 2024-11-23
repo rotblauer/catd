@@ -13,6 +13,7 @@ import (
 	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"os"
 	"time"
 )
 
@@ -67,11 +68,16 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// Tee for storage globally (master) and per cat.
 	master, myCat := stream.Tee(ctx, deduped)
 
-	// Sink all tracks to master.geojson.gz.
+	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
 	// Thread safe because gz file locks.
 	// Cat pushes will be stored in cat push/populate-batches.
-	appFlat := flat.NewFlatWithRoot(params.DatadirRoot)
-	sinkToFlatJSONGZFile(ctx, c, appFlat, "master.geojson.gz", master)
+	gzftw, err := flat.NewFlatWithRoot(params.DatadirRoot).
+		NamedGZWriter("master.geojson.gz", nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return err
+	}
+	sinkToFlatJSONGZFile(ctx, c, gzftw, master)
 
 	// StoreTracks for each cat.
 	// This gets its own special cat-method for now because
@@ -83,7 +89,14 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	handleSnaps, passTracks := stream.Tee(ctx, stored)
 	sinkLastTracks, sendTracks := stream.Tee(ctx, passTracks)
 
-	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, "last_tracks.geojson.gz", sinkLastTracks)
+	truncate := flat.DefaultGZFileWriterConfig()
+	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	gzftw, err = c.State.Flat.NamedGZWriter("last_tracks.geojson.gz", truncate)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return err
+	}
+	sinkToFlatJSONGZFile(ctx, c, gzftw, sinkLastTracks)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -102,7 +115,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 			return ct.IsSnap()
 		}, passSnaps))
 
-	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.SnapsFileName, sinkSnaps)
+	gzftw, err = c.State.Flat.NamedGZWriter("snaps.geojson.gz", nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return err
+	}
+	sinkToFlatJSONGZFile(ctx, c, gzftw, sinkSnaps)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -162,7 +180,12 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// End of the line for all cat laps...
 	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
 
-	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.LapsFileName, sinkLaps)
+	wr, err := c.State.Flat.NamedGZWriter("laps.geojson.gz", nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return
+	}
+	sinkToFlatJSONGZFile(ctx, c, wr, sinkLaps)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -183,7 +206,12 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// End of the line for all cat naps...
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
 
-	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.NapsFileName, sinkNaps)
+	wr, err = c.State.Flat.NamedGZWriter("naps.geojson.gz", nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return
+	}
+	sinkToFlatJSONGZFile(ctx, c, wr, sinkNaps)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -196,7 +224,12 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	tripDetectedFork, tripDetectedPass := stream.Tee(ctx, tripdetected)
 	tripDetectedSink, tripDetectedSend := stream.Tee(ctx, tripDetectedPass)
 
-	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, "tripdetected.geojson.gz", tripDetectedSink)
+	wr, err = c.State.Flat.NamedGZWriter("tripdetected.geojson.gz", nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		return
+	}
+	sinkToFlatJSONGZFile(ctx, c, wr, tripDetectedSink)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -217,16 +250,10 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	}, tripDetectedFork)
 }
 
-func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, f *flat.Flat, name string, in <-chan *T) {
+func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan *T) {
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
-
-		wr, err := f.NamedGZWriter(name)
-		if err != nil {
-			c.logger.Error("Failed to create custom writer", "error", err)
-			return
-		}
 
 		defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
 		defer func() {
