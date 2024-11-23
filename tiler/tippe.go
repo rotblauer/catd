@@ -114,13 +114,13 @@ func (d *Daemon) tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
 	}()
 
 	out, err := tippe.CombinedOutput()
+	log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))
 	if out != nil {
 		// Log output line by line
 		for _, line := range strings.Split(string(out), "\n") {
 			if line == "" {
 				continue
 			}
-			log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))
 			log.Println(line)
 		}
 	}

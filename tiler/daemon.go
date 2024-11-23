@@ -2,10 +2,12 @@ package tiler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
@@ -35,14 +37,14 @@ type Daemon struct {
 	// result in corrupted data.
 	flat *flat.Flat
 
-	logger         *slog.Logger
-	debouncers     map[string]func(func())
-	tilingPendingM sync.Map
-	tilingRunningM sync.Map
-	writeLock      sync.Map
-	debouncersMu   sync.Mutex
-	running        sync.WaitGroup
-	requestIDIndex int32
+	logger          *slog.Logger
+	debouncers      map[string]func(func())
+	tilingRunningM  sync.Map
+	pendingTTLCache *ttlcache.Cache[string, *TilingRequestArgs]
+	writeLock       sync.Map
+	debouncersMu    sync.Mutex
+	running         sync.WaitGroup
+	requestIDIndex  int32
 
 	Done      chan struct{}
 	Interrupt chan struct{}
@@ -54,13 +56,13 @@ func NewDaemon(config *params.DaemonConfig) *Daemon {
 	}
 
 	return &Daemon{
-		Config:         config,
-		flat:           flat.NewFlatWithRoot(config.RootDir),
-		logger:         slog.With("daemon", "tiler"),
-		debouncers:     make(map[string]func(func())),
-		tilingPendingM: sync.Map{},
-		tilingRunningM: sync.Map{},
-		writeLock:      sync.Map{},
+		Config:          config,
+		flat:            flat.NewFlatWithRoot(config.RootDir),
+		logger:          slog.With("daemon", "tiler"),
+		debouncers:      make(map[string]func(func())),
+		tilingRunningM:  sync.Map{},
+		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.DebounceInterval)),
+		writeLock:       sync.Map{},
 
 		Done:      make(chan struct{}, 1),
 		Interrupt: make(chan struct{}, 1),
@@ -90,8 +92,19 @@ func (d *Daemon) Run() error {
 		d.logger.Info("TilerDaemon RPC HTTP server stopped")
 	}()
 
-	cancelRunPending := make(chan struct{})
-	go d.schedulePendingRequests(cancelRunPending)
+	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
+		d.logger.Info("Running pending tiling", "args", item.Value().id())
+		if _, ok := d.tilingRunningM.Load(item.Value().id()); ok {
+			d.logger.Warn("Tiling already running", "args", item.Value().id())
+			d.pendingTTLCache.Set(item.Value().id(), item.Value(), d.Config.DebounceInterval)
+			return
+		}
+		if err := d.callTiling(item.Value(), nil); err != nil {
+			d.logger.Error("Failed to run pending tiling", "error", err)
+		}
+	})
+
+	go d.pendingTTLCache.Start()
 
 	go func() {
 		defer func() {
@@ -106,8 +119,29 @@ func (d *Daemon) Run() error {
 			case <-d.Interrupt:
 
 				// Running pending tiling is important for `import` porting in.
-				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
-				cancelRunPending <- struct{}{}
+				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
+				d.running.Wait()
+
+				// Run all pending tiling on shutdown ()
+				d.pendingTTLCache.Stop()
+
+				// TODO Flag me in config.
+				// This is a blocking operation, graceful though it may be, and long though it may be.
+				// A real server (and not development) should probably just abort these stragglers.
+				d.pendingTTLCache.Range(func(item *ttlcache.Item[string, *TilingRequestArgs]) bool {
+					_, ok := d.tilingRunningM.Load(item.Value().id())
+					for ok {
+						d.logger.Warn("Tiling still running...", "args", item.Value().id(), "await", "true")
+						time.Sleep(time.Second)
+						_, ok = d.tilingRunningM.Load(item.Value().id())
+					}
+					d.logger.Info("Running pending tiling", "args", item.Value().id())
+					if err := d.callTiling(item.Value(), nil); err != nil {
+						d.logger.Error("Failed to run pending tiling", "error", err)
+					}
+					return true
+				})
+				
 				d.running.Wait()
 				return
 			}
@@ -116,67 +150,13 @@ func (d *Daemon) Run() error {
 	return nil
 }
 
-func (d *Daemon) runPendingRequests() {
-	d.tilingPendingM.Range(func(key, value any) bool {
-		args := value.(*TilingRequestArgs)
-		if time.Since(args.requestedAt) < d.Config.DebounceInterval {
-			return true // continue
-		}
-		if _, ok := d.tilingRunningM.Load(args.id()); ok {
-			return true // continue, already running (save pending)
-		}
-
-		d.logger.Info("Running pending tiling", "args", args.id())
-		d.unpending(args)
-
-		go func() {
-			if err := d.callTiling(args, nil); err != nil {
-				d.logger.Error("Failed to run pending tiling", "error", err)
-			}
-		}()
-
-		return true
-	})
-}
-
-func (d *Daemon) schedulePendingRequests(cancel <-chan struct{}) {
-	ticker := time.NewTicker(d.Config.DebounceInterval)
-	runner := make(chan struct{}, 1)
-	defer close(runner)
-	go func() {
-		for range runner {
-			d.runPendingRequests()
-		}
-	}()
-	for range ticker.C {
-		select {
-		case <-cancel:
-			ticker.Stop()
-			return
-		default:
-			select {
-			case runner <- struct{}{}:
-			default:
-			}
-		}
-	}
-}
-
 // pending registers unique source files for tiling.
 // Returns true if was not pending before call (and is added to queue).
 // Args from the last all are persisted.
 func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
-	value, exists := d.tilingPendingM.Load(args.id())
-	d.tilingPendingM.Store(args.id(), args)
-	if exists {
-		return value.(*TilingRequestArgs)
-	}
+	d.pendingTTLCache.Set(args.id(), args, d.Config.DebounceInterval)
+	d.pendingTTLCache.Touch(args.id())
 	return nil
-}
-
-// unpending unregisters a pending source file tile-request call.
-func (d *Daemon) unpending(args *TilingRequestArgs) {
-	d.tilingPendingM.Delete(args.id())
 }
 
 type SourceSchema struct {
@@ -530,10 +510,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
 	args.requestedAt = time.Now()
 
-	d.logger.Info("Requesting tiling",
-		slog.Group("args",
-			"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
-			"config", args.TippeConfig))
+	d.logger.Info("RequestTiling", "args", args.id(), "config", args.TippeConfig)
 
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
