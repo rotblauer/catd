@@ -124,29 +124,58 @@ func (d *Daemon) Run() error {
 			case <-d.Interrupt:
 
 				// Running pending tiling is important for `import` porting in.
-				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
+				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
 				d.running.Wait()
 
-				// Run all pending tiling on shutdown ()
 				d.pendingTTLCache.Stop()
 
+				// Run all pending tiling on shutdown
 				// TODO Flag me in config.
 				// This is a blocking operation, graceful though it may be, and long though it may be.
 				// A real server (and not development) should probably just abort these stragglers.
-				d.pendingTTLCache.Range(func(item *ttlcache.Item[string, *TilingRequestArgs]) bool {
-					_, ok := d.tilingRunningM.Load(item.Value().id())
-					for ok {
-						d.logger.Warn("Tiling still running...", "args", item.Value().id(), "await", "true")
-						time.Sleep(time.Second)
-						_, ok = d.tilingRunningM.Load(item.Value().id())
-					}
-					d.logger.Info("Running pending tiling", "args", item.Value().id())
-					if err := d.callTiling(item.Value(), nil); err != nil {
-						d.logger.Error("Failed to run pending tiling", "error", err)
-					}
-					return true
-				})
+				pendingLen := d.pendingTTLCache.Len()
+				d.logger.Info("TilerDaemon pending jobs", "len", pendingLen)
+				keys := d.pendingTTLCache.Keys()
+				requests := []*TilingRequestArgs{}
+				for _, key := range keys {
+					d.logger.Info("TilerDaemon pending job", "key", key)
+					req := d.pendingTTLCache.Get(key).Value()
 
+					// Skip all but edge requests.
+					// Edge run will trigger canonical if DNE.
+					if req.Version != SourceVersionEdge {
+						continue
+					}
+					requests = append(requests, req)
+				}
+
+				// For all pending requests attempt to call
+				type result struct {
+					req *TilingRequestArgs
+					err error
+				}
+				results := make(chan result, len(requests))
+				for _, req := range requests {
+					_, ok := d.tilingRunningM.Load(req.id())
+					for ok {
+						d.logger.Warn("Tiling still running...", "args", req.id(), "await", "true")
+						time.Sleep(time.Second)
+						_, ok = d.tilingRunningM.Load(req.id())
+					}
+					d.logger.Info("Spawning pending tiling request", "args", req.id())
+					go func() {
+						err := d.callTiling(req, nil)
+						results <- result{req, err}
+					}()
+				}
+				for i := 0; i < len(requests); i++ {
+					res := <-results
+					if res.err != nil {
+						d.logger.Error("Failed to run pending tiling", "req", res.req.id(), "error", err)
+						return
+					}
+				}
+				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
 				d.running.Wait()
 				return
 			}
@@ -443,6 +472,8 @@ type TilingRequestArgs struct {
 	parsedSourcePath string
 
 	requestedAt time.Time
+
+	cliArgs params.CLIFlagsT
 }
 
 func (s SourceSchema) Validate() error {
@@ -678,11 +709,12 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 		return err
 	}
 
-	cliConfig, ok := params.LookupTippeConfig(args.TippeConfig)
+	var ok bool
+	args.cliArgs, ok = params.LookupTippeConfig(args.TippeConfig)
 	if !ok {
 		return fmt.Errorf("unknown tippe config %q", args.TippeConfig)
 	}
-	cliConfig.MustSetPair("--layer", args.LayerName).
+	args.cliArgs.MustSetPair("--layer", args.LayerName).
 		MustSetPair("--name", args.SourceName).
 		MustSetPair("--output", mbtilesTmp)
 
@@ -706,7 +738,7 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 
 	// Run tippecanoe!
 	start := time.Now()
-	if err := d.tip(cliConfig, sources...); err != nil {
+	if err := d.tip(args, sources...); err != nil {
 		d.logger.Error("Failed to tip", "error", err)
 		return err
 	}

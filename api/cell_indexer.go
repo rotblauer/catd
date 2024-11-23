@@ -31,6 +31,10 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 	}()
 
 	for _, level := range params.S2DefaultCellLevels {
+		if level < catS2.CellLevel13 || level > catS2.CellLevel16 {
+			continue
+		}
+		//for _, level := range []catS2.CellLevel{catS2.CellLevel16, catS2.CellLevel13, catS2.CellLevel8} {
 		feed, err := cellIndexer.GetUniqueIndexFeed(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
@@ -46,8 +50,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 		go sendToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
 			SourceSchema: tiler.SourceSchema{
 				CatID:      c.CatID,
-				SourceName: fmt.Sprintf("level-%02d", level),
-				LayerName:  "tracks",
+				SourceName: "s2_cells",
+				LayerName:  fmt.Sprintf("level-%02d-polygons", level),
 			},
 			TippeConfig: params.TippeConfigNameTracks,
 		}, stream.Transform(ctx, func(originals []*cattrack.CatTrack) []*cattrack.CatTrack {
@@ -58,9 +62,17 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 				pt := cp.Point()
 				cell := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
 				leveledCell := catS2.CellIDWithLevel(cell, level)
-				levelPt := leveledCell.Point()
-				latLng := s2.LatLngFromPoint(levelPt)
-				cp.Geometry = orb.Point{latLng.Lng.Degrees(), latLng.Lat.Degrees()}
+				polygon := s2.PolygonFromCell(s2.CellFromCellID(leveledCell))
+				rect := polygon.RectBound()
+				hi, lo := rect.Hi(), rect.Lo()
+				tl := orb.Point{lo.Lng.Degrees(), hi.Lat.Degrees()}
+				tr := orb.Point{hi.Lng.Degrees(), hi.Lat.Degrees()}
+				bl := orb.Point{lo.Lng.Degrees(), lo.Lat.Degrees()}
+				br := orb.Point{hi.Lng.Degrees(), lo.Lat.Degrees()}
+				cp.Geometry = orb.Polygon{orb.Ring{tl, tr, br, bl, tl}}
+				//levelPt := leveledCell.Point()
+				//latLng := s2.LatLngFromPoint(levelPt)
+				//cp.Geometry = orb.Point{latLng.Lng.Degrees(), latLng.Lat.Degrees()}
 				outs = append(outs, cp)
 			}
 			return outs

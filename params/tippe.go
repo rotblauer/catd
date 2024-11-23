@@ -10,6 +10,7 @@ const (
 	TippeConfigNameLaps         TippeConfigName = "laps"
 	TippeConfigNameNaps         TippeConfigName = "naps"
 	TippeConfigNameTripDetected TippeConfigName = "tripdetected"
+	TippeConfigNameCells        TippeConfigName = "cells"
 )
 
 func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
@@ -24,6 +25,8 @@ func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
 		return DefaultTippeConfigs.Naps(), true
 	case TippeConfigNameTripDetected:
 		return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
+	case TippeConfigNameCells:
+		return TippeCellsArgs.Copy(), true
 	}
 	return nil, false
 }
@@ -51,6 +54,18 @@ var DefaultTippeConfigs = &struct {
 }
 
 var (
+	commonArgs = CLIFlagsT{
+		"--single-precision",
+		"--generate-ids",
+		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
+		"--temporary-directory", "/tmp",
+		"--layer", "${LAYER_NAME}",
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
+		"--force",
+	}
 	TippeLapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "750000",
 		"--drop-smallest-as-needed",
@@ -119,7 +134,7 @@ var (
 	}
 	// TippeTracksArgs taken from V1 CatTracks procedge, procmaster.
 	TippeTracksArgs = CLIFlagsT{
-		"--maximum-tile-bytes", "330000", // num bytes/tile,default: 500kb=500000
+		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
 		"--cluster-densest-as-needed",
 		"--cluster-distance=1",
 		"--calculate-feature-density",
@@ -172,7 +187,55 @@ var (
 		"--drop-rate", "1", // == --drop-rate
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
-		"--json-progress", "--progress-interval", "30",
+		"--json-progress", "--progress-interval", "5",
+		"--read-parallel",
+		"--json-progress",
+		"--progress-interval", "5",
+		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
+		"--name", "${TILESET_NAME}",
+		"--output", "${OUTPUT_FILE}",
+		"--force",
+	}
+	// TippeCellsArgs are for S2 cell polygons.
+	TippeCellsArgs = CLIFlagsT{
+		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
+
+		// -zg: Automatically choose a maxzoom that should be sufficient to clearly distinguish the features and the detail within each feature
+		"--maximum-zoom", "g", // guess
+
+		// --coalesce-densest-as-needed: If the tiles are too big at low or medium zoom levels,
+		// merge as many features together as are necessary to allow tiles to be created with those features that are still distinguished
+		"--coalesce-densest-as-needed",
+
+		//--extend-zooms-if-still-dropping: If even the tiles at high zoom levels are too big,
+		// keep adding zoom levels until one is reached that can represent all the features.
+		"--extend-zooms-if-still-dropping",
+
+		// Don't simplify away nodes at which LineStrings or Polygon rings converge, diverge, or cross.
+		// (This will not be effective if you also use --coalesce.)
+		// In between intersection nodes, LineString segments or polygon edges will be simplified identically in each feature if possible.
+		// Use this instead of --detect-shared-borders.
+		// https://felt.com/blog/tippecanoe-polygons-shard-gaps
+		"--no-simplification-of-shared-nodes",
+
+		// Multiply the tolerance for line and polygon simplification by _scale_ (the value).
+		// The standard tolerance tries to keep the line or polygon within one tile unit of its proper location.
+		// You can probably go up to about 10 without too much visible difference.
+		"--simplification", "10",
+
+		"--include", "Alias",
+		"--include", "UUID",
+		"--include", "Name",
+		"--include", "Activity",
+		"--include", "Elevation",
+		"--include", "Speed",
+		"--include", "Accuracy",
+		// "--include", "Heading",
+		"--include", "UnixTime",
+		"--single-precision",
+		//"--minimum-zoom", "3",
+		//"--maximum-zoom", "18",
+		"--json-progress", "--progress-interval", "5",
 		"--read-parallel",
 		"--json-progress",
 		"--progress-interval", "5",

@@ -33,7 +33,7 @@ func DefaultDaemonConfig() *DaemonConfig {
 		// This allows an easy `cp -a` to init or reset the tiler daemon's data.
 		RootDir:          filepath.Join(DatadirRoot, "tiled"),
 		TmpDir:           filepath.Join(os.TempDir(), "catd-tilerdaemon-tmp"),
-		DebounceInterval: 10 * time.Second,
+		DebounceInterval: 30 * time.Second,
 		EdgeEpsilon:      1 * time.Minute,
 		RPCPath:          "/tiler_rpc",
 		RPCNetwork:       "tcp",

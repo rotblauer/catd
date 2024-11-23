@@ -1,6 +1,7 @@
 package tiler
 
 import (
+	"bufio"
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
@@ -11,7 +12,7 @@ import (
 	"strings"
 )
 
-func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
+func (d *Daemon) tip(args *TilingRequestArgs, sources ...string) error {
 	r, w := io.Pipe()
 
 	pipeErrs := make(chan error)
@@ -82,30 +83,50 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 	}
 }
 
-func (d *Daemon) tipFromReader(reader io.Reader, args params.CLIFlagsT) error {
-	tippe := exec.Command(params.TippecanoeCommand, args...)
+func (d *Daemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) error {
+	tippe := exec.Command(params.TippecanoeCommand, args.cliArgs...)
 	stdin, err := tippe.StdinPipe()
+	if err != nil {
+		return err
+	}
 
 	go func() {
 		defer stdin.Close()
 		n, err := io.Copy(stdin, reader)
 		if err != nil {
-			d.logger.Warn("Failed to copy reader to tippe", "error", err)
+			d.logger.Warn("Failed to copy reader to tippe", "source", args.id(), "error", err)
 			return
 		}
-		d.logger.Info("Piped gz data to tippecanoe", "size", humanize.Bytes(uint64(n)))
+		d.logger.Info("Piped gz data to tippecanoe", "source", args.id(), "size", humanize.Bytes(uint64(n)))
 	}()
 
-	out, err := tippe.CombinedOutput()
 	log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))
-	if out != nil {
-		// Log output line by line
-		for _, line := range strings.Split(string(out), "\n") {
-			if line == "" {
-				continue
-			}
-			log.Println(line)
+	tippeStderr, _ := tippe.StderrPipe()
+
+	tippeErr := make(chan error)
+	go func() {
+		defer close(tippeErr)
+		scanner := bufio.NewScanner(tippeStderr)
+		for scanner.Scan() {
+			log.Println(fmt.Sprintf("%s %s", scanner.Text(), args.id()))
 		}
+		tippeErr <- tippe.Wait()
+	}()
+
+	err = tippe.Start()
+	if err != nil {
+		return err
 	}
-	return err
+
+	//slurp, err := io.ReadAll(tippeStderr)
+	//if err != nil {
+	//	return err
+	//}
+
+	//scanner := bufio.NewScanner(bytes.NewReader(slurp))
+	//for scanner.Scan() {
+	//	log.Println(fmt.Sprintf("%s %s", scanner.Text(), args.id()))
+	//}
+
+	return <-tippeErr
 }
