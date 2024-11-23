@@ -64,9 +64,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// Dedupe with hash cache.
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
-	// Tee for storage globally and per cat.
+	// Tee for storage globally (master) and per cat.
 	master, myCat := stream.Tee(ctx, deduped)
 
+	// Sink all tracks to master.geojson.gz.
+	// Thread safe because gz file locks.
+	// Cat pushes will be stored in cat push/populate-batches.
 	appFlat := flat.NewFlatWithRoot(params.DatadirRoot)
 	sinkToFlatJSONGZFile(ctx, c, appFlat, "master.geojson.gz", master)
 
