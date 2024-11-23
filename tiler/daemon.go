@@ -17,6 +17,7 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +39,7 @@ type Daemon struct {
 	logger         *slog.Logger
 	debouncers     map[string]func(func())
 	tilingPendingM sync.Map
+	tilingRunningM sync.Map
 	writeLock      sync.Map
 	debouncersMu   sync.Mutex
 	running        sync.WaitGroup
@@ -58,6 +60,7 @@ func NewDaemon(config *params.DaemonConfig) *Daemon {
 		logger:         slog.With("daemon", "tiler"),
 		debouncers:     make(map[string]func(func())),
 		tilingPendingM: sync.Map{},
+		tilingRunningM: sync.Map{},
 		writeLock:      sync.Map{},
 
 		Done:      make(chan struct{}, 1),
@@ -206,7 +209,8 @@ type PushFeaturesRequestArgs struct {
 }
 
 type PushFeaturesResponse struct {
-	Success bool
+	Success   bool
+	WrittenTo string
 }
 
 func (a *PushFeaturesRequestArgs) validate() error {
@@ -273,6 +277,44 @@ func (d *Daemon) writeGZ(source string, data []byte) error {
 	return nil
 }
 
+func (d *Daemon) rollEdgeToBackup(args *TilingRequestArgs) error {
+	backupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
+
+	edgePath, _ := d.SourcePathFor(args.SourceSchema, SourceVersionEdge)
+	matches, err := filepath.Glob(edgePath + "*")
+	if err != nil {
+		return err
+	}
+
+	// Maintain lexical order.
+	sort.Strings(matches)
+
+	// Open the backup path for writing, truncating it.
+	// Append-only. gzipped.
+	if err := os.MkdirAll(filepath.Dir(backupPath), os.ModePerm); err != nil {
+		return err
+	}
+	backup, err := os.OpenFile(backupPath, os.O_WRONLY|os.O_TRUNC|os.O_CREATE|os.O_APPEND, 0660)
+	if err != nil {
+		return err
+	}
+	defer backup.Close()
+
+	// Iterate the matches and copy them into the target backup file.
+	for _, match := range matches {
+		f, err := os.Open(match)
+		if err != nil {
+			return err
+		}
+		defer f.Close() // in case copy errors
+		if _, err := io.Copy(backup, f); err != nil {
+			return err
+		}
+		f.Close()
+	}
+	return nil
+}
+
 func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesResponse) error {
 	if args == nil {
 		return fmt.Errorf("nil args")
@@ -292,9 +334,19 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		if err != nil {
 			return fmt.Errorf("failed to get source path: %w", err)
 		}
+
+		// Append a glob-ready, lexical-ordering suffix to the edge file.
+		// One edge file is written per request.
+		// This keeps the data atomic.
+		if version == SourceVersionEdge {
+			source += fmt.Sprintf(".%014d", time.Now().UnixNano())
+		}
+
+		// Ensure dirs.
 		if err := os.MkdirAll(filepath.Dir(source), os.ModePerm); err != nil {
 			return err
 		}
+
 		b := make([]byte, len(args.JSONBytes))
 		copy(b, args.JSONBytes)
 		if err := d.writeGZ(source, b); err != nil {
@@ -303,7 +355,7 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		d.logger.Info("Wrote source", "source", source, "size", humanize.Bytes(uint64(len(args.JSONBytes))))
 	}
 
-	// Request tiling. Will get debounced.
+	// Request edge tiling. Will get debounced.
 	res := &TilingResponse{
 		Elapsed: time.Duration(666),
 	}
@@ -339,7 +391,6 @@ const (
 	SourceVersionCanonical TileSourceVersion = "canonical"
 	SourceVersionEdge      TileSourceVersion = "edge"
 	sourceVersionBackup    TileSourceVersion = "backup"
-	sourceVersionEvent     TileSourceVersion = "call"
 )
 
 type TilingRequestArgs struct {
@@ -351,6 +402,8 @@ type TilingRequestArgs struct {
 
 	// parsedSourcePath is the source file path, parsed and validated.
 	parsedSourcePath string
+
+	rollableEdges []string
 }
 
 func (s SourceSchema) Validate() error {
@@ -388,34 +441,23 @@ type TilingResponse struct {
 	MBTilesPath string
 }
 
-// mbTilesBaseNameFromSourcePathGZ returns a convention-driven base name for .mbtiles files.
-// It strips expected suffixes from the source file name and appends .mbtiles.
-func mbTilesBaseNameFromSourcePathGZ(sourceGZ string) string {
-	// Trim any and all extensions off the source file name,
-	// then append .mbtiles extension.
-	// This is the output file name.
-	out := filepath.Base(sourceGZ)
+var ErrEmptyFile = errors.New("empty file (nothing to tile)")
+var ErrNoFiles = errors.New("no files (nothing to tile)")
 
-	// Trim expected suffixes using a blacklist to avoid bad assumptions.
-	blacklist := []string{".geojson", ".json", ".gz"}
-
-trimming:
-	for ext := filepath.Ext(out); ext != ""; ext = filepath.Ext(out) {
-		for _, b := range blacklist {
-			if ext == b {
-				out = strings.TrimSuffix(out, b)
-				continue trimming
-			}
+func validateSourcePathFile(source string, version TileSourceVersion) error {
+	// Edge handling is different because we're checking groups of files with glob.
+	if version == SourceVersionEdge {
+		matches, err := filepath.Glob(source + "*")
+		if err != nil {
+			return err
 		}
+		if len(matches) == 0 {
+			return ErrNoFiles
+		}
+		return nil
 	}
 
-	out = out + ".mbtiles"
-	return out
-}
-
-var ErrEmptyFile = errors.New("empty file (nothing to tile)")
-
-func validateSourcePathFile(source string) error {
+	// Check that the file exists, is a file, and is not empty.
 	stat, err := os.Stat(source)
 	if err != nil {
 		return fmt.Errorf("source file not found: %w", err)
@@ -436,6 +478,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 	if args == nil {
 		return fmt.Errorf("nil args")
 	}
+
 	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
 
 	d.logger.Info("Requesting tiling",
@@ -449,7 +492,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 	}
 
 	// Check that the file exists, is a file, and is not empty.
-	if err := validateSourcePathFile(source); err != nil {
+	if err := validateSourcePathFile(source, args.Version); err != nil {
 
 		// But backup files are allowed to be empty.
 		if errors.Is(err, ErrEmptyFile) && args.Version == sourceVersionBackup {
@@ -478,6 +521,11 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 
 	// Queue the source and call.
 	d.pending(source, args)
+
+	if _, ok := d.tilingRunningM.Load(source); ok {
+		d.logger.Warn("Tiling already running (pending deferred)", "source", source)
+		return nil
+	}
 
 	// Short-circuiting means that the debouncer won't be called
 	// if the source is already enqueued,
@@ -509,12 +557,10 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		d.unpending(source)
-		d.running.Done()
 		return fmt.Errorf("failed to get source path: %w", err)
 	}
-	d.unpending(source)
 
-	args.parsedSourcePath = source
+	d.tilingRunningM.Store(source, args)
 
 	defer func() {
 		if value, ok := d.tilingPendingM.Load(source); ok {
@@ -527,6 +573,12 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		}
 	}()
 
+	defer d.tilingRunningM.Delete(source)
+
+	d.unpending(source)
+
+	args.parsedSourcePath = source
+
 	if reply == nil {
 		reply = &TilingResponse{}
 	}
@@ -534,27 +586,10 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 	// If we're about to run tippe for the canonical data set,
 	// move the edge data to a backup, since we're about to process
 	// a canonical version which includes all this data.
-	// If the canon run fails, the backup will be restored.
-	var restoreBackup func()
+	// TODO: Handle canon run failure - restore backup backup.
 	if args.Version == SourceVersionCanonical {
-		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
-		if err := os.MkdirAll(filepath.Dir(edgeBackupPath), os.ModePerm); err != nil {
-			d.logger.Error("Failed to create edge backup dir", "error", err)
-			return err
-		}
-		edgePath, _ := d.SourcePathFor(args.SourceSchema, SourceVersionEdge)
-		restoreBackup = func() {
-			d.logger.Warn("Restoring edge source from backup", "bak", edgeBackupPath, "to", edgePath)
-			if err := os.Rename(edgeBackupPath, edgePath); err != nil {
-				d.logger.Error("Failed to restore edge source", "error", err)
-			}
-		}
-		if err := os.Rename(edgePath, edgeBackupPath); err != nil {
-			d.logger.Error("Failed to backup edge source", "error", err)
-			return err
-		}
-		if _, err := os.Create(edgePath); err != nil {
-			d.logger.Error("Failed to (re-)create edge source", "error", err)
+		if err := d.rollEdgeToBackup(args); err != nil {
+			d.logger.Error("Failed to roll edge files to backup", "error", err)
 			return err
 		}
 	}
@@ -562,36 +597,15 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 	// Actually do tippecanoe.
 	if err := d.tiling(args, reply); err != nil {
 		d.logger.Error("Failed to tile", "error", err)
-		if restoreBackup != nil {
-			restoreBackup()
-		}
+
 		return err
 	}
 
 	d.logger.Info("Tiling done", "source", source, "elapsed", reply.Elapsed.Round(time.Millisecond))
 
-	// If the canonical run was successful, remove the edge backup.
-	// This isn't necessary (it would be overwritten). It's just a cleanup.
+	// We can safely return now if this was canon;
+	// there's no magic after the canon run.
 	if args.Version == SourceVersionCanonical {
-		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
-		d.logger.Debug("Removing edge backup", "path", edgeBackupPath)
-
-		// Truncate the file instead of removing it.
-		// This will help the to-tippecanoe reader handle errors more safely.
-		if f, err := os.OpenFile(edgeBackupPath, os.O_RDWR|os.O_TRUNC, 0660); err != nil {
-			return err
-		} else {
-
-			if err := f.Close(); err != nil {
-				return err
-			}
-		}
-		//if err := os.Remove(edgeBackupPath); err != nil {
-		//	d.logger.Error("Failed to remove edge backup", "error", err)
-		//}
-
-		// We can safely return now because this was a canonical run.
-		// There is no logic left; no magic after a canon run.
 		return nil
 	}
 
@@ -641,12 +655,11 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	// It is possible, in the Edge case, that the source file does not exist.
 	// This could happen if the canonical run just finished, and no new
 	// features have been written to edge.
-	if stat, err := os.Stat(args.parsedSourcePath); err != nil {
-		return fmt.Errorf("source file error: %w", err)
-	} else if stat.IsDir() {
-		return fmt.Errorf("source file is a directory")
+	if err := validateSourcePathFile(args.parsedSourcePath, args.Version); err != nil {
+		return fmt.Errorf("tiling source file error: %w", err)
 	}
 
+	// Declare the final .mbtiles output target filepath.
 	target, err := d.TargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		d.logger.Error("Failed to get target path", "error", err)
@@ -665,14 +678,14 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	// - in case the final output is being used by another process
 
 	// Give tmp target a unique name so it doesn't get fucked with.
-	tmpTarget, err := d.TmpTargetPathFor(args.SourceSchema, args.Version)
+	mbtilesTmp, err := d.TmpTargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
 		d.logger.Error("Failed to get tmp target path", "error", err)
 		return err
 	}
-	tmpTarget = tmpTarget + fmt.Sprintf(".%d", time.Now().UnixNano())
+	mbtilesTmp = mbtilesTmp + fmt.Sprintf(".%d", time.Now().UnixNano())
 
-	if err := os.MkdirAll(filepath.Dir(tmpTarget), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mbtilesTmp), os.ModePerm); err != nil {
 		d.logger.Error("Failed to create temp dir", "error", err)
 		return err
 	}
@@ -683,12 +696,18 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	}
 	cliConfig.MustSetPair("--layer", args.LayerName).
 		MustSetPair("--name", args.SourceName).
-		MustSetPair("--output", tmpTarget)
+		MustSetPair("--output", mbtilesTmp)
 
 	// If we're running Edge and the backup Edge source exists, use it too.
 	// This way we're able to serve WIP-tiling canonical data. (async)
 	sources := []string{args.parsedSourcePath}
 	if args.Version == SourceVersionEdge {
+		sources, err = filepath.Glob(args.parsedSourcePath + "*")
+		if err != nil {
+			d.logger.Error("Failed to glob edge source(s)", "error", err)
+			return err
+		}
+		// Append the backup (rolled) path to the list if it exists and is not empty.
 		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
 		bak, err := os.Stat(edgeBackupPath)
 		if err == nil && bak.Size() > 0 {
@@ -709,7 +728,7 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 		return err
 	}
 
-	if err := os.Rename(tmpTarget, target); err != nil {
+	if err := os.Rename(mbtilesTmp, target); err != nil {
 		d.logger.Error("Failed to move tmp to final", "error", err)
 		return err
 	}

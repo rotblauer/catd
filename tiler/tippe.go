@@ -40,26 +40,33 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 			// Reject any other errors opening the file.
 			if err != nil {
 				d.logger.Error("tip open failed to open source file", "error", err)
-				pipeErrs <- err
+				select {
+				case pipeErrs <- err:
+				default:
+				}
 				return
 			}
 
+			// Copy will not return an "expected" EOF.
 			_, err = io.Copy(w, reader.Reader())
+
+			// Close the reader before handling Copy errors.
 			if err := reader.Close(); err != nil {
-				d.logger.Error("tip failed to close source file", "error", err)
-				pipeErrs <- err
+				d.logger.Error("tip failed to close source file", "source", source, "error", err)
+				select {
+				case pipeErrs <- err:
+				default:
+				}
 				return
 			}
 
 			// Handle the copy errors.
-			if errors.Is(err, io.EOF) {
-				empties++
-				d.logger.Warn("tip piped empty source gz file", "source", source, "error", err)
-				continue
-			}
 			if err != nil {
-				d.logger.Error("tip failed to pipe source gz file", "error", err)
-				pipeErrs <- err
+				d.logger.Error("tip failed to pipe source gz file", "source", source, "error", err)
+				select {
+				case pipeErrs <- err:
+				default:
+				}
 				return
 			}
 		}
@@ -75,12 +82,15 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 	}()
 
 	for {
+		// Listen for tippe first.
 		select {
 		case err := <-tipErrs:
 			if err != nil {
 				return err
 			}
 		}
+
+		// Then catch IO errors.
 		select {
 		case err := <-pipeErrs:
 			return err
