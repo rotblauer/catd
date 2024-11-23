@@ -220,7 +220,7 @@ func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser,
 	}, in)
 }
 
-func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan *T) {
+func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
 	defer c.State.Waiting.Done()
 
 	features := stream.Collect(ctx, in)

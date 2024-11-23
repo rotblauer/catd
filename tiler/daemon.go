@@ -589,8 +589,6 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 
 	// Actually do tippecanoe.
 	if err := d.tiling(args, reply); err != nil {
-		d.logger.Error("Failed to tile", "error", err)
-
 		return err
 	}
 

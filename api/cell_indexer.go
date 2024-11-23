@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
+	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -24,6 +25,28 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 			c.logger.Error("Failed to close indexer", "error", err)
 		}
 	}()
+
+	feed, err := cellIndexer.GetUniqueIndexFeed(s2.CellLevel23)
+	if err != nil {
+		c.logger.Error("Failed to open feed", "error", err)
+		return
+	}
+
+	unique23s := make(chan []*cattrack.CatTrack)
+	defer close(unique23s)
+	sub23 := feed.Subscribe(unique23s)
+	defer sub23.Unsubscribe()
+
+	c.State.Waiting.Add(1)
+	go sendToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
+		SourceSchema: tiler.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "level-23",
+			LayerName:  "tracks",
+		},
+		TippeConfig: params.TippeConfigNameTracks,
+	}, unique23s)
+
 	// Blocking.
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer errored", "error", err)

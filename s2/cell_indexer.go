@@ -44,6 +44,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/geo/s2"
 	"github.com/golang/groupcache/lru"
 	"github.com/paulmach/orb"
@@ -67,6 +68,8 @@ type CellIndexer struct {
 	DB        *bbolt.DB
 	FlatFiles map[CellLevel]*flat.GZFileWriter
 	BatchSize int
+
+	uniqueIndexFeeds map[CellLevel]*event.FeedOf[[]*cattrack.CatTrack]
 }
 
 func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, batchSize int) (*CellIndexer, error) {
@@ -74,7 +77,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, fmt.Errorf("no levels provided")
 	}
 
-	f := flat.NewFlatWithRoot(root).Joining(flat.CatsDir, catID.String())
+	f := flat.NewFlatWithRoot(root).ForCat(catID)
 	if err := f.MkdirAll(); err != nil {
 		return nil, err
 	}
@@ -84,13 +87,17 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, err
 	}
 
-	flatFileMap := make(map[CellLevel]*flat.GZFileWriter)
+	uniqueIndexFeeds := make(map[CellLevel]*event.FeedOf[[]*cattrack.CatTrack], len(levels))
+	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
+
 	for _, level := range levels {
 		gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level))
 		if err != nil {
 			return nil, err
 		}
 		flatFileMap[level] = gzf
+
+		uniqueIndexFeeds[level] = &event.FeedOf[[]*cattrack.CatTrack]{}
 	}
 
 	caches := make(map[CellLevel]*lru.Cache)
@@ -99,13 +106,22 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	return &CellIndexer{
-		CatID:     catID,
-		Levels:    levels,
-		Caches:    caches,
-		DB:        db,
-		FlatFiles: flatFileMap,
-		BatchSize: batchSize,
+		CatID:            catID,
+		Levels:           levels,
+		Caches:           caches,
+		DB:               db,
+		FlatFiles:        flatFileMap,
+		BatchSize:        batchSize,
+		uniqueIndexFeeds: uniqueIndexFeeds,
 	}, nil
+}
+
+func (ci *CellIndexer) GetUniqueIndexFeed(level CellLevel) (*event.FeedOf[[]*cattrack.CatTrack], error) {
+	v, ok := ci.uniqueIndexFeeds[level]
+	if !ok {
+		return nil, fmt.Errorf("level %d not found", level)
+	}
+	return v, nil
 }
 
 // Index indexes the given CatTracks into the S2 cell index(es), appending
@@ -141,6 +157,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []*cattrack.CatTrack) error
 			return err
 		}
 	}
+	ci.uniqueIndexFeeds[level].Send(uniqTracks)
 	return nil
 }
 
