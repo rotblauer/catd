@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bep/debounce"
 	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
@@ -91,6 +90,9 @@ func (d *Daemon) Run() error {
 		d.logger.Info("TilerDaemon RPC HTTP server stopped")
 	}()
 
+	cancelRunPending := make(chan struct{})
+	go d.runPendingTilingRequests(cancelRunPending)
+
 	go func() {
 		defer func() {
 			d.Done <- struct{}{}
@@ -102,24 +104,51 @@ func (d *Daemon) Run() error {
 		for {
 			select {
 			case <-d.Interrupt:
+
 				// Running pending tiling is important for `import` porting in.
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
-
-				d.tilingPendingM.Range(func(key, value any) bool {
-					args := value.(*TilingRequestArgs)
-					slog.Info("Running pending tiling",
-						slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
-					if err := d.callTiling(args, nil); err != nil {
-						slog.Error("Failed to run pending tiling", "error", err)
-					}
-					return true
-				})
+				cancelRunPending <- struct{}{}
 				d.running.Wait()
 				return
 			}
 		}
 	}()
 	return nil
+}
+
+func (d *Daemon) runPendingTilingRequests(cancel <-chan struct{}) {
+	ticker := time.NewTicker(d.Config.DebounceInterval)
+	run := func() {
+		d.tilingPendingM.Range(func(key, value any) bool {
+			args := value.(*TilingRequestArgs)
+			if time.Since(args.requestedAt) < d.Config.DebounceInterval {
+				return true // continue
+			}
+			if _, ok := d.tilingRunningM.Load(args.id()); ok {
+				return true // continue, already running (save pending)
+			}
+			d.logger.Info("Running pending tiling",
+				slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
+
+			go func() {
+				if err := d.callTiling(args, nil); err != nil {
+					d.logger.Error("Failed to run pending tiling", "error", err)
+				}
+			}()
+
+			return true
+		})
+	}
+	defer run()
+	for range ticker.C {
+		select {
+		case <-cancel:
+			ticker.Stop()
+			return
+		default:
+		}
+		run()
+	}
 }
 
 type SourceSchema struct {
@@ -138,6 +167,10 @@ type SourceSchema struct {
 	// requestID is a unique identifier for the request.
 	// It is used to provide a consistent file name for temporary files.
 	requestID int32
+}
+
+func (s SourceSchema) id() string {
+	return fmt.Sprintf("%s/%s/%s", s.CatID, s.SourceName, s.LayerName)
 }
 
 func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
@@ -238,9 +271,9 @@ func (a *PushFeaturesRequestArgs) validate() error {
 // pending registers unique source files for tiling.
 // Returns true if was not pending before call (and is added to queue).
 // Args from the last all are persisted.
-func (d *Daemon) pending(source string, args *TilingRequestArgs) (last *TilingRequestArgs) {
-	value, exists := d.tilingPendingM.Load(source)
-	d.tilingPendingM.Store(source, args)
+func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
+	value, exists := d.tilingPendingM.Load(args.id())
+	d.tilingPendingM.Store(args.id(), args)
 	if exists {
 		return value.(*TilingRequestArgs)
 	}
@@ -248,8 +281,8 @@ func (d *Daemon) pending(source string, args *TilingRequestArgs) (last *TilingRe
 }
 
 // unpending unregisters a pending source file tile-request call.
-func (d *Daemon) unpending(source string) {
-	d.tilingPendingM.Delete(source)
+func (d *Daemon) unpending(args *TilingRequestArgs) {
+	d.tilingPendingM.Delete(args.id())
 }
 
 func (d *Daemon) writeGZ(source string, data []byte) error {
@@ -403,7 +436,7 @@ type TilingRequestArgs struct {
 	// parsedSourcePath is the source file path, parsed and validated.
 	parsedSourcePath string
 
-	rollableEdges []string
+	requestedAt time.Time
 }
 
 func (s SourceSchema) Validate() error {
@@ -479,7 +512,12 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 		return fmt.Errorf("nil args")
 	}
 
+	if err := args.Validate(); err != nil {
+		return fmt.Errorf("invalid args: %w", err)
+	}
+
 	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
+	args.requestedAt = time.Now()
 
 	d.logger.Info("Requesting tiling",
 		slog.Group("args",
@@ -502,53 +540,24 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 		return err
 	}
 
-	// The debouncer prevents the first of multiple requests from being tiled.
-	// It waits for some interval to see if more of the same requests are coming,
-	// and calls the last of them. It waits for the interval to pass before executing any call.
-	var debouncer func(func())
-	d.debouncersMu.Lock()
-	if f, ok := d.debouncers[source]; ok {
-		debouncer = f
-	} else {
-		debouncer = debounce.New(5 * time.Second)
-		d.debouncers[source] = debouncer
-	}
-	d.debouncersMu.Unlock()
-
 	// If the source is already enqueued for tiling
 	// it is either waiting to run or currently running.
 	// Short circuit.
 
 	// Queue the source and call.
-	d.pending(source, args)
+	d.pending(args)
 
-	if _, ok := d.tilingRunningM.Load(source); ok {
-		d.logger.Warn("Tiling already running (pending deferred)", "source", source)
-		return nil
-	}
-
-	// Short-circuiting means that the debouncer won't be called
-	// if the source is already enqueued,
-	// which means that the process will be allowed to run more-or-less in serial,
-	// constantly while the requests keep coming in.
-	// On the upside, any last run-overlapping requests will yield another run
-	// if the process takes more than 5 seconds.
-	// On the downside, it means that tippe will be running constantly
-	// during an import, for example.
-	// return
-
-	debouncer(func() {
-		reply := reply
-		if err := d.callTiling(args, reply); err != nil {
-			d.logger.Error("Tiling errored", "error", err)
-		}
-	})
 	return nil
 }
 
 func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+	d.unpending(args)
+
 	d.running.Add(1)
 	defer d.running.Done()
+
+	d.tilingRunningM.Store(args.id(), args)
+	defer d.tilingRunningM.Delete(args.id())
 
 	if args == nil {
 		return fmt.Errorf("nil args")
@@ -556,26 +565,8 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
-		d.unpending(source)
 		return fmt.Errorf("failed to get source path: %w", err)
 	}
-
-	d.tilingRunningM.Store(source, args)
-
-	defer func() {
-		if value, ok := d.tilingPendingM.Load(source); ok {
-			param := value.(*TilingRequestArgs)
-			if err := d.RequestTiling(param, reply); err != nil {
-				d.logger.Error("Failed to re-request pending tiling", "error", err)
-			} else {
-				d.logger.Debug("Re-requested pending tiling", "source", source)
-			}
-		}
-	}()
-
-	defer d.tilingRunningM.Delete(source)
-
-	d.unpending(source)
 
 	args.parsedSourcePath = source
 
