@@ -109,9 +109,9 @@ func (d *Daemon) Run() error {
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
 				cancelRunPending <- struct{}{}
 				d.running.Wait()
-				d.logger.Info("TilerDaemon interrupted", "awaiting", "final sync run")
-				d.runPendingRequests(false, true) // clean up, blocking
-				d.running.Wait()
+				//d.logger.Info("TilerDaemon interrupted", "awaiting", "final sync run")
+				//d.runPendingRequests(false, true) // clean up, blocking
+				//d.running.Wait()
 				return
 			}
 		}
@@ -120,6 +120,7 @@ func (d *Daemon) Run() error {
 }
 
 func (d *Daemon) runPendingRequests(scheduling, sync bool) {
+	sent := make(map[string]struct{})
 	d.tilingPendingM.Range(func(key, value any) bool {
 		args := value.(*TilingRequestArgs)
 		if scheduling {
@@ -131,7 +132,14 @@ func (d *Daemon) runPendingRequests(scheduling, sync bool) {
 			}
 		}
 
+		if _, ok := sent[args.id()]; ok {
+			d.unpending(args)
+			return true
+		}
+
 		d.logger.Info("Running pending tiling", "args", args.id())
+
+		sent[args.id()] = struct{}{}
 		d.unpending(args)
 
 		if !sync {
@@ -152,13 +160,23 @@ func (d *Daemon) runPendingRequests(scheduling, sync bool) {
 
 func (d *Daemon) schedulePendingRequests(cancel <-chan struct{}) {
 	ticker := time.NewTicker(d.Config.DebounceInterval)
+	runner := make(chan struct{}, 1)
+	defer close(runner)
+	go func() {
+		for range runner {
+			d.runPendingRequests(true, false)
+		}
+	}()
 	for range ticker.C {
-		d.runPendingRequests(true, false)
 		select {
 		case <-cancel:
 			ticker.Stop()
 			return
 		default:
+			select {
+			case runner <- struct{}{}:
+			default:
+			}
 		}
 	}
 }
@@ -181,8 +199,8 @@ type SourceSchema struct {
 	requestID int32
 }
 
-func (s SourceSchema) id() string {
-	return fmt.Sprintf("%s/%s/%s", s.CatID, s.SourceName, s.LayerName)
+func (s *TilingRequestArgs) id() string {
+	return fmt.Sprintf("%s/%s/%s/%s", s.CatID, s.SourceName, s.LayerName, s.Version)
 }
 
 func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
@@ -563,6 +581,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 }
 
 func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+	d.logger.Info("callTiling", "args", args.id())
 	d.running.Add(1)
 	defer d.running.Done()
 
@@ -645,9 +664,8 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 }
 
 func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
-	d.logger.Info("callTiling", "source", args.parsedSourcePath, slog.Group("args",
-		"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
-		"version", args.Version, "config", args.TippeConfig))
+	d.logger.Info("tiling", "source", args.parsedSourcePath,
+		"args", args.id(), "config", args.TippeConfig)
 
 	// Sanity check.
 	// The source file must exist and be a file.

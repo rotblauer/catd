@@ -23,9 +23,10 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 		// At least record an error if all sources are empty.
 		empties := 0
 
+		d.logger.Info("Tipping...", "source", sources)
+
 		// For each source, open the file and copy (pipe) it to the tippecanoe r/w.
 		for _, source := range sources {
-			d.logger.Info("Tipping...", "source", sources)
 			reader, err := flat.NewFlatGZReader(source)
 
 			// Handle empty-file errors gracefully.
