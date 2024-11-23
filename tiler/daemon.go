@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
@@ -22,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -45,6 +47,10 @@ type Daemon struct {
 	debouncersMu    sync.Mutex
 	running         sync.WaitGroup
 	requestIDIndex  int32
+
+	// tilingEvents is an idea for being able to return
+	// RPC responses to clients about long-running jobs.
+	tilingEvents *event.FeedOf[TilingRequestArgs]
 
 	Done      chan struct{}
 	Interrupt chan struct{}
@@ -95,8 +101,7 @@ func (d *Daemon) Run() error {
 	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
 		d.logger.Info("Running pending tiling", "args", item.Value().id())
 		if _, ok := d.tilingRunningM.Load(item.Value().id()); ok {
-			d.logger.Warn("Tiling already running", "args", item.Value().id())
-			d.pendingTTLCache.Set(item.Value().id(), item.Value(), d.Config.DebounceInterval)
+			d.pending(item.Value())
 			return
 		}
 		if err := d.callTiling(item.Value(), nil); err != nil {
@@ -141,7 +146,7 @@ func (d *Daemon) Run() error {
 					}
 					return true
 				})
-				
+
 				d.running.Wait()
 				return
 			}
@@ -324,6 +329,11 @@ func (d *Daemon) rollEdgeToBackup(args *TilingRequestArgs) error {
 	}
 	defer backup.Close()
 
+	if err := syscall.Flock(int(backup.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(backup.Fd()), syscall.LOCK_UN)
+
 	// Iterate the matches and copy them into the target backup file.
 	for _, match := range matches {
 		f, err := os.Open(match)
@@ -335,6 +345,11 @@ func (d *Daemon) rollEdgeToBackup(args *TilingRequestArgs) error {
 			return err
 		}
 		f.Close()
+
+		// Remove the edge file.
+		if err := os.Remove(match); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -631,13 +646,13 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	// This could happen if the canonical run just finished, and no new
 	// features have been written to edge.
 	if err := validateSourcePathFile(args.parsedSourcePath, args.Version); err != nil {
-		return fmt.Errorf("tiling source file error: %w", err)
+		return fmt.Errorf("%w: %s", err, args.id())
 	}
 
 	// Declare the final .mbtiles output target filepath.
-	target, err := d.TargetPathFor(args.SourceSchema, args.Version)
+	mbtilesOutput, err := d.TargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
-		d.logger.Error("Failed to get target path", "error", err)
+		d.logger.Error("Failed to get mbtilesOutput path", "error", err)
 	}
 
 	// Code below runs:
@@ -655,7 +670,7 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	// Give tmp target a unique name so it doesn't get fucked with.
 	mbtilesTmp, err := d.TmpTargetPathFor(args.SourceSchema, args.Version)
 	if err != nil {
-		d.logger.Error("Failed to get tmp target path", "error", err)
+		d.logger.Error("Failed to get tmp mbtilesOutput path", "error", err)
 		return err
 	}
 	mbtilesTmp = mbtilesTmp + fmt.Sprintf(".%d", time.Now().UnixNano())
@@ -682,6 +697,7 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 			d.logger.Error("Failed to glob edge source(s)", "error", err)
 			return err
 		}
+
 		// Append the backup (rolled) path to the list if it exists and is not empty.
 		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
 		bak, err := os.Stat(edgeBackupPath)
@@ -698,23 +714,23 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	}
 	elapsed := time.Since(start)
 
-	if err := os.MkdirAll(filepath.Dir(target), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mbtilesOutput), os.ModePerm); err != nil {
 		d.logger.Error("Failed to create final dir", "error", err)
 		return err
 	}
 
-	if err := os.Rename(mbtilesTmp, target); err != nil {
+	if err := os.Rename(mbtilesTmp, mbtilesOutput); err != nil {
 		d.logger.Error("Failed to move tmp to final", "error", err)
 		return err
 	}
 
-	d.logger.Info("Tiling done", "source", args.parsedSourcePath, "target", target,
+	d.logger.Info("Tiling done", "source", args.parsedSourcePath, "mbtilesOutput", mbtilesOutput,
 		"version", args.Version, "elapsed", elapsed.Round(time.Millisecond))
 
 	if reply != nil {
 		reply.Success = true
 		reply.Elapsed = elapsed
-		reply.MBTilesPath = target
+		reply.MBTilesPath = mbtilesOutput
 	}
 
 	return nil

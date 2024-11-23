@@ -1,7 +1,6 @@
 package tiler
 
 import (
-	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
@@ -20,25 +19,11 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 		defer w.Close()
 		defer close(pipeErrs)
 
-		// At least record an error if all sources are empty.
-		empties := 0
-
 		d.logger.Info("Tipping...", "source", sources)
 
 		// For each source, open the file and copy (pipe) it to the tippecanoe r/w.
 		for _, source := range sources {
 			reader, err := flat.NewFlatGZReader(source)
-
-			// Handle empty-file errors gracefully.
-			// If there is no data in the file, that may be OK.
-			// (Backups and edges both get truncated, for example.)
-			if errors.Is(err, io.EOF) {
-				empties++
-				d.logger.Warn("tip open gz reader failed", "source", source, "error", err)
-				continue
-			}
-
-			// Reject any other errors opening the file.
 			if err != nil {
 				d.logger.Error("tip open failed to open source file", "error", err)
 				select {
@@ -48,12 +33,14 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 				return
 			}
 
+			rr := reader.Reader()
+
 			// Copy will not return an "expected" EOF.
-			_, err = io.Copy(w, reader.Reader())
+			_, err = io.Copy(w, rr)
 
 			// Close the reader before handling Copy errors.
-			if err := reader.Close(); err != nil {
-				d.logger.Error("tip failed to close source file", "source", source, "error", err)
+			if err := rr.Close(); err != nil {
+				d.logger.Error("tip failed to close source file reader", "source", source, "error", err)
 				select {
 				case pipeErrs <- err:
 				default:
@@ -70,10 +57,6 @@ func (d *Daemon) tip(args params.CLIFlagsT, sources ...string) error {
 				}
 				return
 			}
-		}
-		if empties == len(sources) {
-			d.logger.Error("All tippe sources were empty")
-			return
 		}
 	}()
 
