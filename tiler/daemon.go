@@ -67,7 +67,7 @@ func NewDaemon(config *params.DaemonConfig) *Daemon {
 		logger:          slog.With("daemon", "tiler"),
 		debouncers:      make(map[string]func(func())),
 		tilingRunningM:  sync.Map{},
-		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.DebounceInterval)),
+		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.DebounceTilingRequestsInterval)),
 		writeLock:       sync.Map{},
 
 		Done:      make(chan struct{}, 1),
@@ -133,48 +133,8 @@ func (d *Daemon) Run() error {
 				// TODO Flag me in config.
 				// This is a blocking operation, graceful though it may be, and long though it may be.
 				// A real server (and not development) should probably just abort these stragglers.
-				pendingLen := d.pendingTTLCache.Len()
-				d.logger.Info("TilerDaemon pending jobs", "len", pendingLen)
-				keys := d.pendingTTLCache.Keys()
-				requests := []*TilingRequestArgs{}
-				for _, key := range keys {
-					d.logger.Info("TilerDaemon pending job", "key", key)
-					req := d.pendingTTLCache.Get(key).Value()
+				d.awaitPendingTileRequest()
 
-					// Skip all but edge requests.
-					// Edge run will trigger canonical if DNE.
-					if req.Version != SourceVersionEdge {
-						continue
-					}
-					requests = append(requests, req)
-				}
-
-				// For all pending requests attempt to call
-				type result struct {
-					req *TilingRequestArgs
-					err error
-				}
-				results := make(chan result, len(requests))
-				for _, req := range requests {
-					_, ok := d.tilingRunningM.Load(req.id())
-					for ok {
-						d.logger.Warn("Tiling still running...", "args", req.id(), "await", "true")
-						time.Sleep(time.Second)
-						_, ok = d.tilingRunningM.Load(req.id())
-					}
-					d.logger.Info("Spawning pending tiling request", "args", req.id())
-					go func() {
-						err := d.callTiling(req, nil)
-						results <- result{req, err}
-					}()
-				}
-				for i := 0; i < len(requests); i++ {
-					res := <-results
-					if res.err != nil {
-						d.logger.Error("Failed to run pending tiling", "req", res.req.id(), "error", err)
-						return
-					}
-				}
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
 				d.running.Wait()
 				return
@@ -184,11 +144,56 @@ func (d *Daemon) Run() error {
 	return nil
 }
 
+func (d *Daemon) awaitPendingTileRequest() {
+	keys := d.pendingTTLCache.Keys()
+	requests := []*TilingRequestArgs{}
+	for _, key := range keys {
+		d.logger.Info("TilerDaemon pending job", "key", key)
+		req := d.pendingTTLCache.Get(key).Value()
+
+		// Skip all but edge requests.
+		// Edge run will trigger canonical if DNE.
+		if req.Version != SourceVersionEdge {
+			continue
+		}
+		requests = append(requests, req)
+	}
+
+	d.logger.Info("TilerDaemon awaiting pending edge requests", "len", len(requests))
+
+	// For all pending requests attempt to call
+	type result struct {
+		req *TilingRequestArgs
+		err error
+	}
+	results := make(chan result, len(requests))
+	for _, req := range requests {
+		_, ok := d.tilingRunningM.Load(req.id())
+		for ok {
+			d.logger.Warn("Tiling still running...", "args", req.id(), "await", "true")
+			time.Sleep(time.Second)
+			_, ok = d.tilingRunningM.Load(req.id())
+		}
+		d.logger.Info("Spawning pending tiling request", "args", req.id())
+		go func() {
+			err := d.callTiling(req, nil)
+			results <- result{req, err}
+		}()
+	}
+	for i := 0; i < len(requests); i++ {
+		res := <-results
+		if res.err != nil {
+			d.logger.Error("Failed to run pending tiling", "req", res.req.id(), "error", res.err)
+			return
+		}
+	}
+}
+
 // pending registers unique source files for tiling.
 // Returns true if was not pending before call (and is added to queue).
 // Args from the last all are persisted.
 func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
-	d.pendingTTLCache.Set(args.id(), args, d.Config.DebounceInterval)
+	d.pendingTTLCache.Set(args.id(), args, d.Config.DebounceTilingRequestsInterval)
 	d.pendingTTLCache.Touch(args.id())
 	return nil
 }
@@ -642,8 +647,8 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		triggerCanon = true
 	}
 
-	if reply.Elapsed > d.Config.EdgeEpsilon {
-		triggerCanonReason = fmt.Sprintf("edge tiling exceeded threshold epsilon=%v", d.Config.EdgeEpsilon.Round(time.Millisecond))
+	if reply.Elapsed > d.Config.EdgeTilingRunThreshold {
+		triggerCanonReason = fmt.Sprintf("edge tiling exceeded threshold epsilon=%v", d.Config.EdgeTilingRunThreshold.Round(time.Millisecond))
 		triggerCanon = true
 	}
 

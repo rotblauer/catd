@@ -31,10 +31,12 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 	}()
 
 	for _, level := range params.S2DefaultCellLevels {
+		// Running only on levels 13-16.
+		// This is a good range for most use cases.
+		// Lower levels (bigger polygons) start taking for-ev-er to tile with tippecanoe.
 		if level < catS2.CellLevel13 || level > catS2.CellLevel16 {
 			continue
 		}
-		//for _, level := range []catS2.CellLevel{catS2.CellLevel16, catS2.CellLevel13, catS2.CellLevel8} {
 		feed, err := cellIndexer.GetUniqueIndexFeed(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)

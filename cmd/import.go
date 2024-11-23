@@ -115,7 +115,9 @@ Missoula, Montana
 			slog.Info("Import done")
 		}()
 
-		d := tiler.NewDaemon(nil)
+		dConfig := params.DefaultDaemonConfig()
+		dConfig.AwaitPendingOnShutdown = true
+		d := tiler.NewDaemon(dConfig)
 		if err := d.Run(); err != nil {
 			log.Fatal(err)
 		}
