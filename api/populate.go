@@ -64,12 +64,21 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// Dedupe with hash cache.
 	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
 
-	// StoreTracks em! (Handle errors blocks this function).
-	stored, storeErrs := c.StoreTracks(ctx, deduped)
+	// Tee for storage globally and per cat.
+	master, myCat := stream.Tee(ctx, deduped)
+
+	appFlat := flat.NewFlatWithRoot(params.DatadirRoot)
+	sinkToFlatJSONGZFile(ctx, c, appFlat, "master.geojson.gz", master)
+
+	// StoreTracks for each cat.
+	// This gets its own special cat-method for now because
+	// cat/track storage is very important and there might be
+	// events or something else cat-related to do.
+	// This method will block on her error handling (storeErrs).
+	stored, storeErrs := c.StoreTracks(ctx, myCat)
 	passTracks, sendTracks := stream.Tee(ctx, stored)
 
-	c.State.Waiting.Add(1)
-	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tracks",
@@ -127,11 +136,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// End of the line for all cat laps...
 	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
 
-	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, flat.LapsFileName, sinkLaps)
-
-	c.State.Waiting.Add(1)
-	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.LapsFileName, sinkLaps)
+	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "laps",
@@ -151,10 +157,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// End of the line for all cat naps...
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
 
-	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, flat.NapsFileName, sinkNaps)
-	c.State.Waiting.Add(1)
-	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.NapsFileName, sinkNaps)
+	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "naps",
@@ -166,11 +170,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	tripDetectedFork, tripDetectedPass := stream.Tee(ctx, tripdetected)
 	tripDetectedSink, tripDetectedSend := stream.Tee(ctx, tripDetectedPass)
 
-	c.State.Waiting.Add(1)
-	go sinkToCatJSONGZFile(ctx, c, "tripdetected.geojson.gz", tripDetectedSink)
-
-	c.State.Waiting.Add(1)
-	go sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, "tripdetected.geojson.gz", tripDetectedSink)
+	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tripdetected",
@@ -190,23 +191,26 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	}, tripDetectedFork)
 }
 
-func sinkToCatJSONGZFile[T any](ctx context.Context, c *Cat, name string, in <-chan *T) {
-	c.getOrInitState()
-	defer c.State.Waiting.Done()
-	defer c.logger.Info("Sunk stream to gz file", "name", name)
+func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, f *flat.Flat, name string, in <-chan *T) {
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
 
-	wr, err := c.State.NamedGZWriter(name)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return
-	}
-	defer func() {
-		if err := wr.Close(); err != nil {
-			c.logger.Error("Failed to close writer", "error", err)
+		wr, err := f.NamedGZWriter(name)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			return
 		}
-	}()
 
-	sinkJSONToWriter(ctx, c, wr.Writer(), in)
+		defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
+		defer func() {
+			if err := wr.Close(); err != nil {
+				c.logger.Error("Failed to close writer", "error", err)
+			}
+		}()
+
+		sinkJSONToWriter(ctx, c, wr.Writer(), in)
+	}()
 }
 
 func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {
@@ -221,28 +225,31 @@ func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser,
 }
 
 func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
-	defer c.State.Waiting.Done()
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
 
-	features := stream.Collect(ctx, in)
-	if len(features) == 0 {
-		return
-	}
-
-	buf := new(bytes.Buffer)
-	enc := json.NewEncoder(buf)
-	for _, f := range features {
-		if err := enc.Encode(f); err != nil {
-			c.logger.Error("Failed to encode nap feature", "error", err)
+		features := stream.Collect(ctx, in)
+		if len(features) == 0 {
 			return
 		}
-	}
-	args.JSONBytes = buf.Bytes()
 
-	err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
-	if err != nil {
-		c.logger.Error("Failed to call RPC client",
-			"method", "Daemon.PushFeatures", "source", args.SourceName, "features.len", len(features), "error", err)
-	}
+		buf := new(bytes.Buffer)
+		enc := json.NewEncoder(buf)
+		for _, f := range features {
+			if err := enc.Encode(f); err != nil {
+				c.logger.Error("Failed to encode nap feature", "error", err)
+				return
+			}
+		}
+		args.JSONBytes = buf.Bytes()
+
+		err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
+		if err != nil {
+			c.logger.Error("Failed to call RPC client",
+				"method", "Daemon.PushFeatures", "source", args.SourceName, "features.len", len(features), "error", err)
+		}
+	}()
 }
 
 /*

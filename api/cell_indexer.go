@@ -48,8 +48,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 		sub := feed.Subscribe(uniqs)
 		defer sub.Unsubscribe()
 
-		c.State.Waiting.Add(1)
-		go sendToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
+		sendToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
 			SourceSchema: tiler.SourceSchema{
 				CatID:      c.CatID,
 				SourceName: "s2_cells",

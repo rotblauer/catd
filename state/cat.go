@@ -11,7 +11,6 @@ import (
 	"go.etcd.io/bbolt"
 	"io"
 	"path/filepath"
-	"sync"
 )
 
 const catDBName = "state.db"
@@ -25,11 +24,7 @@ type Cat struct {
 
 type CatState struct {
 	CatID conceptual.CatID
-	DB    *bbolt.DB
-	Flat  *flat.Flat
-
-	Waiting sync.WaitGroup
-	rOnly   bool
+	*State
 }
 
 // NewCatWithState defines data sources, caches, and encoding for a cat.
@@ -56,25 +51,27 @@ func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
 
 	s := &CatState{
 		CatID: c.CatID,
-		DB:    db,
-		Flat:  flatCat,
+		State: &State{
+			DB:   db,
+			Flat: flatCat,
+		},
 	}
 	c.State = s
 	return c.State, nil
 }
 
-func (s *CatState) Wait() {
+func (s *State) Wait() {
 	s.Waiting.Wait()
 }
 
-func (s *CatState) Close() error {
+func (s *State) Close() error {
 	if err := s.DB.Close(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *CatState) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
+func (s *State) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
 	f, err := s.Flat.NamedGZWriter(target)
 	if err != nil {
 		return nil, err
@@ -82,7 +79,7 @@ func (s *CatState) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
 	return f, nil
 }
 
-func (s *CatState) storeKV(key []byte, data []byte) error {
+func (s *State) storeKV(key []byte, data []byte) error {
 	if key == nil {
 		return fmt.Errorf("storeKV: nil key")
 	}
@@ -105,7 +102,7 @@ func (s *CatState) storeKV(key []byte, data []byte) error {
 // For this reason, it may be prudent to limit the number of tracks stored (and read!) this way,
 // and/or to limit the use of it.
 // However, tracks are encoded in newline-delimited JSON to allow for streaming, someday, maybe.
-func (s *CatState) StoreTracksKV(key []byte, tracks []*cattrack.CatTrack) error {
+func (s *State) StoreTracksKV(key []byte, tracks []*cattrack.CatTrack) error {
 	buf := bytes.NewBuffer([]byte{})
 	enc := json.NewEncoder(buf)
 	for _, track := range tracks {
@@ -116,19 +113,19 @@ func (s *CatState) StoreTracksKV(key []byte, tracks []*cattrack.CatTrack) error 
 	return s.storeKV(key, buf.Bytes())
 }
 
-func (s *CatState) WriteKV(key []byte, value []byte) error {
+func (s *State) WriteKV(key []byte, value []byte) error {
 	return s.storeKV(key, value)
 }
 
 // WriteSnap is not implemented.
 // TODO: Implement WriteSnap.
-func (s *CatState) WriteSnap(ct *cattrack.CatTrack) error {
+func (s *State) WriteSnap(ct *cattrack.CatTrack) error {
 	return fmt.Errorf("not implemented")
 }
 
-func (w *CatState) readKV(key []byte) ([]byte, error) {
+func (s *State) readKV(key []byte) ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
-	err := w.DB.View(func(tx *bbolt.Tx) error {
+	err := s.DB.View(func(tx *bbolt.Tx) error {
 		bucket := tx.Bucket(catStateBucket)
 		if bucket == nil {
 			return fmt.Errorf("no state bucket")
@@ -145,15 +142,15 @@ func (w *CatState) readKV(key []byte) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (w *CatState) ReadKV(key []byte) ([]byte, error) {
+func (s *State) ReadKV(key []byte) ([]byte, error) {
 	if key == nil {
 		return nil, fmt.Errorf("readKV: nil key")
 	}
-	return w.readKV(key)
+	return s.readKV(key)
 }
 
-func (w *CatState) ReadTracksKV(key []byte) ([]*cattrack.CatTrack, error) {
-	got, err := w.readKV(key)
+func (s *State) ReadTracksKV(key []byte) ([]*cattrack.CatTrack, error) {
+	got, err := s.readKV(key)
 	if err != nil {
 		return nil, err
 	}
