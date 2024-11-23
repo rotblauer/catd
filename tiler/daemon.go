@@ -91,7 +91,7 @@ func (d *Daemon) Run() error {
 	}()
 
 	cancelRunPending := make(chan struct{})
-	go d.runPendingTilingRequests(cancelRunPending)
+	go d.schedulePendingRequests(cancelRunPending)
 
 	go func() {
 		defer func() {
@@ -109,6 +109,9 @@ func (d *Daemon) Run() error {
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
 				cancelRunPending <- struct{}{}
 				d.running.Wait()
+				d.logger.Info("TilerDaemon interrupted", "awaiting", "final sync run")
+				d.runPendingRequests(false, true) // clean up, blocking
+				d.running.Wait()
 				return
 			}
 		}
@@ -116,38 +119,47 @@ func (d *Daemon) Run() error {
 	return nil
 }
 
-func (d *Daemon) runPendingTilingRequests(cancel <-chan struct{}) {
-	ticker := time.NewTicker(d.Config.DebounceInterval)
-	run := func() {
-		d.tilingPendingM.Range(func(key, value any) bool {
-			args := value.(*TilingRequestArgs)
+func (d *Daemon) runPendingRequests(scheduling, sync bool) {
+	d.tilingPendingM.Range(func(key, value any) bool {
+		args := value.(*TilingRequestArgs)
+		if scheduling {
 			if time.Since(args.requestedAt) < d.Config.DebounceInterval {
 				return true // continue
 			}
 			if _, ok := d.tilingRunningM.Load(args.id()); ok {
 				return true // continue, already running (save pending)
 			}
-			d.logger.Info("Running pending tiling",
-				slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
+		}
 
+		d.logger.Info("Running pending tiling", "args", args.id())
+		d.unpending(args)
+
+		if !sync {
 			go func() {
 				if err := d.callTiling(args, nil); err != nil {
 					d.logger.Error("Failed to run pending tiling", "error", err)
 				}
 			}()
+		} else {
+			if err := d.callTiling(args, nil); err != nil {
+				d.logger.Error("Failed to run pending tiling", "error", err)
+				return false
+			}
+		}
+		return true
+	})
+}
 
-			return true
-		})
-	}
-	defer run()
+func (d *Daemon) schedulePendingRequests(cancel <-chan struct{}) {
+	ticker := time.NewTicker(d.Config.DebounceInterval)
 	for range ticker.C {
+		d.runPendingRequests(true, false)
 		select {
 		case <-cancel:
 			ticker.Stop()
 			return
 		default:
 		}
-		run()
 	}
 }
 
@@ -551,8 +563,6 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 }
 
 func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
-	d.unpending(args)
-
 	d.running.Add(1)
 	defer d.running.Done()
 
@@ -591,8 +601,6 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 
 		return err
 	}
-
-	d.logger.Info("Tiling done", "source", source, "elapsed", reply.Elapsed.Round(time.Millisecond))
 
 	// We can safely return now if this was canon;
 	// there's no magic after the canon run.
