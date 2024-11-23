@@ -106,7 +106,7 @@ func (d *Daemon) Run() error {
 					args := value.(*TilingRequestArgs)
 					slog.Info("Running pending tiling",
 						slog.Group("args", "cat", args.CatID, "source", args.SourceName, "config", args.LayerName))
-					if err := d.runTiling(args, nil); err != nil {
+					if err := d.callTiling(args, nil); err != nil {
 						slog.Error("Failed to run pending tiling", "error", err)
 					}
 					return true
@@ -154,6 +154,8 @@ func (d *Daemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (
 	return filepath.Abs(clean)
 }
 
+// TargetPathFor returns the final output path for some source schema and version.
+// It will have a .mbtiles extension
 func (d *Daemon) TargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
 	source, err := d.SourcePathFor(schema, version)
 	if err != nil {
@@ -165,10 +167,15 @@ func (d *Daemon) TargetPathFor(schema SourceSchema, version TileSourceVersion) (
 	if err != nil {
 		return "", err
 	}
-	rel = strings.TrimSuffix(rel, ".geojson.gz") + ".mbtiles"
+	rel = strings.TrimSuffix(rel, ".geojson.gz")
+	rel = strings.TrimSuffix(rel, ".json.gz")
+	rel = strings.TrimSuffix(rel, ".gz")
+	rel += ".mbtiles"
 	return filepath.Join(d.flat.Path(), "tiles", rel), nil
 }
 
+// TmpTargetPathFor returns a deterministic temporary target path for a source schema and version.
+// This value (filepath) is not safe for use by concurrent processes.
 func (d *Daemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
 	target, err := d.TargetPathFor(schema, version)
 	if err != nil {
@@ -332,6 +339,7 @@ const (
 	SourceVersionCanonical TileSourceVersion = "canonical"
 	SourceVersionEdge      TileSourceVersion = "edge"
 	sourceVersionBackup    TileSourceVersion = "backup"
+	sourceVersionEvent     TileSourceVersion = "call"
 )
 
 type TilingRequestArgs struct {
@@ -442,8 +450,10 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 
 	// Check that the file exists, is a file, and is not empty.
 	if err := validateSourcePathFile(source); err != nil {
-		if errors.Is(err, ErrEmptyFile) {
-			d.logger.Warn("RequestTiling empty source file", "source", source)
+
+		// But backup files are allowed to be empty.
+		if errors.Is(err, ErrEmptyFile) && args.Version == sourceVersionBackup {
+			d.logger.Warn("RequestTiling empty backup file", "source", source)
 			return nil
 		}
 		return err
@@ -481,14 +491,14 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 
 	debouncer(func() {
 		reply := reply
-		if err := d.runTiling(args, reply); err != nil {
+		if err := d.callTiling(args, reply); err != nil {
 			d.logger.Error("Tiling errored", "error", err)
 		}
 	})
 	return nil
 }
 
-func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.running.Add(1)
 	defer d.running.Done()
 
@@ -550,7 +560,7 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	}
 
 	// Actually do tippecanoe.
-	if err := d.doTiling(args, reply); err != nil {
+	if err := d.tiling(args, reply); err != nil {
 		d.logger.Error("Failed to tile", "error", err)
 		if restoreBackup != nil {
 			restoreBackup()
@@ -610,7 +620,7 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 
 	d.logger.Info("Triggering canon tiling", "reason", triggerCanonReason, "source", source)
 
-	return d.runTiling(&TilingRequestArgs{
+	return d.callTiling(&TilingRequestArgs{
 		SourceSchema: SourceSchema{
 			CatID:      args.CatID,
 			SourceName: args.SourceName,
@@ -621,8 +631,8 @@ func (d *Daemon) runTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	}, reply)
 }
 
-func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error {
-	d.logger.Info("runTiling", "source", args.parsedSourcePath, slog.Group("args",
+func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
+	d.logger.Info("callTiling", "source", args.parsedSourcePath, slog.Group("args",
 		"cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
 		"version", args.Version, "config", args.TippeConfig))
 
@@ -680,7 +690,8 @@ func (d *Daemon) doTiling(args *TilingRequestArgs, reply *TilingResponse) error 
 	sources := []string{args.parsedSourcePath}
 	if args.Version == SourceVersionEdge {
 		edgeBackupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
-		if _, err := os.Stat(edgeBackupPath); err == nil {
+		bak, err := os.Stat(edgeBackupPath)
+		if err == nil && bak.Size() > 0 {
 			sources = append(sources, edgeBackupPath)
 		}
 	}

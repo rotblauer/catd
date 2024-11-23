@@ -60,8 +60,8 @@ func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan *cattrack.Ca
 			reportedSpeed := track.Properties.MustFloat64("Speed")
 			if calculatedSpeed > reportedSpeed*params.DefaultCleanConfig.TeleportSpeedFactor {
 
-				lastTime = trackTime
-				lastPoint = track.Point()
+				//lastTime = trackTime
+				//lastPoint = track.Point()
 
 				f.Filtered++
 				continue
