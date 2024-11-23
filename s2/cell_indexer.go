@@ -256,8 +256,8 @@ func (ci *CellIndexer) uniqIndexesFromCache(level CellLevel, cellIDs []s2.CellID
 	return uniqIndices
 }
 
-// cellIDWithLevel returns the cellID truncated to the given level.
-func cellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
+// CellIDWithLevel returns the cellID truncated to the given level.
+func CellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
 	// https://docs.s2cell.aliddell.com/en/stable/s2_concepts.html#truncation
 	var lsb uint64 = 1 << (2 * (30 - level))
 	truncatedCellID := (uint64(cellID) & -lsb) | lsb
@@ -274,7 +274,7 @@ func getTrackCellID(ct *cattrack.CatTrack, level CellLevel) s2.CellID {
 	//	return true
 	//})
 	coords := ct.Geometry.(orb.Point)
-	return cellIDWithLevel(s2.CellIDFromLatLng(s2.LatLngFromDegrees(coords[1], coords[0])), level)
+	return CellIDWithLevel(s2.CellIDFromLatLng(s2.LatLngFromDegrees(coords[1], coords[0])), level)
 }
 
 func getTrackCellIDs(cts []*cattrack.CatTrack, level CellLevel) (cellIDs []s2.CellID) {
