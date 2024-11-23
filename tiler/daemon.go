@@ -109,9 +109,6 @@ func (d *Daemon) Run() error {
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
 				cancelRunPending <- struct{}{}
 				d.running.Wait()
-				//d.logger.Info("TilerDaemon interrupted", "awaiting", "final sync run")
-				//d.runPendingRequests(false, true) // clean up, blocking
-				//d.running.Wait()
 				return
 			}
 		}
@@ -119,41 +116,25 @@ func (d *Daemon) Run() error {
 	return nil
 }
 
-func (d *Daemon) runPendingRequests(scheduling, sync bool) {
-	sent := make(map[string]struct{})
+func (d *Daemon) runPendingRequests() {
 	d.tilingPendingM.Range(func(key, value any) bool {
 		args := value.(*TilingRequestArgs)
-		if scheduling {
-			if time.Since(args.requestedAt) < d.Config.DebounceInterval {
-				return true // continue
-			}
-			if _, ok := d.tilingRunningM.Load(args.id()); ok {
-				return true // continue, already running (save pending)
-			}
+		if time.Since(args.requestedAt) < d.Config.DebounceInterval {
+			return true // continue
 		}
-
-		if _, ok := sent[args.id()]; ok {
-			d.unpending(args)
-			return true
+		if _, ok := d.tilingRunningM.Load(args.id()); ok {
+			return true // continue, already running (save pending)
 		}
 
 		d.logger.Info("Running pending tiling", "args", args.id())
-
-		sent[args.id()] = struct{}{}
 		d.unpending(args)
 
-		if !sync {
-			go func() {
-				if err := d.callTiling(args, nil); err != nil {
-					d.logger.Error("Failed to run pending tiling", "error", err)
-				}
-			}()
-		} else {
+		go func() {
 			if err := d.callTiling(args, nil); err != nil {
 				d.logger.Error("Failed to run pending tiling", "error", err)
-				return false
 			}
-		}
+		}()
+
 		return true
 	})
 }
@@ -164,7 +145,7 @@ func (d *Daemon) schedulePendingRequests(cancel <-chan struct{}) {
 	defer close(runner)
 	go func() {
 		for range runner {
-			d.runPendingRequests(true, false)
+			d.runPendingRequests()
 		}
 	}()
 	for range ticker.C {
@@ -179,6 +160,23 @@ func (d *Daemon) schedulePendingRequests(cancel <-chan struct{}) {
 			}
 		}
 	}
+}
+
+// pending registers unique source files for tiling.
+// Returns true if was not pending before call (and is added to queue).
+// Args from the last all are persisted.
+func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
+	value, exists := d.tilingPendingM.Load(args.id())
+	d.tilingPendingM.Store(args.id(), args)
+	if exists {
+		return value.(*TilingRequestArgs)
+	}
+	return nil
+}
+
+// unpending unregisters a pending source file tile-request call.
+func (d *Daemon) unpending(args *TilingRequestArgs) {
+	d.tilingPendingM.Delete(args.id())
 }
 
 type SourceSchema struct {
@@ -296,23 +294,6 @@ func (a *PushFeaturesRequestArgs) validate() error {
 		return fmt.Errorf("missing features")
 	}
 	return nil
-}
-
-// pending registers unique source files for tiling.
-// Returns true if was not pending before call (and is added to queue).
-// Args from the last all are persisted.
-func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
-	value, exists := d.tilingPendingM.Load(args.id())
-	d.tilingPendingM.Store(args.id(), args)
-	if exists {
-		return value.(*TilingRequestArgs)
-	}
-	return nil
-}
-
-// unpending unregisters a pending source file tile-request call.
-func (d *Daemon) unpending(args *TilingRequestArgs) {
-	d.tilingPendingM.Delete(args.id())
 }
 
 func (d *Daemon) writeGZ(source string, data []byte) error {
