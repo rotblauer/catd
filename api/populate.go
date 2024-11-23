@@ -79,8 +79,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	// events or something else cat-related to do.
 	// This method will block on her error handling (storeErrs).
 	stored, storeErrs := c.StoreTracks(ctx, myCat)
-	passTracks, sendTracks := stream.Tee(ctx, stored)
 
+	handleSnaps, passTracks := stream.Tee(ctx, stored)
+	sinkLastTracks, sendTracks := stream.Tee(ctx, passTracks)
+
+	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, "last_tracks.geojson.gz", sinkLastTracks)
 	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
@@ -90,10 +93,30 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 		TippeConfig: params.TippeConfigNameTracks,
 	}, sendTracks)
 
-	indexingCh, tripdetectCh := stream.Tee(ctx, passTracks)
+	snapped, snapErrs := c.StoreSnaps(ctx, handleSnaps)
+	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
+
+	passSnaps, passNext := stream.Tee(ctx, snapped)
+	sinkSnaps, sendSnaps := stream.Tee(ctx,
+		stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+			return ct.IsSnap()
+		}, passSnaps))
+
+	sinkToFlatJSONGZFile(ctx, c, c.State.Flat, flat.SnapsFileName, sinkSnaps)
+	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+		SourceSchema: tiler.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "snaps",
+			LayerName:  "snaps",
+		},
+		TippeConfig: params.TippeConfigNameSnaps,
+	}, sendSnaps)
+
+	indexingCh, tripdetectCh := stream.Tee(ctx, passNext)
 
 	// S2 indexing pipeline. Stateful/cat.
 	go c.S2IndexTracks(ctx, indexingCh)
+
 	// Trip detection pipeline. Laps, naps. Stateful/cat.
 	go c.TripDetectionPipeline(ctx, tripdetectCh)
 

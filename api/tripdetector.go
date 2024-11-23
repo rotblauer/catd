@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/rotblauer/catd/geo/tripdetector"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"time"
@@ -100,14 +101,14 @@ func (c *Cat) storeTripDetector(td *tripdetector.TripDetector) error {
 	if err != nil {
 		return err
 	}
-	if err := c.State.WriteKV([]byte("tripdetector"), b); err != nil {
+	if err := c.State.StoreKV(state.CatStateBucket, []byte("tripdetector"), b); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
-	read, err := c.State.ReadKV([]byte("tripdetector"))
+	read, err := c.State.ReadKV(state.CatStateBucket, []byte("tripdetector"))
 	if err != nil {
 		return err
 	}

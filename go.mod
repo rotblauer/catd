@@ -3,7 +3,7 @@ module github.com/rotblauer/catd
 go 1.22.2
 
 require (
-	github.com/bep/debounce v1.2.1
+	github.com/aws/aws-sdk-go v1.55.5
 	github.com/dustin/go-humanize v1.0.1
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
@@ -28,6 +28,7 @@ require (
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect

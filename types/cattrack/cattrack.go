@@ -6,13 +6,21 @@ import (
 	"github.com/paulmach/orb/geojson"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
+	"strings"
 	"time"
 )
 
 type CatTrack geojson.Feature
 
+func (ct *CatTrack) Copy() *CatTrack {
+	cp := &CatTrack{}
+	*cp = *ct
+	return cp
+}
+
 func (ct *CatTrack) CatID() conceptual.CatID {
-	return conceptual.CatID(names.AliasOrSanitizedName(ct.Properties.MustString("Name", "")))
+	return conceptual.CatID(names.AliasOrSanitizedName(
+		ct.Properties.MustString("Name", names.UknownName)))
 }
 
 func (ct *CatTrack) MarshalJSON() ([]byte, error) {
@@ -49,9 +57,7 @@ func (ct *CatTrack) Time() (time.Time, error) {
 }
 
 func (ct *CatTrack) MustTime() time.Time {
-	cp := &CatTrack{}
-	*cp = *ct
-	t, err := cp.Time()
+	t, err := ct.Copy().Time()
 	if err != nil {
 		panic(err)
 	}
@@ -165,21 +171,81 @@ func SortFunc(a, b *CatTrack) int {
 }
 
 func (ct *CatTrack) StringPretty() string {
-	alias := names.AliasOrSanitizedName(ct.Properties.MustString("Name", ""))
-	dot := ""
-	switch alias {
-	case "rye":
-		dot = "🔵"
-	case "ia":
-		dot = "🔴"
-	}
-	return fmt.Sprintf("%s Name: %s (%s), Time: %v, Coords: %v, Accuracy: %v, Speed: %.1f",
-		dot,
-		ct.Properties["Name"],
-		alias,
+	pt := ct.Point()
+	return fmt.Sprintf("{cat=%s time=%v coords=%q accuracy=%.0f speed=%.2f}",
+		ct.CatID(),
 		ct.Properties["Time"],
-		ct.Geometry.(orb.Point),
+		fmt.Sprintf("%v, %v", pt.Lat(), pt.Lon()),
 		ct.Properties["Accuracy"],
 		ct.Properties["Speed"],
 	)
+}
+
+func (ct *CatTrack) IsSnap() bool {
+	return ct.HasRawB64Image() || ct.HasS3URL()
+}
+
+func (ct *CatTrack) ValidateSnap() error {
+	if !ct.IsSnap() {
+		return fmt.Errorf("not a snap")
+	}
+	if ct.HasRawB64Image() {
+		if ct.Properties.MustString("imgB64", "") == "" {
+			return fmt.Errorf("empty imgB64 data")
+		}
+	}
+	if ct.HasS3URL() {
+		if ct.Properties.MustString("imgS3", "") == "" {
+			return fmt.Errorf("empty imgS3 URL")
+		}
+	}
+	return nil
+}
+
+func (ct *CatTrack) HasRawB64Image() bool {
+	_, ok := ct.Properties["imgB64"]
+	return ok
+}
+
+func (ct *CatTrack) HasS3URL() bool {
+	_, ok := ct.Properties["imgS3"]
+	return ok
+}
+
+// MustS3Key returns the conventional "key" for use primarily with catsnaps.
+// If AWS S3 upload configured, that uses: AWS_BUCkETNAME/this-key.
+// It is a cat/device/time-unique value.
+func (ct *CatTrack) MustS3Key() string {
+	if v, ok := ct.Properties["imgS3"]; ok {
+		if s, ok := v.(string); ok {
+			if strings.Contains(s, "/") {
+				return strings.Split(s, "/")[1]
+			}
+			return s
+		}
+	}
+
+	// Otherwise we get to construct it.
+	catID := ct.CatID()
+	uuid := ct.Properties.MustString("UUID")
+	unixt := ct.MustTime().Unix() // snaps won't/can't happen more than once/cat/second
+
+	// Note: CatTracks v1 used plain %d for unix time.
+	// Now zero-padding thru 11 digits in case of the future.
+	// Current time 1732040799.
+	return fmt.Sprintf("%s_%s_%010d",
+		catID,
+		uuid,
+		unixt,
+	)
+}
+
+// S3SnapBucketName returns the bucket name from the imgS3 field,
+// conventionally using the first of (two) /-delimited values.
+func (ct *CatTrack) S3SnapBucketName() string {
+	s3url := ct.Properties.MustString("imgS3", "")
+	if s3url == "" {
+		return ""
+	}
+	return s3url[:strings.Index(s3url, "/")]
 }

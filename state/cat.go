@@ -2,20 +2,19 @@ package state
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/types/cattrack"
 	"go.etcd.io/bbolt"
-	"io"
 	"path/filepath"
 )
 
 const catDBName = "state.db"
 
-var catStateBucket = []byte("state")
+var CatStateBucket = []byte("state")
+var CatSnapSubdir = "snaps"
+var CatSnapBucket = []byte(CatSnapSubdir)
 
 type Cat struct {
 	CatID conceptual.CatID
@@ -79,7 +78,7 @@ func (s *State) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
 	return f, nil
 }
 
-func (s *State) storeKV(key []byte, data []byte) error {
+func (s *State) storeKV(bucket []byte, key []byte, data []byte) error {
 	if key == nil {
 		return fmt.Errorf("storeKV: nil key")
 	}
@@ -87,46 +86,22 @@ func (s *State) storeKV(key []byte, data []byte) error {
 		return fmt.Errorf("storeKV: nil data")
 	}
 	return s.DB.Update(func(tx *bbolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists(catStateBucket)
+		b, err := tx.CreateBucketIfNotExists(bucket)
 		if err != nil {
 			return err
 		}
-		return bucket.Put(key, data)
+		return b.Put(key, data)
 	})
 }
 
-// StoreTracksKV stores tracks in a KV store.
-// It is expected that this function can be used to cache
-// partial naps or partial laps (i.e. their last, unfinished, incomplete nap or lap).
-// Keep in mind that the tracks are buffered in memory, not streamed.
-// For this reason, it may be prudent to limit the number of tracks stored (and read!) this way,
-// and/or to limit the use of it.
-// However, tracks are encoded in newline-delimited JSON to allow for streaming, someday, maybe.
-func (s *State) StoreTracksKV(key []byte, tracks []*cattrack.CatTrack) error {
-	buf := bytes.NewBuffer([]byte{})
-	enc := json.NewEncoder(buf)
-	for _, track := range tracks {
-		if err := enc.Encode(track); err != nil {
-			return err
-		}
-	}
-	return s.storeKV(key, buf.Bytes())
+func (s *State) StoreKV(bucket []byte, key []byte, value []byte) error {
+	return s.storeKV(bucket, key, value)
 }
 
-func (s *State) WriteKV(key []byte, value []byte) error {
-	return s.storeKV(key, value)
-}
-
-// WriteSnap is not implemented.
-// TODO: Implement WriteSnap.
-func (s *State) WriteSnap(ct *cattrack.CatTrack) error {
-	return fmt.Errorf("not implemented")
-}
-
-func (s *State) readKV(key []byte) ([]byte, error) {
+func (s *State) readKV(bucket []byte, key []byte) ([]byte, error) {
 	buf := bytes.NewBuffer([]byte{})
 	err := s.DB.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(catStateBucket)
+		bucket := tx.Bucket(bucket)
 		if bucket == nil {
 			return fmt.Errorf("no state bucket")
 		}
@@ -142,29 +117,9 @@ func (s *State) readKV(key []byte) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func (s *State) ReadKV(key []byte) ([]byte, error) {
+func (s *State) ReadKV(bucket []byte, key []byte) ([]byte, error) {
 	if key == nil {
 		return nil, fmt.Errorf("readKV: nil key")
 	}
-	return s.readKV(key)
-}
-
-func (s *State) ReadTracksKV(key []byte) ([]*cattrack.CatTrack, error) {
-	got, err := s.readKV(key)
-	if err != nil {
-		return nil, err
-	}
-	dec := json.NewDecoder(bytes.NewReader(got))
-	var tracks []*cattrack.CatTrack
-	for {
-		track := &cattrack.CatTrack{}
-		if err := dec.Decode(track); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-		tracks = append(tracks, track)
-	}
-	return tracks, nil
+	return s.readKV(bucket, key)
 }

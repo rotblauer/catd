@@ -82,6 +82,15 @@ type GZFileWriter struct {
 	f      *os.File
 	gzw    *gzip.Writer
 	locked bool
+
+	GZFileWriterConfig
+}
+
+type GZFileWriterConfig struct {
+	CompressionLevel int
+	Flag             int
+	FilePerm         os.FileMode
+	DirPerm          os.FileMode
 }
 
 func NewFlatGZWriter(path string) (*GZFileWriter, error) {
@@ -96,7 +105,10 @@ func NewFlatGZWriter(path string) (*GZFileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GZFileWriter{f: fi, gzw: gzw}, nil
+	return &GZFileWriter{
+		f:   fi,
+		gzw: gzw,
+	}, nil
 }
 
 // Writer returns a gzip writer for the file.

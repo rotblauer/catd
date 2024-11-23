@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/rotblauer/catd/geo/lap"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -15,7 +16,7 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
-	if data, err := c.State.ReadKV([]byte("lapstate")); err == nil && data != nil {
+	if data, err := c.State.ReadKV(state.CatStateBucket, []byte("lapstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ls); err != nil {
 			c.logger.Error("Failed to unmarshal lap state (new cat?)", "error", err)
 		} else {
@@ -35,7 +36,7 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 				c.logger.Error("Failed to marshal lap state", "error", err)
 				return
 			}
-			if err := c.State.WriteKV([]byte("lapstate"), data); err != nil {
+			if err := c.State.StoreKV(state.CatStateBucket, []byte("lapstate"), data); err != nil {
 				c.logger.Error("Failed to write lap state", "error", err)
 			}
 		}()

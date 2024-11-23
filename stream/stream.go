@@ -199,12 +199,71 @@ func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	}
 }
 
-func Drain[T any](ctx context.Context, in <-chan T) {
-	for range in {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		for _, in := range ins {
+			in := in
+			go func() {
+				for element := range in {
+					select {
+					case <-ctx.Done():
+						return
+					case out <- element:
+					}
+				}
+			}()
 		}
+	}()
+	return out
+}
+
+func Broadcast[T any](ctx context.Context, in <-chan T, n int) []<-chan T {
+	outs := make([]chan T, n)
+	for i := range outs {
+		outs[i] = make(chan T)
 	}
+	go func() {
+		defer func() {
+			for _, out := range outs {
+				close(out)
+			}
+		}()
+		for element := range in {
+			element := element
+			for _, out := range outs {
+				out := out
+				select {
+				case <-ctx.Done():
+					return
+				case out <- element:
+				}
+			}
+		}
+	}()
+	var out []<-chan T
+	for _, ch := range outs {
+		out = append(out, ch)
+	}
+	return out
+}
+
+func BroadcastTo[T any](ctx context.Context, streams ...chan<- T) chan<- T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		for element := range out {
+			element := element
+			for _, stream := range streams {
+				stream := stream
+				select {
+				case <-ctx.Done():
+					return
+				case stream <- element:
+				}
+			}
+		}
+	}()
+	return out
 }

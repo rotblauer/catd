@@ -55,10 +55,12 @@ var InvalidNameChars = []string{" ", string(filepath.Separator), "(", ")", "[", 
 // InvalidReplacementChar is the character that will replace invalid characters in a name.
 const InvalidReplacementChar = "_"
 
+const UknownName = "UNKNOWN"
+
 // SanitizeName returns a sanitized version of the name or alias.
 func SanitizeName(name string) string {
 	if name == "" {
-		return InvalidReplacementChar
+		return UknownName
 	}
 	for _, c := range InvalidNameChars {
 		name = strings.ReplaceAll(name, c, InvalidReplacementChar)
