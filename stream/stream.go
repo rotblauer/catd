@@ -54,6 +54,7 @@ func Filter[T any](ctx context.Context, predicate func(T) bool, in <-chan T) <-c
 	go func() {
 		defer close(out)
 		for element := range in {
+			element := element
 			if predicate(element) {
 				select {
 				case <-ctx.Done():
@@ -71,6 +72,7 @@ func Transform[I any, O any](ctx context.Context, transformer func(I) O, in <-ch
 	go func() {
 		defer close(out)
 		for element := range in {
+			element := element
 			select {
 			case <-ctx.Done():
 				return
@@ -188,13 +190,13 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	for element := range in {
 		element := element
+		if sink != nil {
+			sink(element)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			if sink != nil {
-				sink(element)
-			}
 		}
 	}
 }
@@ -207,6 +209,7 @@ func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
 			in := in
 			go func() {
 				for element := range in {
+					element := element
 					select {
 					case <-ctx.Done():
 						return
