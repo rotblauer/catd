@@ -4,7 +4,7 @@ rm -rf /tmp/catd*
 rm -f /tmp/catscann
 
 review() {
-  for i in 1_000; do
+  for i in 100_000; do
     echo
     echo "- batch=${i} ---";
     shopt -s globstar
@@ -25,7 +25,7 @@ run() {
   local source_gz="master.json.gz"
 
   go install . &&\
-   for i in 1_000; do
+   for i in 100_000; do
     rm -f /tmp/catscann;
     zcat ~/tdata/"${source_gz}" \
     | catd populate --datadir "/tmp/catd${i}" \

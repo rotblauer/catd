@@ -59,6 +59,9 @@ type NapConfig struct {
 }
 
 var DefaultNapConfig = &NapConfig{
-	DwellInterval: 2 * time.Minute,
+	// DwellInterval separates naps by time.
+	DwellInterval: 24 * time.Hour,
+
+	// DwellDistance separates naps by distance.
 	DwellDistance: 100,
 }
