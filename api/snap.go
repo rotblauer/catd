@@ -53,14 +53,11 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 				out <- track
 				continue
 			}
-			ct, err := c.handleSnap(track)
+			handled, err := c.handleSnap(track)
 			if err != nil {
-				// Send the track no matter what.
-				out <- track
 				errs <- err
-				continue
 			}
-			out <- ct
+			out <- handled
 		}
 	}()
 

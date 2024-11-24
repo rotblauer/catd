@@ -139,15 +139,15 @@ func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
 		defer close(a)
 		defer close(b)
 		for element := range in {
-			element := element
+			var el1, el2 = element, element
 			var out1, out2 = a, b
 			for i := 0; i < 2; i++ {
 				select {
 				case <-ctx.Done():
 					return
-				case out1 <- element:
+				case out1 <- el1:
 					out1 = nil
-				case out2 <- element:
+				case out2 <- el2:
 					out2 = nil
 				}
 			}
