@@ -37,20 +37,16 @@ type Daemon struct {
 	// This is because the tiler daemon is a separate process(es) from the main app
 	// and should not compete on file locks with the main app, which could quickly
 	// result in corrupted data.
-	flat *flat.Flat
-
+	flat            *flat.Flat
 	logger          *slog.Logger
-	debouncers      map[string]func(func())
 	tilingRunningM  sync.Map
 	pendingTTLCache *ttlcache.Cache[string, *TilingRequestArgs]
-	writeLock       sync.Map
-	debouncersMu    sync.Mutex
 	running         sync.WaitGroup
-	requestIDIndex  int32
+	requestIDCursor int32
 
 	// tilingEvents is an idea for being able to return
 	// RPC responses to clients about long-running jobs.
-	tilingEvents *event.FeedOf[TilingRequestArgs]
+	tilingEvents *event.FeedOf[TilingResponse]
 
 	Done      chan struct{}
 	Interrupt chan struct{}
@@ -60,18 +56,15 @@ func NewDaemon(config *params.DaemonConfig) *Daemon {
 	if config == nil {
 		config = params.DefaultDaemonConfig()
 	}
-
 	return &Daemon{
 		Config:          config,
 		flat:            flat.NewFlatWithRoot(config.RootDir),
 		logger:          slog.With("daemon", "tiler"),
-		debouncers:      make(map[string]func(func())),
 		tilingRunningM:  sync.Map{},
 		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.DebounceTilingRequestsInterval)),
-		writeLock:       sync.Map{},
-
-		Done:      make(chan struct{}, 1),
-		Interrupt: make(chan struct{}, 1),
+		tilingEvents:    &event.FeedOf[TilingResponse]{},
+		Done:            make(chan struct{}, 1),
+		Interrupt:       make(chan struct{}, 1),
 	}
 }
 
@@ -108,7 +101,6 @@ func (d *Daemon) Run() error {
 			d.logger.Error("Failed to run pending tiling", "error", err)
 		}
 	})
-
 	go d.pendingTTLCache.Start()
 
 	go func() {
@@ -133,7 +125,7 @@ func (d *Daemon) Run() error {
 				// TODO Flag me in config.
 				// This is a blocking operation, graceful though it may be, and long though it may be.
 				// A real server (and not development) should probably just abort these stragglers.
-				d.awaitPendingTileRequest()
+				d.awaitPendingTileRequests()
 
 				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
 				d.running.Wait()
@@ -144,7 +136,7 @@ func (d *Daemon) Run() error {
 	return nil
 }
 
-func (d *Daemon) awaitPendingTileRequest() {
+func (d *Daemon) awaitPendingTileRequests() {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
 	for _, key := range keys {
@@ -400,7 +392,7 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		return err
 	}
 
-	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
+	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 
 	for _, version := range []TileSourceVersion{SourceVersionCanonical, SourceVersionEdge} {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
@@ -514,6 +506,7 @@ type TilingResponse struct {
 	Success     bool
 	Elapsed     time.Duration
 	MBTilesPath string
+	RequestArgs *TilingRequestArgs
 }
 
 var ErrEmptyFile = errors.New("empty file (nothing to tile)")
@@ -558,7 +551,7 @@ func (d *Daemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) e
 		return fmt.Errorf("invalid args: %w", err)
 	}
 
-	args.requestID = atomic.AddInt32(&d.requestIDIndex, 1)
+	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 	args.requestedAt = time.Now()
 
 	d.logger.Info("RequestTiling", "args", args.id(), "config", args.TippeConfig)
@@ -759,14 +752,18 @@ func (d *Daemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 		return err
 	}
 
-	d.logger.Info("Tiling done", "source", args.parsedSourcePath, "mbtilesOutput", mbtilesOutput,
-		"version", args.Version, "elapsed", elapsed.Round(time.Millisecond))
+	d.logger.Info("🗺️ Tiling done", "args", args.id(), "to", mbtilesOutput,
+		"took", elapsed.Round(time.Millisecond))
 
-	if reply != nil {
-		reply.Success = true
-		reply.Elapsed = elapsed
-		reply.MBTilesPath = mbtilesOutput
+	if reply == nil {
+		reply = &TilingResponse{
+			RequestArgs: args,
+		}
 	}
+	reply.Success = true
+	reply.Elapsed = elapsed
+	reply.MBTilesPath = mbtilesOutput
+	d.tilingEvents.Send(*reply)
 
 	return nil
 }

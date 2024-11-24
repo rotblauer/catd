@@ -30,6 +30,10 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 		}
 	}()
 
+	//subscribeAndSendUniques := func(level catS2.CellLevel) {
+	//
+	//}
+
 	for _, level := range params.S2DefaultCellLevels {
 		// Running only on levels 13-16.
 		// This is a good range for most use cases.
@@ -37,7 +41,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 		if level < catS2.CellLevel13 || level > catS2.CellLevel16 {
 			continue
 		}
-		feed, err := cellIndexer.GetUniqueIndexFeed(level)
+
+		levelFeed, err := cellIndexer.FeedOfUniquesForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 			return
@@ -45,7 +50,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan *cattrack.CatTrack) {
 
 		uniqs := make(chan []*cattrack.CatTrack)
 		defer close(uniqs)
-		sub := feed.Subscribe(uniqs)
+		sub := levelFeed.Subscribe(uniqs)
 		defer sub.Unsubscribe()
 
 		sendToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{

@@ -32,13 +32,17 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 )
 
 var optSortTrackBatches bool
 var optWorkersN int
+var optTilingDebounceInterval time.Duration
+var optTilingAwaitPending bool
 
 // importCmd represents the import command
 var importCmd = &cobra.Command{
@@ -116,7 +120,8 @@ Missoula, Montana
 		}()
 
 		dConfig := params.DefaultDaemonConfig()
-		dConfig.AwaitPendingOnShutdown = true
+		dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
+		dConfig.DebounceTilingRequestsInterval = optTilingDebounceInterval
 		d := tiler.NewDaemon(dConfig)
 		if err := d.Run(); err != nil {
 			log.Fatal(err)
@@ -263,8 +268,12 @@ func init() {
 	// and all subcommands, e.g.:
 	// importCmd.PersistentFlags().String("foo", "", "A help for foo")
 	importCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
-	importCmd.PersistentFlags().IntVar(&optWorkersN, "workers", 8, "Number of workers to run parallel")
+	importCmd.PersistentFlags().IntVar(&optWorkersN, "workers", runtime.NumCPU(), "Number of workers to run parallel")
 	importCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
+
+	// High number to (optionally) delay all tiling til close.
+	importCmd.PersistentFlags().DurationVar(&optTilingDebounceInterval, "debounce", 100*time.Hour, "Debounce interval for tiling requests")
+	importCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "await-pending", false, "Await pending tiling requests on shutdown")
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// importCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")

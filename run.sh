@@ -6,7 +6,7 @@ rm -rf /tmp/catd && rm -f /tmp/catscann && rm -rf /tmp/catd1000{,0,00}
 
 run() {
 #  local source_gz="edge.20241008.json.gz"
-  local source_gz="edge.json.gz"
+  local source_gz="master.json.gz"
 
   go install . &&\
    for i in 100000; do

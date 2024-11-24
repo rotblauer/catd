@@ -116,7 +116,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}, nil
 }
 
-func (ci *CellIndexer) GetUniqueIndexFeed(level CellLevel) (*event.FeedOf[[]*cattrack.CatTrack], error) {
+func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]*cattrack.CatTrack], error) {
 	v, ok := ci.uniqueIndexFeeds[level]
 	if !ok {
 		return nil, fmt.Errorf("level %d not found", level)
