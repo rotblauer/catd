@@ -15,10 +15,11 @@ func Slice[T any](ctx context.Context, in []T) <-chan T {
 	go func() {
 		defer close(out)
 		for _, element := range in {
+			el := element
 			select {
 			case <-ctx.Done():
 				return
-			case out <- element:
+			case out <- el:
 			}
 		}
 	}()
@@ -54,12 +55,12 @@ func Filter[T any](ctx context.Context, predicate func(T) bool, in <-chan T) <-c
 	go func() {
 		defer close(out)
 		for element := range in {
-			element := element
-			if predicate(element) {
+			el := element
+			if predicate(el) {
 				select {
 				case <-ctx.Done():
 					return
-				case out <- element:
+				case out <- el:
 				}
 			}
 		}
@@ -72,11 +73,11 @@ func Transform[I any, O any](ctx context.Context, transformer func(I) O, in <-ch
 	go func() {
 		defer close(out)
 		for element := range in {
-			element := element
+			el := element
 			select {
 			case <-ctx.Done():
 				return
-			case out <- transformer(element):
+			case out <- transformer(el):
 			}
 		}
 	}()
@@ -86,11 +87,12 @@ func Transform[I any, O any](ctx context.Context, transformer func(I) O, in <-ch
 func Collect[T any](ctx context.Context, in <-chan T) []T {
 	out := make([]T, 0)
 	for element := range in {
+		el := element
 		select {
 		case <-ctx.Done():
 			return out
 		default:
-			out = append(out, element)
+			out = append(out, el)
 		}
 	}
 	return out
@@ -134,6 +136,21 @@ func CatchSizeSorting[T any](ctx context.Context, batchSize int, sorter func(a, 
 }
 
 func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
+	//a, b = make(chan T), make(chan T)
+	//go func() {
+	//	defer close(a)
+	//	defer close(b)
+	//	feed := event.FeedOf[T]{}
+	//	subA := feed.Subscribe(a)
+	//	subB := feed.Subscribe(b)
+	//	defer subA.Unsubscribe()
+	//	defer subB.Unsubscribe()
+	//	for element := range in {
+	//		feed.Send(element)
+	//	}
+	//}()
+	//return
+
 	a, b = make(chan T), make(chan T)
 	go func() {
 		defer close(a)
@@ -170,11 +187,11 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 
 		// Range, blocking until 'in' is closed.
 		for element := range in {
-			element := element
-			if predicate != nil && predicate(element) {
+			el := element
+			if predicate != nil && predicate(el) {
 				flush()
 			}
-			batch = append(batch, element)
+			batch = append(batch, el)
 			if posticate != nil && posticate(batch) {
 				flush()
 			}
@@ -190,9 +207,9 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 
 func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	for element := range in {
-		element := element
+		el := element
 		if sink != nil {
-			sink(element)
+			sink(el)
 		}
 		select {
 		case <-ctx.Done():
@@ -206,15 +223,15 @@ func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
 	out := make(chan T)
 	go func() {
 		defer close(out)
-		for _, in := range ins {
-			in := in
+		for _, inn := range ins {
+			in := inn
 			go func() {
 				for element := range in {
-					element := element
+					el := element
 					select {
 					case <-ctx.Done():
 						return
-					case out <- element:
+					case out <- el:
 					}
 				}
 			}()

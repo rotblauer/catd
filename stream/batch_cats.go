@@ -40,7 +40,8 @@ func (rl *readTrackLogger) run() {
 func (rl *readTrackLogger) log() {
 	n := rl.n.Load()
 	tps := math.Round(float64(n) / time.Since(rl.started).Seconds())
-	slog.Info("Read tracks", "n", n, "read.last", rl.logV, "tps", tps)
+	slog.Info("Read tracks", "n", n, "read.last", rl.logV, "tps", tps,
+		"running", time.Since(rl.started).Round(time.Second))
 }
 
 func (rl *readTrackLogger) done() {

@@ -271,6 +271,35 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 	}, tripDetectedFork)
 }
 
+func pipeThroughFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) (out chan T) {
+	c.State.Waiting.Add(1)
+	out = make(chan T)
+	go func() {
+		defer c.State.Waiting.Done()
+		defer close(out)
+		defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
+		defer func() {
+			if err := wr.Close(); err != nil {
+				c.logger.Error("Failed to close writer", "error", err)
+			}
+		}()
+		w := wr.Writer()
+		enc := json.NewEncoder(w)
+		for element := range in {
+			el := element
+			if err := enc.Encode(el); err != nil {
+				c.logger.Error("Failed to write", "error", err)
+			}
+			select {
+			case out <- el:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
 func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
 	c.State.Waiting.Add(1)
 	go func() {
@@ -287,20 +316,20 @@ func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWri
 		w := wr.Writer()
 		enc := json.NewEncoder(w)
 
-		//// Blocking.
-		//stream.Sink(ctx, func(a T) {
-		//	if err := enc.Encode(a); err != nil {
-		//		c.logger.Error("Failed to write", "error", err)
-		//	}
-		//}, in)
-
-		all := stream.Collect(ctx, in)
-		for _, el := range all {
-			if err := enc.Encode(el); err != nil {
+		// Blocking.
+		stream.Sink(ctx, func(a T) {
+			if err := enc.Encode(a); err != nil {
 				c.logger.Error("Failed to write", "error", err)
-				return
 			}
-		}
+		}, in)
+
+		//all := stream.Collect(ctx, in)
+		//for _, el := range all {
+		//	if err := enc.Encode(el); err != nil {
+		//		c.logger.Error("Failed to write", "error", err)
+		//		return
+		//	}
+		//}
 
 		//batches := stream.Batch(ctx, nil, func(b []T) bool {
 		//	//return len(b) == 100 // panics every time
