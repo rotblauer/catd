@@ -657,9 +657,9 @@ func (d *Daemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		return nil
 	}
 
-	d.logger.Info("Triggering canon tiling", "reason", triggerCanonReason, "source", source)
+	d.logger.Info("RequestTiling trigger: canon <- edge", "reason", triggerCanonReason, "source", source)
 
-	return d.callTiling(&TilingRequestArgs{
+	return d.RequestTiling(&TilingRequestArgs{
 		SourceSchema: SourceSchema{
 			CatID:      args.CatID,
 			SourceName: args.SourceName,

@@ -27,14 +27,16 @@ func (ct *CatTrack) MarshalJSON() ([]byte, error) {
 	if ct == nil {
 		return nil, fmt.Errorf("nil CatTrack")
 	}
-	return (*geojson.Feature)(ct).MarshalJSON()
+	f := (*geojson.Feature)(ct.Copy())
+	return f.MarshalJSON()
 }
 
 func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 	if ct == nil {
 		return fmt.Errorf("nil CatTrack")
 	}
-	return (*geojson.Feature)(ct).UnmarshalJSON(data)
+	f := (*geojson.Feature)(ct)
+	return f.UnmarshalJSON(data)
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {

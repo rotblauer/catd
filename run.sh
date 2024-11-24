@@ -20,11 +20,13 @@ run
 review() {
   for i in 100000; do
     echo
-    echo "--- ${i} ---";
-    for f in {ia,rye}/{tracks,laps,naps}; do
-      t=/tmp/catd${i}/cats/$f.geojson.gz; echo "$t"; zcat "$t" \
-      | wc -l ;
-      done;
-      done
+    echo "- batch=${i} ---";
+    shopt -s globstar
+    for f in /tmp/catd${i}/cats/**/*.geojson.gz; do
+      echo "$f"
+      zcat "$f" \
+      | wc -l
+    done;
+  done
 }
 review
