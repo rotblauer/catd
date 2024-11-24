@@ -317,19 +317,19 @@ func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWri
 		enc := json.NewEncoder(w)
 
 		// Blocking.
-		//stream.Sink(ctx, func(a T) {
-		//	if err := enc.Encode(a); err != nil {
-		//		c.logger.Error("Failed to write", "error", err)
-		//	}
-		//}, in)
-
-		all := stream.Collect(ctx, in)
-		for _, el := range all {
-			if err := enc.Encode(el); err != nil {
+		stream.Sink(ctx, func(a T) {
+			if err := enc.Encode(a); err != nil {
 				c.logger.Error("Failed to write", "error", err)
-				return
 			}
-		}
+		}, in)
+
+		//all := stream.Collect(ctx, in)
+		//for _, el := range all {
+		//	if err := enc.Encode(el); err != nil {
+		//		c.logger.Error("Failed to write", "error", err)
+		//		return
+		//	}
+		//}
 
 		//batches := stream.Batch(ctx, nil, func(b []T) bool {
 		//	//return len(b) == 100 // panics every time

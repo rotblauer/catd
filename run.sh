@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
+# Batches of 1_000 in 300ms.
+# Batches of 100_000 in ~30s = 30_000ms - about 10x faster.
+
 rm -rf /tmp/catd*
 rm -f /tmp/catscann
 
 review() {
-  for i in 100_000; do
+  for i in 100; do
     echo
     echo "- batch=${i} ---";
     shopt -s globstar
@@ -25,7 +28,7 @@ run() {
   local source_gz="master.json.gz"
 
   go install . &&\
-   for i in 100_000; do
+   for i in 100; do
     rm -f /tmp/catscann;
     zcat ~/tdata/"${source_gz}" \
     | catd populate --datadir "/tmp/catd${i}" \
@@ -33,7 +36,7 @@ run() {
       --batch-size ${i} \
       --workers 10 \
       --sort true \
-      --skip 10_000_000 \
+      --skip 1_000_000 \
     |& tee run.out; done
 
   review

@@ -71,8 +71,8 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack)
 					c.logger.Error("Failed to add track to trip detector", "error", err)
 					return cattrack.CatTrack{}
 				}
-				cp.Properties["IsTrip"] = td.Tripping
-				cp.Properties["MotionStateReason"] = td.MotionStateReason
+				cp.SetPropertySafe("IsTrip", td.Tripping)
+				cp.SetPropertySafe("MotionStateReason", td.MotionStateReason)
 
 				// FIXME/FIXED: These property writes are causing a fatal concurrent map read and map write.
 				// Can we use ID instead? Or some other hack?

@@ -22,6 +22,18 @@ func NewCatTrack(geometry orb.Geometry) *CatTrack {
 	}
 }
 
+func (ct *CatTrack) SetPropertySafe(key string, val any) {
+	p := ct.Properties.Clone()
+	p[key] = val
+	ct.Properties = p
+}
+
+func (ct *CatTrack) DeletePropertySafe(key string) {
+	p := ct.Properties.Clone()
+	delete(p, key)
+	ct.Properties = p
+}
+
 func (ct *CatTrack) MarshalJSON() ([]byte, error) {
 	f := geojson.Feature(*ct)
 	ff := &f

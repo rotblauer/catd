@@ -96,17 +96,16 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 
 		// Attempt AWS S3 upload.
 		if params.AWS_BUCKETNAME == "" {
-			imported.Properties["imgS3_UPLOAD_SKIPPED"] = time.Now()
+			imported.SetPropertySafe("imgS3_UPLOAD_SKIPPED", time.Now())
 			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "track", imported.StringPretty())
 
 		} else {
 			err = c.storeImageS3(imported.MustS3Key(), jpegBytes)
 			if err != nil {
-				imported.Properties["imgS3_UPLOAD_FAILED"] = time.Now()
+				imported.SetPropertySafe("imgS3_UPLOAD_FAILED", time.Now())
 			}
-
-			imported.Properties["imgS3"] = fmt.Sprintf("%s/%s",
-				params.AWS_BUCKETNAME, imported.MustS3Key())
+			imported.SetPropertySafe("imgS3", fmt.Sprintf("%s/%s",
+				params.AWS_BUCKETNAME, imported.MustS3Key()))
 		}
 
 		err = c.State.StoreSnapLocally(imported, jpegBytes)
@@ -115,7 +114,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 			return imported, err
 		}
 
-		delete(imported.Properties, "imgB64")
+		imported.DeletePropertySafe("imgB64")
 		return imported, nil
 	}
 
