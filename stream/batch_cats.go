@@ -78,7 +78,7 @@ func readReadCount(lastTrackStorePath string) (int64, error) {
 	return strconv.ParseInt(string(data), 10, 64)
 }
 
-func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int) (chan [][]byte, chan error, error) {
+func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int, skip int64) (chan [][]byte, chan error, error) {
 
 	ch := make(chan [][]byte, workers)
 	errs := make(chan error)
@@ -95,7 +95,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 		defer close(errs)
 
 		readN, skippedN := int64(0), int64(0)
-		skipLog, readLog := sync.Once{}, sync.Once{}
+		skipLog, skipLog2, readLog := sync.Once{}, sync.Once{}, sync.Once{}
 
 		catBatches := map[string][][]byte{}
 		dec := json.NewDecoder(reader)
@@ -104,6 +104,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			interval: 5 * time.Second,
 		}
 
+		didSkip := int64(0)
 	readLoop:
 		for {
 			msg := json.RawMessage{}
@@ -128,6 +129,14 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 				// Else a real error.
 				slog.Error("Decode error", "error", err)
 				break
+			}
+
+			if didSkip < skip {
+				skipLog2.Do(func() {
+					slog.Warn("Skipping --skip lines...", "skip", skip)
+				})
+				didSkip++
+				continue
 			}
 
 			readN++

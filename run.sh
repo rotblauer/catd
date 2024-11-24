@@ -33,6 +33,7 @@ run() {
       --batch-size ${i} \
       --workers 10 \
       --sort true \
+      --skip 10_000_000 \
     |& tee run.out; done
 
   review

@@ -45,6 +45,7 @@ var optSortTrackBatches bool
 var optWorkersN int
 var optTilingDebounceInterval time.Duration
 var optTilingAwaitPending bool
+var optSkipOverrideN int64
 
 // populateCmd represents the import command
 var populateCmd = &cobra.Command{
@@ -72,6 +73,7 @@ Flags:
                    to (optionally) wait til daemon shutdown sequence.
                    A short interval will cause pending tiling requests to fire quickly.
   --await-pending  Await pending tiling requests on shutdown. (Default is false.)
+  --skip           Skip n lines before tracking. (Easier than tail|head.)
 
 Examples:
 
@@ -147,7 +149,7 @@ Missoula, Montana
 		// Workers then block until their increment matches the latest package number.
 		// Since cat Populators do not block each other, the worker
 		// will only block if it is the same cat as the previous package.
-		var workingWorkN int32 = 0
+		//var workingWorkN int32 = 0
 
 		workerFn := func(workerI int, w workT) {
 			defer workersWG.Done()
@@ -181,13 +183,13 @@ Missoula, Montana
 				return *ct
 			}, stream.Slice(ctx, w.lines))
 
-			// MkdirAll ordered cat tracks per cat.
+			// Ensure ordered cat tracks per cat.
 			o := sync.Once{}
-			for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
-				o.Do(func() {
-					slog.Warn("Worker blocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
-				})
-			}
+			//for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
+			o.Do(func() {
+				slog.Warn("Worker unblocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
+			})
+			//}
 
 			// Populate is blocking. It holds a lock on the cat state.
 			err := cat.Populate(ctx, optSortTrackBatches, pipe)
@@ -224,7 +226,7 @@ Missoula, Montana
 		}
 
 		quit := make(chan struct{})
-		linesCh, errCh, _ := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN)
+		linesCh, errCh, _ := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -290,6 +292,7 @@ func init() {
 	populateCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
 	populateCmd.PersistentFlags().IntVar(&optWorkersN, "workers", runtime.NumCPU(), "Number of workers to run parallel")
 	populateCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
+	populateCmd.PersistentFlags().Int64Var(&optSkipOverrideN, "skip", 0, "Skip first n lines")
 
 	// High number to (optionally) delay all tiling til close.
 	populateCmd.PersistentFlags().DurationVar(&optTilingDebounceInterval, "debounce", 100*time.Hour, "Debounce interval for tiling requests")
