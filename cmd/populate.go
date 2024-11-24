@@ -44,10 +44,10 @@ var optWorkersN int
 var optTilingDebounceInterval time.Duration
 var optTilingAwaitPending bool
 
-// importCmd represents the import command
-var importCmd = &cobra.Command{
-	Use:   "import",
-	Short: "Import cat tracks from stdin",
+// populateCmd represents the import command
+var populateCmd = &cobra.Command{
+	Use:   "populate",
+	Short: "Populate cat tracks from stdin stream",
 	Long: `
 
 Tracks from mixed cats ARE supported, e.g. master.json.gz.
@@ -55,14 +55,21 @@ Tracks from mixed cats ARE supported, e.g. master.json.gz.
 Tracks are decoded as JSON lines from stdin and grouped by cat before decoding into CatTracks.
 Graceful shutdown is MANDATORY for data integrity. Be patient.
 
-This command can run idempotently, and incrementally on the same source.
+This command can run idempotently, and incrementally on the same source,
+at least so far as a line-scan count will take it.
+The cat app, as it is, though, has no strong way of persistent de-duping, yet.
 
 Flags:
 
-  --sort        Sort the batches by track time. This is time consuming and makes populate work in batches (vs pure stream). (Default is true).
-  --workers     Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT. 
-                For best results, use a value approximately equivalent to the total number cats. (Default is 8.)
-  --batch-size  Number of tracks per cat-batch. (Default is 100_000.)
+  --sort           Sort the batches by track time. This is time consuming and makes populate work in batches (vs pure stream). (Default is true).
+  --workers        Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT. 
+                   For best results, use a value approximately equivalent to the total number cats. (Default is 8.)
+  --batch-size     Number of tracks per cat-batch. (Default is 100_000.)
+  --debounce       Debounce interval for tiling requests. (Default is 100h.)
+                   A long debounce interval will cause pending tiling requests 
+                   to (optionally) wait til daemon shutdown sequence.
+                   A short interval will cause pending tiling requests to fire quickly.
+  --await-pending  Await pending tiling requests on shutdown. (Default is false.)
 
 Examples:
 
@@ -260,23 +267,23 @@ Missoula, Montana
 }
 
 func init() {
-	rootCmd.AddCommand(importCmd)
+	rootCmd.AddCommand(populateCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// importCmd.PersistentFlags().String("foo", "", "A help for foo")
-	importCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
-	importCmd.PersistentFlags().IntVar(&optWorkersN, "workers", runtime.NumCPU(), "Number of workers to run parallel")
-	importCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
+	// populateCmd.PersistentFlags().String("foo", "", "A help for foo")
+	populateCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
+	populateCmd.PersistentFlags().IntVar(&optWorkersN, "workers", runtime.NumCPU(), "Number of workers to run parallel")
+	populateCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
 
 	// High number to (optionally) delay all tiling til close.
-	importCmd.PersistentFlags().DurationVar(&optTilingDebounceInterval, "debounce", 100*time.Hour, "Debounce interval for tiling requests")
-	importCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "await-pending", false, "Await pending tiling requests on shutdown")
+	populateCmd.PersistentFlags().DurationVar(&optTilingDebounceInterval, "debounce", 100*time.Hour, "Debounce interval for tiling requests")
+	populateCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "await-pending", false, "Await pending tiling requests on shutdown")
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// importCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// populateCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // workT is passed to concurrent workers.
