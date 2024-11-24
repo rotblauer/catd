@@ -60,7 +60,7 @@ const UknownName = "UNKNOWN"
 // SanitizeName returns a sanitized version of the name or alias.
 func SanitizeName(name string) string {
 	if name == "" {
-		return UknownName
+		return InvalidReplacementChar
 	}
 	for _, c := range InvalidNameChars {
 		name = strings.ReplaceAll(name, c, InvalidReplacementChar)

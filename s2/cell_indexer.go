@@ -128,11 +128,19 @@ func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]*
 // all unique tracks to flat files respective of cell level.
 // It will block until the in channel closes and all batches are processed.
 // It uses batches to minimize disk txes.
-func (ci *CellIndexer) Index(ctx context.Context, in <-chan *cattrack.CatTrack) error {
-	batches := stream.Batch(ctx, nil, func(tracks []*cattrack.CatTrack) bool {
-		return len(tracks) == ci.BatchSize
-	}, in)
-	for batch := range batches {
+func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) error {
+	batches := stream.Batch(ctx, nil,
+		func(tracks []cattrack.CatTrack) bool {
+			return len(tracks) == ci.BatchSize
+		}, in)
+	batchPtrs := stream.Transform(ctx, func(tracks []cattrack.CatTrack) []*cattrack.CatTrack {
+		out := make([]*cattrack.CatTrack, len(tracks))
+		for i, t := range tracks {
+			out[i] = &t
+		}
+		return out
+	}, batches)
+	for batch := range batchPtrs {
 		for _, level := range ci.Levels {
 			if err := ci.index(level, batch); err != nil {
 				return err

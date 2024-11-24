@@ -8,6 +8,7 @@ import (
 	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
+	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"log/slog"
 	"math"
@@ -72,7 +73,11 @@ func (s *WebServer) handlePopulate(w http.ResponseWriter, r *http.Request) {
 	cat := api.NewCat(catID, s.DaemonConfig)
 
 	ctx := context.Background()
-	ch := stream.Slice(ctx, features)
+	featureVals := make([]cattrack.CatTrack, len(features))
+	for i, f := range features {
+		featureVals[i] = *f
+	}
+	ch := stream.Slice(ctx, featureVals)
 	err = cat.Populate(ctx, true, ch)
 	if err != nil {
 		slog.Warn("Failed to populate", "error", err)

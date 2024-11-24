@@ -20,8 +20,8 @@ type WangUrbanCanyonFilter struct {
 // > is shown in Figure 2, GPS points away from both the
 // > before and after 5 points center for more than 200 m
 // > should be considered as shift points.
-func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
-	out := make(chan *cattrack.CatTrack)
+func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
+	out := make(chan cattrack.CatTrack)
 
 	bufferFront, bufferBack := 5, 5
 	bufferSize := bufferFront + 1 + bufferBack
@@ -32,7 +32,7 @@ func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan *cattrack.
 		for track := range in {
 			track := track
 
-			buffer = append(buffer, track)
+			buffer = append(buffer, &track)
 			if len(buffer) < bufferSize {
 				// The first points get automatically flushed without filtering
 				// because there are no head points to compare them against.
@@ -62,7 +62,7 @@ func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan *cattrack.
 			select {
 			case <-ctx.Done():
 				return
-			case out <- target:
+			case out <- *target:
 			}
 		}
 
@@ -72,7 +72,7 @@ func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan *cattrack.
 				select {
 				case <-ctx.Done():
 					return
-				case out <- track:
+				case out <- *track:
 				}
 			}
 		}

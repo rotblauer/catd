@@ -12,10 +12,10 @@ import (
 )
 
 // TripDetectTracks detects trips in incoming CatTracks.
-func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
+func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
 	c.getOrInitState()
 
-	out := make(chan *cattrack.CatTrack)
+	out := make(chan cattrack.CatTrack)
 	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
 
 	// If possible, read persisted cat tripdetector-state.
@@ -55,19 +55,24 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 			// Filter out the resets and inits.
 			// Resets happen when the trip detector is reset after a signal loss.
 			// Inits happen when the trip detector is initialized.
-			func(ct *cattrack.CatTrack) bool {
+			func(ct cattrack.CatTrack) bool {
+				if ct.IsEmpty() {
+					return false
+				}
 				reason := ct.Properties.MustString("MotionStateReason")
 				return reason != "init" && reason != "reset"
 			},
-			stream.Transform(ctx, func(ct *cattrack.CatTrack) *cattrack.CatTrack {
+			stream.Transform(ctx, func(ct cattrack.CatTrack) cattrack.CatTrack {
 				c.logger.Debug("Detecting trips", "track", ct.StringPretty())
-				if err := td.Add(ct); err != nil {
-					c.logger.Error("Failed to add track to trip detector", "error", err)
-					return nil
-				}
 
-				ct.Properties["IsTrip"] = td.Tripping
-				ct.Properties["MotionStateReason"] = td.MotionStateReason
+				cp := ct.Copy()
+
+				if err := td.Add(cp); err != nil {
+					c.logger.Error("Failed to add track to trip detector", "error", err)
+					return cattrack.CatTrack{}
+				}
+				cp.Properties["IsTrip"] = td.Tripping
+				cp.Properties["MotionStateReason"] = td.MotionStateReason
 
 				// FIXME/FIXED: These property writes are causing a fatal concurrent map read and map write.
 				// Can we use ID instead? Or some other hack?
@@ -79,7 +84,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan *cattrack.CatTrack
 				// This was fixed by using attribute variables for the only values I needed - time and coords.
 				// No pointers, no properties map, no problems.
 
-				return ct
+				return *cp
 			}, in))
 
 		// Will block on send unless interrupted. Needs reader.
@@ -112,8 +117,13 @@ func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
 	if err != nil {
 		return err
 	}
-	tmp := &tripdetector.TripDetector{}
+	tmp := &tripdetector.TripDetector{
+		LastNPoints:    make([]*cattrack.CatTrack, 0),
+		IntervalPoints: make([]*cattrack.CatTrack, 0),
+	}
 	if err := json.Unmarshal(read, tmp); err != nil {
+		c.logger.Error("Failed to unmarshal trip detector", "error", err)
+		c.logger.Error(string(read))
 		return err
 	}
 	*td = *tmp

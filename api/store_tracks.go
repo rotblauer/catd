@@ -10,10 +10,10 @@ import (
 )
 
 // StoreTracks stores incoming CatTracks for one cat to disk.
-func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (stored <-chan *cattrack.CatTrack, errs <-chan error) {
+func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (stored <-chan cattrack.CatTrack, errs <-chan error) {
 	c.getOrInitState()
 
-	storedCh, errCh := make(chan *cattrack.CatTrack), make(chan error)
+	storedCh, errCh := make(chan cattrack.CatTrack), make(chan error)
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 
@@ -43,7 +43,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 
 		enc := json.NewEncoder(wr.Writer())
 
-		storeResults := stream.Transform(ctx, func(ct *cattrack.CatTrack) any {
+		storeResults := stream.Transform(ctx, func(ct cattrack.CatTrack) any {
 			if err := enc.Encode(ct); err != nil {
 				slog.Error("Failed to encode cat track gz", "error", err)
 				return err
@@ -67,7 +67,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan *cattrack.CatTrack) (st
 			switch t := result.(type) {
 			case error:
 				errCh <- t
-			case *cattrack.CatTrack:
+			case cattrack.CatTrack:
 				storedCh <- t
 			default:
 				panic("impossible")

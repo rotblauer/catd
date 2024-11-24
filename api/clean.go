@@ -7,8 +7,8 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) CleanTracks(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
-	out := make(chan *cattrack.CatTrack)
+func (c *Cat) CleanTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
+	out := make(chan cattrack.CatTrack)
 
 	go func() {
 		defer close(out)

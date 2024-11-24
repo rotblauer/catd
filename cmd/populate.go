@@ -17,7 +17,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
@@ -73,7 +75,7 @@ Flags:
 
 Examples:
 
-  zcat master.json.gz | catd import --workers 12 --batch-size 100_000 --sort true
+  zcat master.json.gz | catd populate --workers 12 --batch-size 100_000 --sort true
 
 Notes:
 
@@ -159,13 +161,24 @@ Missoula, Montana
 				"work-n", w.n,
 				"cat", cat.CatID, "lines", len(w.lines))
 
-			pipe := stream.Transform(ctx, func(data []byte) *cattrack.CatTrack {
-				ct := &cattrack.CatTrack{}
-				if err := ct.UnmarshalJSON(data); err != nil {
-					slog.Error("Failed to unmarshal track", "error", err)
-					return nil
+			pipe := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
+				//ct := &cattrack.CatTrack{}
+				/*
+						2024/11/24 05:38:06 ERROR Failed to unmarshal track error="json: cannot unmarshal object
+					into Go struct field CatTrack.geometry of type orb.Geometry"
+						2024/11/24 05:38:06 ERROR   track data data="{\"id\":0,\"type\":\"Feature\",\"bbox\":[-113.4735517,47.1789267,-113.4735517,47.1789267],\"geometry\":{\"type\":\"Point\",\"coordinates\":[-113.4735517,47.1789267]},\"properties\":{\"AccelerometerX\":-0.21,\"AccelerometerY\":-0.07,\"AccelerometerZ\":-9.79,\"Accuracy\":4,\"Activity\":\"Stationary\",\"ActivityConfidence\":100,\"AmbientTemp\":null,\"BatteryLevel\":0.71,\"BatteryStatus\":\"unplugged\",\"CurrentTripStart\":\"2024-10-02T20:36:05.642738Z\",\"Distance\":1226092,\"Elevation\":1229.8,\"GyroscopeX\":0,\"GyroscopeY\":0,\"GyroscopeZ\":0,\"Heading\":-1,\"Lightmeter\":0,\"Name\":\"ranga-moto-act3\",\"NumberOfSteps\":1360706,\"Pressure\":null,\"Speed\":0,\"Time\":\"2024-10-04T02:33:27.801Z\",\"UUID\":\"76170e959f967f40\",\"UnixTime\":1728009207,\"UserAccelerometerX\":0.01,\"UserAccelerometerY\":0,\"UserAccelerometerZ\":0.02,\"Version\":\"gcps/v0.0.0+4\",\"heading_accuracy\":-1,\"speed_accuracy\":2.8,\"vAccuracy\":6}}"
+
+				*/
+				ct := cattrack.NewCatTrack(orb.Point{})
+
+				if err := json.Unmarshal(data, ct); err != nil {
+					slog.Error("cmd/populate : Failed to unmarshal track", "error", err)
+					slog.Error(string(data))
+					return cattrack.CatTrack{}
 				}
-				return ct
+
+				//ct := cattrack.NewCatTrackFromFeature(f)
+				return *ct
 			}, stream.Slice(ctx, w.lines))
 
 			// MkdirAll ordered cat tracks per cat.

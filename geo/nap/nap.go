@@ -16,7 +16,7 @@ type State struct {
 	Tracks        []*cattrack.CatTrack // the points represented by the nap
 	Centroid      orb.Point
 	TimeLast      time.Time
-	ch            chan *cattrack.CatNap
+	ch            chan cattrack.CatNap
 }
 
 func NewState(config *params.NapConfig) *State {
@@ -27,7 +27,7 @@ func NewState(config *params.NapConfig) *State {
 		DwellInterval: config.DwellInterval,
 		DwellDistance: config.DwellDistance,
 		Tracks:        make([]*cattrack.CatTrack, 0),
-		ch:            make(chan *cattrack.CatNap),
+		ch:            make(chan cattrack.CatNap),
 	}
 }
 
@@ -71,7 +71,7 @@ func (s *State) Flush() {
 	if len(s.Tracks) >= 2 {
 		nap := cattrack.NewCatNap(s.Tracks)
 		if nap != nil {
-			s.ch <- nap
+			s.ch <- *nap
 		}
 	}
 	s.Tracks = make([]*cattrack.CatTrack, 0)
@@ -79,11 +79,11 @@ func (s *State) Flush() {
 	s.TimeLast = time.Time{}
 }
 
-func (s *State) Stream(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
+func (s *State) Stream(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatNap {
 	go func() {
 		defer close(s.ch)
 		for ct := range in {
-			s.Add(ct)
+			s.Add(&ct)
 			select {
 			case <-ctx.Done():
 				return

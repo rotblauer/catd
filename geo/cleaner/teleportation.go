@@ -13,8 +13,8 @@ type TeleportationFilter struct {
 	Filtered int
 }
 
-func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatTrack {
-	out := make(chan *cattrack.CatTrack)
+func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
+	out := make(chan cattrack.CatTrack)
 
 	go func() {
 		defer close(out)

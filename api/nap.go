@@ -3,15 +3,16 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/geo/nap"
 	"github.com/rotblauer/catd/state"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) TrackNaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatNap {
+func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatNap {
 	c.getOrInitState()
 
-	out := make(chan *cattrack.CatNap)
+	out := make(chan cattrack.CatNap)
 	ns := nap.NewState(nil)
 
 	// Attempt to restore lap-builder state.
@@ -19,6 +20,10 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		if err := json.Unmarshal(data, ns); err != nil {
 			c.logger.Error("Failed to unmarshal nap state", "error", err)
 		} else {
+			if len(ns.Tracks) > 0 {
+				ns.TimeLast = ns.Tracks[len(ns.Tracks)-1].MustTime()
+				ns.Centroid = ns.Tracks[len(ns.Tracks)-1].Geometry.(orb.Point)
+			}
 			c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", ns.TimeLast)
 		}
 	}

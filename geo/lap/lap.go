@@ -17,7 +17,7 @@ type State struct {
 	Interval time.Duration
 	Tracks   []*cattrack.CatTrack // the points represented by the linestring
 	TimeLast time.Time
-	ch       chan *cattrack.CatLap
+	ch       chan cattrack.CatLap
 }
 
 func NewState(interval time.Duration) *State {
@@ -25,7 +25,7 @@ func NewState(interval time.Duration) *State {
 		Interval: interval,
 		Tracks:   make([]*cattrack.CatTrack, 0),
 		TimeLast: time.Time{},
-		ch:       make(chan *cattrack.CatLap),
+		ch:       make(chan cattrack.CatLap),
 	}
 }
 
@@ -54,7 +54,7 @@ func (s *State) Flush() {
 	if len(s.Tracks) >= 2 {
 		lap := cattrack.NewCatLap(s.Tracks)
 		if lap != nil {
-			s.ch <- lap
+			s.ch <- *lap
 		}
 	}
 	s.TimeLast = time.Time{}
@@ -63,11 +63,11 @@ func (s *State) Flush() {
 
 // Stream consumes a channel of CatTracks and emits completed CatLaps.
 // It will not flush any (last) incomplete lap.
-func (s *State) Stream(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
+func (s *State) Stream(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatLap {
 	go func() {
 		defer close(s.ch)
 		for ct := range in {
-			s.Add(ct)
+			s.Add(&ct)
 			select {
 			case <-ctx.Done():
 				return

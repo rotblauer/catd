@@ -9,10 +9,10 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-chan *cattrack.CatLap {
+func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatLap {
 	c.getOrInitState()
 
-	out := make(chan *cattrack.CatLap)
+	out := make(chan cattrack.CatLap)
 	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
 
 	// Attempt to restore lap-builder state.
@@ -20,6 +20,9 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan *cattrack.CatTrack) <-cha
 		if err := json.Unmarshal(data, ls); err != nil {
 			c.logger.Error("Failed to unmarshal lap state (new cat?)", "error", err)
 		} else {
+			if len(ls.Tracks) > 0 {
+				ls.TimeLast = ls.Tracks[len(ls.Tracks)-1].MustTime()
+			}
 			c.logger.Info("Restored lap state", "len", len(ls.Tracks), "last", ls.TimeLast)
 		}
 	}

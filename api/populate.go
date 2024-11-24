@@ -12,13 +12,12 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
-	"io"
 	"os"
 	"time"
 )
 
 // Populate persists incoming CatTracks for one cat.
-func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTrack) (lastErr error) {
+func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
 
 	// Blocking.
 	c.logger.Info("Populate blocking on lock state")
@@ -38,14 +37,18 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 		c.logger.Info("Populate done", "elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
-	validated := stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
-		checkCatID := ct.CatID()
-		if c.CatID != checkCatID {
-			c.logger.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
+	validated := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
+		if ct.IsEmpty() {
+			c.logger.Warn("Invalid track, empty")
 			return false
 		}
 		if err := ct.Validate(); err != nil {
 			c.logger.Warn("Invalid track", "error", err)
+			return false
+		}
+		checkCatID := ct.CatID()
+		if c.CatID != checkCatID {
+			c.logger.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
 			return false
 		}
 		return true
@@ -111,7 +114,24 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 
 	passSnaps, passNext := stream.Tee(ctx, snapped)
 	sinkSnaps, sendSnaps := stream.Tee(ctx,
-		stream.Filter(ctx, func(ct *cattrack.CatTrack) bool {
+		stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
+			/*
+				fatal error: concurrent map read and map write
+
+				goroutine 6676 [running]:
+				github.com/rotblauer/catd/types/cattrack.(*CatTrack).HasRawB64Image(...)
+				        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:230
+				github.com/rotblauer/catd/types/cattrack.(*CatTrack).IsSnap(...)
+				        /home/ia/dev/rotblauer/catd/types/cattrack/cattrack.go:209
+				github.com/rotblauer/catd/api.(*Cat).Populate.func3({{0xcceee0, 0x134e4e8}, {0xc007f038b8, 0x7}, {0x0, 0x0, 0x0}, {0x135acf0, 0xc007f03910}, 0xc01573c390})
+				        /home/ia/dev/rotblauer/catd/api/populate.go:118 +0x2b
+				github.com/rotblauer/catd/stream.Filter[...].func1()
+				        /home/ia/dev/rotblauer/catd/stream/stream.go:57 +0x13b
+				created by github.com/rotblauer/catd/stream.Filter[...] in goroutine 48
+				        /home/ia/dev/rotblauer/catd/stream/stream.go:54 +0xcb
+
+
+			*/
 			return ct.IsSnap()
 		}, passSnaps))
 
@@ -150,9 +170,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan *cattrack.CatTr
 	return lastErr
 }
 
-func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.CatTrack) {
-	lapTracks := make(chan *cattrack.CatTrack)
-	napTracks := make(chan *cattrack.CatTrack)
+func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
+	lapTracks := make(chan cattrack.CatTrack)
+	napTracks := make(chan cattrack.CatTrack)
 	defer close(lapTracks)
 	defer close(napTracks)
 
@@ -165,16 +185,19 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
 	completedLaps := c.TrackLaps(ctx, lapTracks)
-	filterLaps := stream.Filter(ctx, func(ct *cattrack.CatLap) bool {
+	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
 		duration := ct.Properties["Duration"].(float64)
 		return duration > 120
 	}, completedLaps)
 
 	// Simplify the lap geometry.
 	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
-	simplified := stream.Transform(ctx, func(ct *cattrack.CatLap) *cattrack.CatLap {
-		ct.Geometry = simplifier.Simplify(ct.Geometry)
-		return ct
+	simplified := stream.Transform(ctx, func(ct cattrack.CatLap) cattrack.CatLap {
+		cp := new(cattrack.CatLap)
+		*cp = ct
+		geom := simplifier.Simplify(ct.Geometry)
+		cp.Geometry = geom
+		return *cp
 	}, filterLaps)
 
 	// End of the line for all cat laps...
@@ -198,9 +221,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
 	completedNaps := c.TrackNaps(ctx, napTracks)
-	filteredNaps := stream.Filter(ctx, func(ct *cattrack.CatNap) bool {
-		duration := ct.Properties["Duration"].(float64)
-		return duration > 120
+	filteredNaps := stream.Filter(ctx, func(ct cattrack.CatNap) bool {
+		return ct.Properties.MustFloat64("Duration", 0) > 120
 	}, completedNaps)
 
 	// End of the line for all cat naps...
@@ -241,7 +263,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 
 	// Block on tripdetect.
 	c.logger.Info("Trip detector blocking")
-	stream.Sink(ctx, func(ct *cattrack.CatTrack) {
+	stream.Sink(ctx, func(ct cattrack.CatTrack) {
 		if ct.Properties.MustBool("IsTrip") {
 			lapTracks <- ct
 		} else {
@@ -250,7 +272,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan *cattrack.Cat
 	}, tripDetectedFork)
 }
 
-func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan *T) {
+func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
@@ -262,19 +284,38 @@ func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWri
 			}
 		}()
 
-		sinkJSONToWriter(ctx, c, wr.Writer(), in)
-	}()
-}
+		// TODO
+		w := wr.Writer()
+		enc := json.NewEncoder(w)
 
-func sinkJSONToWriter[T any](ctx context.Context, c *Cat, writer io.WriteCloser, in <-chan *T) {
-	enc := json.NewEncoder(writer)
+		//// Blocking.
+		//stream.Sink(ctx, func(a T) {
+		//	cp := a
+		//	if err := enc.Encode(cp); err != nil {
+		//		c.logger.Error("Failed to write", "error", err)
+		//	}
+		//}, in)
 
-	// Blocking.
-	stream.Sink(ctx, func(a *T) {
-		if err := enc.Encode(a); err != nil {
-			c.logger.Error("Failed to write", "error", err)
+		//all := stream.Collect(ctx, in)
+		//for _, el := range all {
+		//	if err := enc.Encode(el); err != nil {
+		//		c.logger.Error("Failed to write", "error", err)
+		//		return
+		//	}
+		//}
+
+		batches := stream.Batch(ctx, nil, func(b []T) bool {
+			return len(b) == 10_000
+		}, in)
+		for batch := range batches {
+			for _, el := range batch {
+				if err := enc.Encode(el); err != nil {
+					c.logger.Error("Failed to write", "error", err)
+					return
+				}
+			}
 		}
-	}, in)
+	}()
 }
 
 func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
@@ -282,16 +323,17 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeat
 	go func() {
 		defer c.State.Waiting.Done()
 
-		features := stream.Collect(ctx, in)
-		if len(features) == 0 {
+		all := stream.Collect(ctx, in)
+		if len(all) == 0 {
 			return
 		}
 
 		buf := new(bytes.Buffer)
 		enc := json.NewEncoder(buf)
-		for _, f := range features {
-			if err := enc.Encode(f); err != nil {
-				c.logger.Error("Failed to encode nap feature", "error", err)
+		for _, el := range all {
+			cp := el
+			if err := enc.Encode(cp); err != nil {
+				c.logger.Error("Failed to encode feature", "error", err)
 				return
 			}
 		}
@@ -300,7 +342,7 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeat
 		err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
 		if err != nil {
 			c.logger.Error("Failed to call RPC client",
-				"method", "Daemon.PushFeatures", "source", args.SourceName, "features.len", len(features), "error", err)
+				"method", "Daemon.PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
 		}
 	}()
 }

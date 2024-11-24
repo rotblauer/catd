@@ -35,31 +35,32 @@ import (
 // and the original `imgB64` attribute is removed.
 // If upload fails, the original track is forwarded to the output channel unmodified.
 // If the cat handler finds that the snap already exists in the cat state, it is not uploaded again, nor transformed.
-func (c *Cat) StoreSnaps(ctx context.Context, in <-chan *cattrack.CatTrack) (out chan *cattrack.CatTrack, errs chan error) {
+func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out chan cattrack.CatTrack, errs chan error) {
 	c.getOrInitState()
 
 	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()
 
-	out = make(chan *cattrack.CatTrack)
+	out = make(chan cattrack.CatTrack)
 	errs = make(chan error)
 	go func() {
 		defer close(out)
 		defer close(errs)
 
 		for track := range in {
+			track := track
 			if !track.IsSnap() {
 				out <- track
 				continue
 			}
-			err := c.handleSnap(track)
+			ct, err := c.handleSnap(track)
 			if err != nil {
 				// Send the track no matter what.
 				out <- track
 				errs <- err
 				continue
 			}
-			out <- track
+			out <- ct
 		}
 	}()
 
@@ -70,14 +71,15 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan *cattrack.CatTrack) (out
 // It is careful to modify the track in-place, as it is a pointer,
 // _iff any transformation operations are successful_.
 // If any transformation operations fail, the original track remains unmodified.
-func (c *Cat) handleSnap(ct *cattrack.CatTrack) error {
-	if err := c.State.ValidateSnapLocalStore(ct); err == nil {
+func (c *Cat) handleSnap(ct cattrack.CatTrack) (cattrack.CatTrack, error) {
+
+	if err := c.State.ValidateSnapLocalStore(&ct); err == nil {
 		c.logger.Warn("Snap already exists", "cat", c.CatID, "track", ct.StringPretty())
-		return nil
+		return ct, nil
 	}
 
 	if err := ct.ValidateSnap(); err != nil {
-		return err
+		return ct, err
 	}
 
 	// Make a copy for safe in-place transformation.
@@ -85,16 +87,15 @@ func (c *Cat) handleSnap(ct *cattrack.CatTrack) error {
 
 	if err := c.importCatSnap(cp); err != nil {
 		c.logger.Error("Failed to import snap", "error", err)
-		return err
+		return ct, err
 	}
 
 	// All errors nil, we can now modify the original track:
-	*ct = *cp
-	return nil
+	return *cp, nil
 }
 
 func (c *Cat) importCatSnap(ct *cattrack.CatTrack) error {
-	c.logger.Info("📷 Importing snap", "cat", c.CatID, "track", ct.StringPretty())
+	c.logger.Info("📷 Importing snap", "track", ct.StringPretty())
 
 	if ct.HasRawB64Image() {
 		jpegBytes, err := common.DecodeB64ToJPGBytes(ct.Properties.MustString("imgB64"))
@@ -108,7 +109,7 @@ func (c *Cat) importCatSnap(ct *cattrack.CatTrack) error {
 		// Attempt AWS S3 upload.
 		if params.AWS_BUCKETNAME == "" {
 			ct.Properties["imgS3_UPLOAD_SKIPPED"] = time.Now()
-			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "cat", c.CatID, "track", ct.StringPretty())
+			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "track", ct.StringPretty())
 		} else {
 			err = c.storeImageS3(ct.MustS3Key(), jpegBytes)
 			if err != nil {

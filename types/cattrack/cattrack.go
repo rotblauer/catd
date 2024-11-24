@@ -1,6 +1,7 @@
 package cattrack
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
@@ -12,31 +13,50 @@ import (
 
 type CatTrack geojson.Feature
 
+// NewCatTrack creates and initializes a GeoJSON feature given the required attributes.
+func NewCatTrack(geometry orb.Geometry) *CatTrack {
+	return &CatTrack{
+		Type:       "Feature",
+		Geometry:   geometry,
+		Properties: make(map[string]interface{}),
+	}
+}
+
+func (ct *CatTrack) MarshalJSON() ([]byte, error) {
+	f := geojson.Feature(*ct)
+	ff := &f
+	return ff.MarshalJSON()
+}
+
+func (ct *CatTrack) UnmarshalJSON(data []byte) error {
+	f := geojson.NewFeature(orb.Point{})
+	if err := json.Unmarshal(data, f); err != nil {
+		return err
+	}
+	*ct = *(*CatTrack)(f)
+	return nil
+}
+
+func NewCatTrackFromFeature(f *geojson.Feature) *CatTrack {
+	return (*CatTrack)(f)
+}
+
 func (ct *CatTrack) Copy() *CatTrack {
 	cp := &CatTrack{}
 	*cp = *ct
 	return cp
 }
 
+func (ct *CatTrack) IsEmpty() bool {
+	return ct == nil ||
+		ct.Geometry == nil ||
+		ct.Properties == nil ||
+		len(ct.Properties) == 0
+}
+
 func (ct *CatTrack) CatID() conceptual.CatID {
 	return conceptual.CatID(names.AliasOrSanitizedName(
 		ct.Properties.MustString("Name", names.UknownName)))
-}
-
-func (ct *CatTrack) MarshalJSON() ([]byte, error) {
-	if ct == nil {
-		return nil, fmt.Errorf("nil CatTrack")
-	}
-	f := (*geojson.Feature)(ct.Copy())
-	return f.MarshalJSON()
-}
-
-func (ct *CatTrack) UnmarshalJSON(data []byte) error {
-	if ct == nil {
-		return fmt.Errorf("nil CatTrack")
-	}
-	f := (*geojson.Feature)(ct)
-	return f.UnmarshalJSON(data)
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {
@@ -55,11 +75,14 @@ func (ct *CatTrack) Time() (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
+	if t.IsZero() {
+		return time.Time{}, fmt.Errorf("zero time")
+	}
 	return t, nil
 }
 
 func (ct *CatTrack) MustTime() time.Time {
-	t, err := ct.Copy().Time()
+	t, err := ct.Time()
 	if err != nil {
 		panic(err)
 	}
@@ -70,7 +93,7 @@ func (ct *CatTrack) Point() orb.Point {
 	return ct.Geometry.Bound().Center()
 }
 
-func Sanitize(ct *CatTrack) *CatTrack {
+func Sanitize(ct CatTrack) CatTrack {
 	// Mutate the ID to a zero-value constant in case the client decides to fill it.
 	// CatTracks does not use this ID for anything, and we want to avoid false-negative
 	// duplicates due to ID mismatches.
@@ -126,11 +149,8 @@ func (ct *CatTrack) Validate() error {
 	if _, ok := ct.Properties["UUID"].(string); !ok {
 		return fmt.Errorf("uuid not a string")
 	}
-	if ct.Properties["Time"] == nil {
-		return fmt.Errorf("nil time")
-	}
-	if _, ok := ct.Properties["Time"]; !ok {
-		return fmt.Errorf("missing field: Time")
+	if _, err := ct.Time(); err != nil {
+		return fmt.Errorf("invalid time: %v", err)
 	}
 	if v, ok := ct.Properties["Accuracy"]; !ok {
 		return fmt.Errorf("missing field: Accuracy")
@@ -145,7 +165,7 @@ func (ct *CatTrack) Validate() error {
 // then, in case of equivalence, by accuracy.
 // > cmp(a, b) should return a negative number when a < b,
 // > a positive number when a > b, and zero when a == b
-func SortFunc(a, b *CatTrack) int {
+func SortFunc(a, b CatTrack) int {
 	ti, err := a.Time()
 	if err != nil {
 		return 0
@@ -174,12 +194,14 @@ func SortFunc(a, b *CatTrack) int {
 
 func (ct *CatTrack) StringPretty() string {
 	pt := ct.Point()
-	return fmt.Sprintf("{cat=%s time=%v coords=%q accuracy=%.0f speed=%.2f}",
+	t := time.Time{}
+	t, _ = ct.Time()
+	return fmt.Sprintf("%s/%v/%q/%.0f/%.2f",
 		ct.CatID(),
-		ct.Properties["Time"],
+		t.In(time.Local).Format("2006-01-02 15:04:05"),
 		fmt.Sprintf("%v, %v", pt.Lat(), pt.Lon()),
-		ct.Properties["Accuracy"],
-		ct.Properties["Speed"],
+		ct.Properties.MustFloat64("Accuracy", -1),
+		ct.Properties.MustFloat64("Speed", -1),
 	)
 }
 
