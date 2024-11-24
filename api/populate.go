@@ -295,25 +295,28 @@ func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWri
 		//	}
 		//}, in)
 
-		//all := stream.Collect(ctx, in)
-		//for _, el := range all {
-		//	if err := enc.Encode(el); err != nil {
-		//		c.logger.Error("Failed to write", "error", err)
-		//		return
-		//	}
-		//}
-
-		batches := stream.Batch(ctx, nil, func(b []T) bool {
-			return len(b) == 1_000
-		}, in)
-		for batch := range batches {
-			for _, el := range batch {
-				if err := enc.Encode(el); err != nil {
-					c.logger.Error("Failed to write", "error", err)
-					return
-				}
+		all := stream.Collect(ctx, in)
+		for _, el := range all {
+			if err := enc.Encode(el); err != nil {
+				c.logger.Error("Failed to write", "error", err)
+				return
 			}
 		}
+
+		//batches := stream.Batch(ctx, nil, func(b []T) bool {
+		//	//return len(b) == 100 // panics every time
+		//	return len(b) == 10_000 // ok sometimes
+		//}, in)
+		//for batch := range batches {
+		//	batch := batch
+		//	for _, el := range batch {
+		//		el := el
+		//		if err := enc.Encode(el); err != nil {
+		//			c.logger.Error("Failed to write", "error", err)
+		//			return
+		//		}
+		//	}
+		//}
 	}()
 }
 

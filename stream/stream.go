@@ -170,6 +170,7 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 
 		// Range, blocking until 'in' is closed.
 		for element := range in {
+			element := element
 			if predicate != nil && predicate(element) {
 				flush()
 			}

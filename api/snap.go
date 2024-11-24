@@ -73,7 +73,7 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 // If any transformation operations fail, the original track remains unmodified.
 func (c *Cat) handleSnap(ct cattrack.CatTrack) (cattrack.CatTrack, error) {
 
-	if err := c.State.ValidateSnapLocalStore(&ct); err == nil {
+	if err := c.State.ValidateSnapLocalStore(ct); err == nil {
 		c.logger.Warn("Snap already exists", "cat", c.CatID, "track", ct.StringPretty())
 		return ct, nil
 	}
@@ -82,49 +82,48 @@ func (c *Cat) handleSnap(ct cattrack.CatTrack) (cattrack.CatTrack, error) {
 		return ct, err
 	}
 
-	// Make a copy for safe in-place transformation.
-	cp := ct.Copy()
-
-	if err := c.importCatSnap(cp); err != nil {
+	scp, err := c.importCatSnap(ct)
+	if err != nil {
 		c.logger.Error("Failed to import snap", "error", err)
-		return ct, err
+		return scp, err
 	}
 
 	// All errors nil, we can now modify the original track:
-	return *cp, nil
+	return scp, nil
 }
 
-func (c *Cat) importCatSnap(ct *cattrack.CatTrack) error {
+func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, err error) {
 	c.logger.Info("📷 Importing snap", "track", ct.StringPretty())
-
+	imported = ct
 	if ct.HasRawB64Image() {
 		jpegBytes, err := common.DecodeB64ToJPGBytes(ct.Properties.MustString("imgB64"))
 		if err != nil {
-			return err
+			return ct, err
 		}
-
-		ct.Properties["imgS3"] = fmt.Sprintf("%s/%s",
-			params.AWS_BUCKETNAME, ct.MustS3Key())
 
 		// Attempt AWS S3 upload.
 		if params.AWS_BUCKETNAME == "" {
-			ct.Properties["imgS3_UPLOAD_SKIPPED"] = time.Now()
+			imported.Properties["imgS3_UPLOAD_SKIPPED"] = time.Now()
 			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "track", ct.StringPretty())
+
 		} else {
 			err = c.storeImageS3(ct.MustS3Key(), jpegBytes)
 			if err != nil {
-				ct.Properties["imgS3_UPLOAD_FAILED"] = time.Now()
+				imported.Properties["imgS3_UPLOAD_FAILED"] = time.Now()
 			}
+
+			imported.Properties["imgS3"] = fmt.Sprintf("%s/%s",
+				params.AWS_BUCKETNAME, ct.MustS3Key())
 		}
 
-		err = c.State.StoreSnapLocally(ct, jpegBytes)
+		err = c.State.StoreSnapLocally(imported, jpegBytes)
 		if err != nil {
 			c.logger.Error("Failed to store snap", "error", err)
-			return err
+			return imported, err
 		}
 
-		delete(ct.Properties, "imgB64")
-		return nil
+		delete(imported.Properties, "imgB64")
+		return imported, nil
 	}
 
 	if !ct.HasS3URL() {
@@ -132,18 +131,18 @@ func (c *Cat) importCatSnap(ct *cattrack.CatTrack) error {
 	}
 
 	// If the snap is already in S3, we don't need to do anything.
-	if err := c.State.ValidateSnapLocalStore(ct); err == nil {
-		return nil
+	if err := c.State.ValidateSnapLocalStore(imported); err == nil {
+		return imported, nil
 	}
 
 	// Store KV before trying download.
-	if err := c.State.StoreSnapLocally(ct, nil); err != nil {
-		return err
+	if err := c.State.StoreSnapLocally(imported, nil); err != nil {
+		return imported, err
 	}
 
 	if params.AWS_BUCKETNAME == "" {
 		c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 download", "track", ct.StringPretty())
-		return nil
+		return imported, nil
 	}
 
 	// If the snap is in S3 but not in the local state, we need to download it.
@@ -176,7 +175,7 @@ func (c *Cat) importCatSnap(ct *cattrack.CatTrack) error {
 			"elapsed", time.Since(start).Round(time.Millisecond))
 	}()
 
-	return nil
+	return imported, nil
 }
 
 func (c *Cat) storeImageS3(key string, jpegBytes []byte) (err error) {
