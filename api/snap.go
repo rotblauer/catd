@@ -20,7 +20,6 @@ import (
 )
 
 // StoreSnaps returns a channel of potentially-transformed CatTracks and a channel of errors.
-// If the incoming cattracks are not snaps, they are forwarded to the output channel.
 // Incoming cattrack Snaps are mutated/transformed -- stripping Base64 data, adding storage URLs --
 // and likewise forwarded to the output. Output is unbuffered and blocking, requires a consumer.
 // Remember: Snaps for which the handler errors ARE ALSO forwarded to the output channel.
@@ -49,15 +48,16 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 
 		for track := range in {
 			track := track
-			if !track.IsSnap() {
-				out <- track
-				continue
-			}
 			handled, err := c.handleSnap(track)
 			if err != nil {
 				errs <- err
 			}
 			out <- handled
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 		}
 	}()
 
@@ -69,48 +69,44 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 // _iff any transformation operations are successful_.
 // If any transformation operations fail, the original track remains unmodified.
 func (c *Cat) handleSnap(ct cattrack.CatTrack) (cattrack.CatTrack, error) {
-
-	if err := c.State.ValidateSnapLocalStore(ct); err == nil {
-		c.logger.Warn("Snap already exists", "cat", c.CatID, "track", ct.StringPretty())
-		return ct, nil
-	}
-
 	if err := ct.ValidateSnap(); err != nil {
 		return ct, err
 	}
-
+	if err := c.State.ValidateSnapLocalStore(ct); err == nil {
+		c.logger.Warn("Snap already exists", "track", ct.StringPretty())
+		return ct, nil
+	}
 	scp, err := c.importCatSnap(ct)
 	if err != nil {
 		c.logger.Error("Failed to import snap", "error", err)
 		return scp, err
 	}
-
 	// All errors nil, we can now modify the original track:
 	return scp, nil
 }
 
 func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, err error) {
-	c.logger.Info("📷 Importing snap", "track", ct.StringPretty())
 	imported = ct
-	if ct.HasRawB64Image() {
-		jpegBytes, err := common.DecodeB64ToJPGBytes(ct.Properties.MustString("imgB64"))
+	c.logger.Info("📷 Importing snap", "track", imported.StringPretty())
+	if imported.HasRawB64Image() {
+		jpegBytes, err := common.DecodeB64ToJPGBytes(imported.Properties.MustString("imgB64"))
 		if err != nil {
-			return ct, err
+			return imported, err
 		}
 
 		// Attempt AWS S3 upload.
 		if params.AWS_BUCKETNAME == "" {
 			imported.Properties["imgS3_UPLOAD_SKIPPED"] = time.Now()
-			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "track", ct.StringPretty())
+			c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 upload", "track", imported.StringPretty())
 
 		} else {
-			err = c.storeImageS3(ct.MustS3Key(), jpegBytes)
+			err = c.storeImageS3(imported.MustS3Key(), jpegBytes)
 			if err != nil {
 				imported.Properties["imgS3_UPLOAD_FAILED"] = time.Now()
 			}
 
 			imported.Properties["imgS3"] = fmt.Sprintf("%s/%s",
-				params.AWS_BUCKETNAME, ct.MustS3Key())
+				params.AWS_BUCKETNAME, imported.MustS3Key())
 		}
 
 		err = c.State.StoreSnapLocally(imported, jpegBytes)
@@ -123,7 +119,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 		return imported, nil
 	}
 
-	if !ct.HasS3URL() {
+	if !imported.HasS3URL() {
 		panic("impossible")
 	}
 
@@ -138,7 +134,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 	}
 
 	if params.AWS_BUCKETNAME == "" {
-		c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 download", "track", ct.StringPretty())
+		c.logger.Warn("AWS_BUCKETNAME not set, skipping S3 download", "track", imported.StringPretty())
 		return imported, nil
 	}
 
@@ -148,9 +144,9 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 	// But if we DON'T await it, the downloads can get killed and result in corrupted files.
 	// FIXME: Write a 'RecoverSnaps' operation that a daemon can use to fix up cats and their snaps.
 	c.State.Waiting.Add(1)
-	go func() {
+	go func(snap cattrack.CatTrack) {
 		defer c.State.Waiting.Done()
-		target := c.State.SnapImagePath(ct)
+		target := c.State.SnapImagePath(snap)
 		if err := os.MkdirAll(filepath.Dir(target), 0770); err != nil {
 			return
 		}
@@ -161,7 +157,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 		}
 		defer f.Close()
 		start := time.Now()
-		err = c.downloadImageS3(f, params.AWS_BUCKETNAME, ct.MustS3Key())
+		err = c.downloadImageS3(f, params.AWS_BUCKETNAME, snap.MustS3Key())
 		if err != nil {
 			c.logger.Error("Failed to download snap", "error", err)
 		}
@@ -170,7 +166,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 		}
 		c.logger.Info("↧ Downloaded snap", "to", target,
 			"elapsed", time.Since(start).Round(time.Millisecond))
-	}()
+	}(imported)
 
 	return imported, nil
 }
