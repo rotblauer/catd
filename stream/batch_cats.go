@@ -78,6 +78,8 @@ func restoreReadCount(lastTrackStorePath string) (int64, error) {
 	return strconv.ParseInt(string(data), 10, 64)
 }
 
+// ScanLinesBatchingCats returns a buffered channel (of 'workers' size)
+// of same-cat track line batches.
 func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int, skip int64) (<-chan [][]byte, chan error) {
 	if workers == 0 {
 		panic("cats too fast (refusing to send on unbuffered channel)")

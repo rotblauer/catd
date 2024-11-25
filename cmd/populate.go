@@ -260,16 +260,19 @@ Missoula, Montana
 				}
 				handleLinesBatch(lines)
 
-			case err := <-errCh:
+			case err, open := <-errCh:
 				if err == io.EOF {
-					log.Println("EOF")
+					slog.Info("CatScanner EOF")
 					break readLoop
 				}
-				if err == nil {
-					log.Println("read loop received nil error... weird")
+				if err != nil {
+					slog.Error("CatScanner errored", "error", err)
+					os.Exit(1)
+				}
+				if !open {
+					slog.Warn("CatScanner closed err channel")
 					break readLoop
 				}
-				log.Fatal(err)
 			}
 		}
 

@@ -6,20 +6,24 @@ import (
 	"strings"
 )
 
+// TesterCatName is the name fake cats use, for testing.
+const TesterCatName = "tester"
+
 // AliasesToMatchers is a map of cat aliases to regular expressions, used to match cat names.
 // It is initialized in the params package.
 var AliasesToMatchers = map[string]string{
-	"rye":      `(?i)(^Rye.*|^Kitty.*|^jl$)`,
-	"ia":       `(?i)(.*Papa.*|^P2$|^Isaac.*|.*moto.*|^iha$|^ubp52$)`,
-	"jr":       `(?i)(^Big.*Ma.*)`,
-	"kd":       `(?i)^Kayleigh.*`,
-	"kk":       `(?i)(^KK.*|^kek$)`,
-	"rj":       `(?i)(^Bob.*)`,
-	"pr":       `(?i)(^Pam.*|^Rathbone.*)`, // ^iPhone$ ???
-	"chishiki": `(?i)(^chishiki.*)`,
-	"mat":      `(?i)(^Twenty7.*)`,
-	"ric":      `(?i)(^Ric|.*A3_Pixel_XL.*|.*marlin-Pixel-222d.*)`,
-	"jlc":      `(?i)(.*Carlomag.*|^JLC$|^jlc$)`,
+	"rye":         `(?i)(^Rye.*|^Kitty.*|^jl$)`,
+	"ia":          `(?i)(.*Papa.*|^P2$|^Isaac.*|.*moto.*|^iha$|^ubp52$)`,
+	"jr":          `(?i)(^Big.*Ma.*)`,
+	"kd":          `(?i)^Kayleigh.*`,
+	"kk":          `(?i)(^KK.*|^kek$)`,
+	"rj":          `(?i)(^Bob.*)`,
+	"pr":          `(?i)(^Pam.*|^Rathbone.*)`, // ^iPhone$ ???
+	"chishiki":    `(?i)(^chishiki.*)`,
+	"mat":         `(?i)(^Twenty7.*)`,
+	"ric":         `(?i)(^Ric|.*A3_Pixel_XL.*|.*marlin-Pixel-222d.*)`,
+	"jlc":         `(?i)(.*Carlomag.*|^JLC$|^jlc$)`,
+	TesterCatName: `(?)(^tester$)`,
 }
 
 var MatchersToAliases = func() map[string]string {

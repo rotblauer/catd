@@ -1,3 +1,71 @@
+Track batch optimization. (?)
+
+`catd populate` how to synchronise/serialize/deserialize per-cat.
+Faster cat hats. Collapse cat batches? (but CatActing edges?).
+(go Batch.x;go batch.y;go batch.z).then(collapse(batch.*)) pattern 
+worked pretty well for first try cat sorting hat. 
+
+Cats tdata store CAT/YYYY/MM. (?) Might help with development.
+
+Tiler postponed init whole state after `catd populate`. 
+Walk cat dirs? Not if different machine. 
+Tiler RPC HTTP streaming.
+
+Cat scanner holds un-closed batches in memory until EOF flush.
+Should flush periodically (chishiki no more points after 2020.)
+
+Cat error handling. Especially `Cat.Populate`.
+Return first?
+
+Trip detector algos should fan-out/fan-in (worker merger).
+
+Cat last known. Last lap. Last nap. - Latest state (recorded and inferred).
+Log cat laps!
+
+S2.Unique indexing. 
+On-Dupe(level)(track, dupething). On-New(level)(track, newthing()).
+Needs to be callable from zero-value cacher as well as stateful storer. 
+```
+type S2LevelTracker interface {
+  OnDupe(stored, ct) (store CatTrack)
+  OnNew(ct) (store CatTrack) 
+}
+type S2Eventer struct {
+  Level00Handler S2LevelTracker
+  Level01Handler S2LevelTracker
+  Level03Handler S2LevelTracker
+  ...
+  Level30Handler S2LevelTracker
+}
+or
+type S2Eventer []S2LevelTracker
+  -> S2Eventer[CellLevel].OnDupe(ct, stored)
+```
+
+Trip detection actually cat act detection. Duh.
+```
+Cat.Acting.Add(track)
+[
+Acting.RestoreState()
+Acting.Add(track)
+Acting.State()
+Acting.StoreState()
+Acting.On(Act.Started(ActFilter{}))
+Acting.On(Act.Completed(ActFilter{Lap.Duration > 120}))
+- ie. store lap, upload Strava, ...
+]
+Cat.Acting.State().Activities() => 
+  {Act: Confidence}
+  {Act: Confidence}
+  {Act: Confidence}
+```
+Allow nap-consolidator to grow/shrink eligible area (ie re teleport results when Stationary).
+Compare ct.point to nap.edge (nap.centroid:radius or nap.bbox:nearest).
+
+
+
+---
+
 `TripDetector`. Just realized my stupidity.
 Shoulda made an `ActivityFixer` stater. Then split on activities.
 Already know what Moving is. Stationary is stationary.
