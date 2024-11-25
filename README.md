@@ -18,7 +18,13 @@ Stores all its own data for reasons.
 
 ### Cat Commanders
 
-`populate` - Import tracks from a gzip file.
+```
+_cuff 11-24_16:53:28 ~/dev/rotblauer/catd master *
+zcat ~/tdata/master.json.gz | wc -l
+245803174
+```
+
+`catd populate` - Import tracks from a gzip file.
 
 ```sh
 time zcat ~/tdata/master.json.gz  \
@@ -29,7 +35,7 @@ time zcat ~/tdata/master.json.gz  \
   --sort true
 ``` 
 
-`serve` - Start the HTTP API web server.
+`catd serve` - Start the HTTP API web server.
 
 ### HTTP API
 

@@ -7,7 +7,7 @@ rm -rf /tmp/catd*
 rm -f /tmp/catscann
 
 review() {
-  for i in 100; do
+  for i in 100_000; do
     echo
     echo "- batch=${i} ---";
     shopt -s globstar
@@ -20,6 +20,9 @@ ${l} ${f}"
     echo "${out}" | sort -k1 -n | tail -n 5
   done
 }
+
+# BEWARE. Dev only.
+# ctrl-cing the tee'd catd command will not allow catd to shutdown gracefully.
 run() {
   set -e
 
@@ -28,18 +31,19 @@ run() {
   local source_gz="master.json.gz"
 
   go install . &&\
-   for i in 100; do
+   for i in 100_000; do
     rm -f /tmp/catscann;
     zcat ~/tdata/"${source_gz}" \
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \
       --workers 10 \
-      --sort true \
-      --skip 1_000_000 \
-    |& tee run.out; done
+      --sort true
+    done
 
-  review
+#    |& tee run.out; done
+      # --skip 1_000_000 \
+#  review
 }
 run
 

@@ -32,23 +32,24 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		if err := c.State.Close(); err != nil {
 			c.logger.Error("Failed to close cat state", "error", err)
 		} else {
-			c.logger.Info("Closed cat state")
+			c.logger.Debug("Closed cat state")
 		}
-		c.logger.Info("Populate done", "elapsed", time.Since(started).Round(time.Millisecond))
+		c.logger.Info("Populate done",
+			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
 	validated := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		if ct.IsEmpty() {
-			c.logger.Warn("Invalid track, empty")
+			c.logger.Error("Invalid track: track is empty")
 			return false
 		}
 		if err := ct.Validate(); err != nil {
-			c.logger.Warn("Invalid track", "error", err)
+			c.logger.Error("Invalid track", "error", err)
 			return false
 		}
 		checkCatID := ct.CatID()
 		if c.CatID != checkCatID {
-			c.logger.Warn("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
+			c.logger.Error("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
 			return false
 		}
 		return true
@@ -56,7 +57,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
 
-	// Sorting is obviously a little slower than not sorting.
+	// Sorting is blocking. (!)
 	pipedLast := sanitized
 	if sort {
 		// Catch is the new batch.
@@ -72,7 +73,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	master, myCat := stream.Tee(ctx, deduped)
 
 	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
-	// Thread safe because gz file locks.
+	// Cat/thread safe because gz file locks.
 	// Cat pushes will be stored in cat push/populate-batches.
 	gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
 		NamedGZWriter("master.geojson.gz", nil)
@@ -80,17 +81,20 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return err
 	}
-	sinkToFlatJSONGZFile(ctx, c, gzftwMaster, master)
+	sinkStreamToJSONGZWriter(ctx, c, gzftwMaster, master)
 
-	// StoreTracks for each cat.
+	// StoreTracks for each cat in catid/track.geojson.gz.
 	// This gets its own special cat-method for now because
-	// cat/track storage is very important and there might be
-	// events or something else cat-related to do.
-	// This method will block on her error handling (storeErrs).
+	// Populate blocks on its error handling.
+	// These errors are particularly important.
 	stored, storeErrs := c.StoreTracks(ctx, myCat)
 
-	passSnaps, pass := stream.Tee(ctx, stored)
-	sinkLastTracks, sendTracks := stream.Tee(ctx, pass)
+	passSnaps, passLast := stream.Tee(ctx, stored)
+
+	// Sink this batch of tracks to cat's last_tracks store.
+	// Opens store file with flag OS_TRUNC.
+	// This batch also headed toward the tiler RPC. (TODO: Tiler streaming.)
+	sinkLastTracks, sendTracks := stream.Tee(ctx, passLast)
 
 	truncate := flat.DefaultGZFileWriterConfig()
 	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
@@ -99,8 +103,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return err
 	}
-	sinkToFlatJSONGZFile(ctx, c, gzftwLast, sinkLastTracks)
-	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkStreamToJSONGZWriter(ctx, c, gzftwLast, sinkLastTracks)
+	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tracks",
@@ -109,6 +113,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		TippeConfig: params.TippeConfigNameTracks,
 	}, sendTracks)
 
+	//// Fork stream into snaps/no-snaps.
 	yesSnaps := make(chan cattrack.CatTrack)
 	noSnaps := make(chan cattrack.CatTrack)
 	go func() {
@@ -124,7 +129,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 	}()
 
-	//// Fork stream into snaps/no-snaps.
 	//ifSnaps, ifNoSnaps := stream.Tee(ctx, passSnaps)
 	//yesSnaps := stream.Filter(ctx, func(c cattrack.CatTrack) bool {
 	//	return c.IsSnap()
@@ -132,17 +136,26 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//noSnaps := stream.Filter(ctx, func(c cattrack.CatTrack) bool {
 	//	return !c.IsSnap()
 	//}, ifNoSnaps)
-	//
+
+	//go stream.Sink(ctx, func(ct cattrack.CatTrack) {
+	//	if ct.IsSnap() {
+	//		yesSnaps <- ct
+	//	} else {
+	//		noSnaps <- ct
+	//	}
+	//}, passSnaps)
+
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
-	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
+	storeErrs = stream.Merge(ctx, storeErrs, snapErrs) // rly? TODO... more of?
+
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter("snaps.geojson.gz", nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return err
 	}
-	sinkToFlatJSONGZFile(ctx, c, gzftwSnaps, sinkSnaps)
-	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps)
+	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "snaps",
@@ -183,6 +196,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
+	// TODO Send incomplete lap on close. This will be nice to have.
 	completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
 		duration := ct.Properties["Duration"].(float64)
@@ -207,8 +221,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
-	sinkToFlatJSONGZFile(ctx, c, wr, sinkLaps)
-	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
+	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "laps",
@@ -232,8 +246,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
-	sinkToFlatJSONGZFile(ctx, c, wr, sinkNaps)
-	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
+	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "naps",
@@ -250,8 +264,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
 	}
-	sinkToFlatJSONGZFile(ctx, c, wr, tripDetectedSink)
-	sendToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
+	sinkStreamToJSONGZWriter(ctx, c, wr, tripDetectedSink)
+	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
 		SourceSchema: tiler.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tripdetected",
@@ -300,7 +314,7 @@ func pipeThroughFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFi
 	return out
 }
 
-func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
@@ -348,7 +362,7 @@ func sinkToFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWri
 	}()
 }
 
-func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
+func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
