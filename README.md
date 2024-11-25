@@ -13,8 +13,8 @@ Trip Detection! (Whole can of worms.)
 Streams! (...and sorting).
 Streams structure (concurrent) pipelines.
 Then there's tiling. Thank goodness (and author/maintainer Rachel) for `tippecanoe`.
-Tiling daemon is own thing. Receives HTTP RPC. 
-Stores all its own data for reasons.
+Tiling daemon is own thing. Listens HTTP RPC. 
+Stores all its own data.
 
 ### Cat Commanders
 
@@ -28,7 +28,8 @@ zcat ~/tdata/master.json.gz | wc -l
 
 ```sh
 time zcat ~/tdata/master.json.gz  \
-| catd import \
+| catd populate \
+  --datadir /tmp/catd100_000 \
   --verbosity 0 \
   --batch-size 100_000 \
   --workers 12 \

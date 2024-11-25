@@ -1,3 +1,15 @@
+`TripDetector`. Just realized my stupidity.
+Shoulda made an `ActivityFixer` stater. Then split on activities.
+Already know what Moving is. Stationary is stationary.
+Naps and laps. Ha.
+Slow too.
+Need to join/smooth activities (bad/doubtful client reports).
+Is this what the TripDetector does?
+Should be fan-in merger.
+
+---
+
+mbtileserver --port 3001 --cors '*' -d /tmp/catd100_000/tiled/tiles/ --verbose --enable-fs-watch
 
 cattracks-explorer
 ```
