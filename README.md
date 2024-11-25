@@ -40,3 +40,120 @@ time zcat ~/tdata/master.json.gz  \
 ### HTTP API
 
 - `POST /populate` - Push your tracks here.
+
+---
+
+```
+/tmp/catd100_000
+├── cats
+│  ├── chishiki
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  ├── ia
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  ├── iPhone
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  ├── jr
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  ├── kd
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  ├── mat
+│  │  ├── laps.geojson.gz
+│  │  ├── last_tracks.geojson.gz
+│  │  ├── naps.geojson.gz
+│  │  ├── s2.db
+│  │  ├── s2_level-05.geojson.gz
+│  │  ├── s2_level-08.geojson.gz
+│  │  ├── s2_level-13.geojson.gz
+│  │  ├── s2_level-16.geojson.gz
+│  │  ├── s2_level-23.geojson.gz
+│  │  ├── snaps.geojson.gz
+│  │  ├── state.db
+│  │  ├── tracks.geojson.gz
+│  │  └── tripdetected.geojson.gz
+│  └── rye
+│      ├── laps.geojson.gz
+│      ├── last_tracks.geojson.gz
+│      ├── naps.geojson.gz
+│      ├── s2.db
+│      ├── s2_level-05.geojson.gz
+│      ├── s2_level-08.geojson.gz
+│      ├── s2_level-13.geojson.gz
+│      ├── s2_level-16.geojson.gz
+│      ├── s2_level-23.geojson.gz
+│      ├── snaps.geojson.gz
+│      ├── state.db
+│      ├── tracks.geojson.gz
+│      └── tripdetected.geojson.gz
+├── master.geojson.gz
+└── tiled
+    └── source
+        ├── chishiki
+        ├── ia
+        ├── iPhone
+        ├── jr
+        ├── kd
+        ├── mat
+        └── rye
+
+17 directories, 92 files
+```
