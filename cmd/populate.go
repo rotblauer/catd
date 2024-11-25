@@ -123,9 +123,10 @@ Missoula, Montana
 		setDefaultSlog(cmd, args)
 
 		ctx, ctxCanceler := context.WithCancel(context.Background())
-		interrupt := make(chan os.Signal)
+		interrupt := make(chan os.Signal, 2)
 		signal.Notify(interrupt,
-			os.Interrupt, os.Kill, syscall.SIGTERM, syscall.SIGQUIT,
+			os.Interrupt, os.Kill,
+			syscall.SIGTERM, syscall.SIGQUIT,
 		)
 		defer func() {
 			slog.Info("Import done")
@@ -230,11 +231,15 @@ Missoula, Montana
 			cat := names.AliasOrSanitizedName(gjson.GetBytes(lines[0], "properties.Name").String())
 			workersWG.Add(1)
 			receivedWorkN.Add(1)
-			workCh <- workT{n: receivedWorkN.Load(), name: cat, lines: lines} //
+			workCh <- workT{
+				n:     receivedWorkN.Load(),
+				name:  cat,
+				lines: lines,
+			}
 		}
 
-		quit := make(chan struct{})
-		linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
+		quitScanner := make(chan struct{}, 1)
+		linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quitScanner, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -242,10 +247,11 @@ Missoula, Montana
 				case sig := <-interrupt:
 					slog.Warn("Received signal", "signal", sig, "i", i)
 					if i == 0 {
-						quit <- struct{}{}
+						quitScanner <- struct{}{}
 
 					} else {
-						log.Fatalln("Force exit")
+						slog.Warn("Force exit")
+						os.Exit(1)
 					}
 				}
 			}
@@ -255,9 +261,6 @@ Missoula, Montana
 		for {
 			select {
 			case lines := <-linesCh:
-				if len(linesCh) > optWorkersN {
-					panic("chan not buffered")
-				}
 				handleLinesBatch(lines)
 
 			case err, open := <-errCh:

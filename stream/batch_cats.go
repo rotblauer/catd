@@ -192,7 +192,6 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			select {
 			case <-quit:
 				slog.Warn("Reader received quit")
-				tlogger.done()
 				break readLoop
 			default:
 			}

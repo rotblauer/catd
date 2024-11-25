@@ -30,27 +30,16 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		}
 	}()
 
-	//subscribeAndSendUniques := func(level catS2.CellLevel) {
-	//
-	//}
-
-	for _, level := range params.S2DefaultCellLevels {
-		// Running only on levels 13-16.
-		// This is a good range for most use cases.
-		// Lower levels (bigger polygons) start taking for-ev-er to tile with tippecanoe.
-		if level < catS2.CellLevel13 || level > catS2.CellLevel16 {
-			continue
-		}
-
+	subscribeAndSendUniques := func(level catS2.CellLevel) {
 		levelFeed, err := cellIndexer.FeedOfUniquesForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 			return
 		}
 
-		uniqs := make(chan []*cattrack.CatTrack)
-		defer close(uniqs)
-		sub := levelFeed.Subscribe(uniqs)
+		freshies := make(chan []*cattrack.CatTrack)
+		defer close(freshies)
+		sub := levelFeed.Subscribe(freshies)
 		defer sub.Unsubscribe()
 
 		sendBatchToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
@@ -60,9 +49,9 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 				LayerName:  fmt.Sprintf("level-%02d-polygons", level),
 			},
 			TippeConfig: params.TippeConfigNameTracks,
-		}, stream.Transform(ctx, func(originals []*cattrack.CatTrack) []*cattrack.CatTrack {
-			outs := make([]*cattrack.CatTrack, 0, len(originals))
-			for _, f := range originals {
+		}, stream.Transform(ctx, func(freshPowderTracks []*cattrack.CatTrack) []*cattrack.CatTrack {
+			outs := make([]*cattrack.CatTrack, 0, len(freshPowderTracks))
+			for _, f := range freshPowderTracks {
 				cp := &cattrack.CatTrack{}
 				*cp = *f
 				pt := cp.Point()
@@ -82,7 +71,23 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 				outs = append(outs, cp)
 			}
 			return outs
-		}, uniqs))
+		}, freshies))
+	}
+
+	for _, level := range params.S2DefaultCellLevels {
+		// Running only on levels 13-16.
+		// This is a good range for most use cases.
+		// Lower levels (bigger polygons) start taking for-ev-er to tile with tippecanoe.
+		if level < catS2.CellLevel13 || level > catS2.CellLevel16 {
+			continue
+		}
+		// These are better served as GeoJSON.
+		// Tippecanoe sucks at large polygons.
+		// Better to include Cell/BBox/Whatever else in properties
+		// and have the client do the drawings.
+		if false {
+			subscribeAndSendUniques(level)
+		}
 	}
 
 	// Blocking.
