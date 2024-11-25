@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/daemon/tiled"
@@ -152,6 +153,18 @@ Missoula, Montana
 				tiledConfig = d.Config
 			}
 			cat := api.NewCat(conceptual.CatID(w.name), tiledConfig)
+
+			// Use a temporary cat flat base path (dir).
+			// This will be non-blocking, but will init empty state for each batch;
+			// tripdetector, s2indexer will have tabula rasas.
+			// There will be spuriously-broken laps and naps at every batch edge.
+			// Then need to collapse tmp cat-dirs into a/the canonical one;
+			// Depend on lexical ordering for chrono.
+			// tracks.geojson.gzs append.
+			// cat/state.dbs use last one... (but will break/incomplete snaps KV!).
+			// Snapper needs to mv .json and .jpeg files. Which it can do; no conflicts in path naming.
+			firstTrackTime := gjson.GetBytes(w.lines[0], "properties.Time").Time()
+			cat.State.Flat = flat.NewFlatWithRoot(cat.State.Flat.Path() + fmt.Sprintf(".%011d", firstTrackTime.Unix()))
 
 			slog.Info("Populating",
 				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
@@ -313,16 +326,16 @@ For best results, use a value approximately equivalent to the total number cats.
 	pFlags.Int64Var(&optSkipOverrideN, "skip", 0,
 		`Skip n lines before the cat scanner scans. (Easier than zcat | tail | head.)`)
 
-	pFlags.DurationVar(&optTilingPendingExpiry, "tiling.pending-after", 100*time.Hour,
+	pFlags.BoolVar(&optTilingOff, "tiled.off", false,
+		`Disable tiling daemon (and cat tiling requests).`)
+
+	pFlags.DurationVar(&optTilingPendingExpiry, "tiled.pending-after", 100*time.Hour,
 		`Pending expiry interval for RequestTiling requests, aka "debounce" time.
 A long interval will cause pending tiling requests
 to (optionally) wait til daemon shutdown sequence.`)
 
-	pFlags.BoolVar(&optTilingAwaitPending, "tiling.await-pending", false,
+	pFlags.BoolVar(&optTilingAwaitPending, "tiled.await-pending", true,
 		`Await pending tiling requests on shutdown.`)
-
-	pFlags.BoolVar(&optTilingOff, "tiling.off", false,
-		`Disable tiling daemon (and cat tiling requests).`)
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
