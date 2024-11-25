@@ -308,15 +308,21 @@ func (a *PushFeaturesRequestArgs) validate() error {
 }
 
 func (d *Daemon) writeGZ(source string, data []byte) error {
-	wr, err := flat.NewFlatGZWriter(source, flat.DefaultGZFileWriterConfig())
+	gzftw, err := flat.NewFlatGZWriter(source, flat.DefaultGZFileWriterConfig())
 	if err != nil {
 		return err
 	}
+	defer gzftw.Close()
+
+	wr := gzftw.Writer()
 	defer wr.Close()
+	defer wr.Flush()
 
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
 	dec := json.NewDecoder(bytes.NewReader(data))
+	enc := json.NewEncoder(wr)
+
 	for {
 		var v interface{}
 		if err := dec.Decode(&v); err != nil {
@@ -325,7 +331,7 @@ func (d *Daemon) writeGZ(source string, data []byte) error {
 			}
 			return err
 		}
-		if err := json.NewEncoder(wr.Writer()).Encode(v); err != nil {
+		if err := enc.Encode(v); err != nil {
 			return err
 		}
 	}
@@ -395,7 +401,10 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 
 	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 
-	for _, version := range []TileSourceVersion{SourceVersionCanonical, SourceVersionEdge} {
+	for _, version := range []TileSourceVersion{
+		SourceVersionCanonical,
+		SourceVersionEdge,
+	} {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
 		if err != nil {
 			return fmt.Errorf("failed to get source path: %w", err)
@@ -405,7 +414,7 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		// One edge file is written per request.
 		// This keeps the data atomic.
 		if version == SourceVersionEdge {
-			source += fmt.Sprintf(".%014d", time.Now().UnixNano())
+			source = fmt.Sprintf("%s.%014d", source, time.Now().UnixNano())
 		}
 
 		// Ensure dirs.
@@ -421,6 +430,8 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		d.logger.Debug("Wrote source", "source", source,
 			"size", humanize.Bytes(uint64(len(args.JSONBytes))))
 	}
+
+	args.JSONBytes = nil
 
 	// Request edge tiling. Will get debounced.
 	res := &TilingResponse{

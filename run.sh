@@ -37,7 +37,7 @@ run() {
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \
-      --workers 3 \
+      --workers 6 \
       --sort true \
       --tiling.off
     done
