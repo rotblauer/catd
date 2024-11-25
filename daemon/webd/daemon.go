@@ -26,8 +26,8 @@ func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 	return &WebDaemon{
 		Config: config,
 
-		feedPopulated: event.FeedOf[[]*cattrack.CatTrack]{},
 		logger:        slog.With("d", "web"),
+		feedPopulated: event.FeedOf[[]*cattrack.CatTrack]{},
 	}
 }
 

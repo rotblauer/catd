@@ -12,7 +12,9 @@ import (
 
 type websocketAction string
 
-var websocketActionPopulate websocketAction = "populate"
+var (
+	websocketActionPopulate websocketAction = "populate"
+)
 
 type broadcats struct {
 	Action   websocketAction      `json:"action"`
