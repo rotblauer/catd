@@ -30,11 +30,11 @@ import (
 type TileDaemon struct {
 	Config *params.TileDaemonConfig
 
-	// flat is the flat file storage (root) for the tiler daemon.
+	// flat is the flat file storage (root) for the tiling daemon.
 	// Normally it will be nested in the default app datadir (see params.go).
-	// It is necessary for the tiler daemon to maintain its own data store
+	// It is necessary for the tiling daemon to maintain its own data store
 	// of source data along with the resulting .mbtiles files.
-	// This is because the tiler daemon is a separate process(es) from the main app
+	// This is because the tiling daemon is a separate process(es) from the main app
 	// and should not compete on file locks with the main app, which could quickly
 	// result in corrupted data.
 	flat            *flat.Flat
@@ -59,7 +59,7 @@ func NewDaemon(config *params.TileDaemonConfig) *TileDaemon {
 	return &TileDaemon{
 		Config:          config,
 		flat:            flat.NewFlatWithRoot(config.RootDir),
-		logger:          slog.With("daemon", "tiled"),
+		logger:          slog.With("d", "tile"),
 		tilingRunningM:  sync.Map{},
 		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.TilingPendingExpiry)),
 		tilingEvents:    &event.FeedOf[TilingResponse]{},
@@ -72,12 +72,12 @@ func (d *TileDaemon) Wait() {
 	<-d.done
 }
 
-// Start starts the tiler daemon and does not block.
+// Start starts the tiling daemon and does not block.
 func (d *TileDaemon) Start() error {
 	server := rpc.NewServer()
 
 	if err := server.Register(d); err != nil {
-		slog.Error("Failed to register tiler daemon", "error", err)
+		slog.Error("Failed to register tiling daemon", "error", err)
 		return err
 	}
 
@@ -92,7 +92,8 @@ func (d *TileDaemon) Start() error {
 			d.logger.Error("TileDaemon RPC HTTP serve error", "error", err)
 			os.Exit(1)
 		}
-		d.logger.Info("TilerDaemon RPC HTTP server stopped")
+		d.logger.Info("TileDaemon RPC HTTP server stopped")
+		os.Exit(0)
 	}()
 
 	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
@@ -112,7 +113,7 @@ func (d *TileDaemon) Start() error {
 			d.done <- struct{}{}
 			close(d.done)
 		}()
-		d.logger.Info("TilerDaemon RPC HTTP server started",
+		d.logger.Info("TileDaemon RPC HTTP server started",
 			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
 
 		for {
@@ -120,19 +121,21 @@ func (d *TileDaemon) Start() error {
 			case <-d.Interrupt:
 
 				// Running pending tiling is important for `import` porting in.
-				d.logger.Info("TilerDaemon interrupted", "awaiting", "pending")
+				d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
 				d.running.Wait()
 
 				d.pendingTTLCache.Stop()
 
-				// Run all pending tiling on shutdown
-				// TODO Flag me in config.
+				// Run all pending tiling on shutdown.
 				// This is a blocking operation, graceful though it may be, and long though it may be.
 				// A real server (and not development) should probably just abort these stragglers.
-				d.awaitPendingTileRequests()
+				if d.Config.AwaitPendingOnShutdown {
+					d.awaitPendingTileRequests()
+				}
 
-				d.logger.Info("TilerDaemon interrupted", "awaiting", "running")
+				d.logger.Info("TileDaemon interrupted", "awaiting", "running")
 				d.running.Wait()
+				d.logger.Info("TileDaemon exiting")
 				return
 			}
 		}
@@ -144,7 +147,7 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
 	for _, key := range keys {
-		d.logger.Info("TilerDaemon pending job", "key", key)
+		d.logger.Info("TileDaemon pending job", "key", key)
 		req := d.pendingTTLCache.Get(key).Value()
 
 		// Skip all but edge requests.
@@ -155,7 +158,10 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 		requests = append(requests, req)
 	}
 
-	d.logger.Info("TilerDaemon awaiting pending edge requests", "len", len(requests))
+	d.logger.Info("TileDaemon awaiting pending edge requests", "len", len(requests))
+	defer func() {
+		d.logger.Info("TileDaemon pending requests complete")
+	}()
 
 	// For all pending requests attempt to call
 	type result struct {

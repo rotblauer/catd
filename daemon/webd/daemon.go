@@ -1,6 +1,7 @@
 package webd
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/gorilla/mux"
 	"github.com/olahol/melody"
@@ -9,29 +10,18 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
-	"strconv"
 )
 
 type WebDaemon struct {
-	*WebDaemonConfig
+	*params.WebDaemonConfig
 	logger         *slog.Logger
 	melodyInstance *melody.Melody
 	feedPopulated  event.FeedOf[[]*cattrack.CatTrack]
 }
 
-type WebDaemonConfig struct {
-	// TileDaemonConfig is the configuration for a running tiled instance.
-	// When cats push tracks, we can optionally make requests
-	// on their behalf to the tiling service.
-	// If nil, no tiling requests will happen.
-	TileDaemonConfig *params.TileDaemonConfig
-}
-
-func NewWebDaemon(config *WebDaemonConfig) *WebDaemon {
+func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 	if config == nil {
-		config = &WebDaemonConfig{
-			TileDaemonConfig: params.DefaultTileDaemonConfig(),
-		}
+		config = params.DefaultWebDaemonConfig()
 	}
 	return &WebDaemon{
 		WebDaemonConfig: config,
@@ -43,11 +33,12 @@ func NewWebDaemon(config *WebDaemonConfig) *WebDaemon {
 
 // Run starts the HTTP server (ListenAndServe) and waits for it,
 // returning any server error.
-func (s *WebDaemon) Run(addr string, port int) error {
+func (s *WebDaemon) Run() error {
 	router := s.NewRouter()
 	http.Handle("/", router)
-	log.Printf("Starting web daemon on %s:%d", addr, port)
-	return http.ListenAndServe(addr+":"+strconv.Itoa(port), nil)
+	listeningOn := fmt.Sprintf("%s:%d", s.WebDaemonConfig.NetAddr, s.WebDaemonConfig.NetPort)
+	log.Printf("Starting web daemon on %s", listeningOn)
+	return http.ListenAndServe(listeningOn, nil)
 }
 
 func (s *WebDaemon) NewRouter() *mux.Router {

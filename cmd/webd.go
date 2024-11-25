@@ -23,6 +23,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var optHTTPAddr string
+var optHTTPPort int
+
 // webdCmd represents the serve command
 var webdCmd = &cobra.Command{
 	Use:   "webd",
@@ -31,13 +34,13 @@ var webdCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 
-		conf := &webd.WebDaemonConfig{
+		server := webd.NewWebDaemon(&params.WebDaemonConfig{
 			TileDaemonConfig: params.DefaultTileDaemonConfig(),
-		}
-		server := webd.NewWebDaemon(conf)
+			NetPort:          optHTTPPort,
+			NetAddr:          optHTTPAddr,
+		})
 
-		port, _ := cmd.Flags().GetInt("http.port")
-		if err := server.Run("localhost", port); err != nil {
+		if err := server.Run(); err != nil {
 			log.Fatalln(err)
 		}
 	},
@@ -51,7 +54,10 @@ func init() {
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
 	// webdCmd.PersistentFlags().String("foo", "", "A help for foo")
-	webdCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
+	defaults := params.DefaultWebDaemonConfig()
+	pFlags := webdCmd.PersistentFlags()
+	pFlags.StringVar(&optHTTPAddr, "http.addr", defaults.NetAddr, "HTTP address to listen on")
+	pFlags.IntVar(&optHTTPPort, "http.port", defaults.NetPort, "HTTP port to listen on")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
