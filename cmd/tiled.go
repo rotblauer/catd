@@ -16,47 +16,44 @@ limitations under the License.
 package cmd
 
 import (
-	"github.com/rotblauer/catd/node"
-	"github.com/rotblauer/catd/tiler"
+	"github.com/rotblauer/catd/common"
+	"github.com/rotblauer/catd/daemon/tiled"
+	"github.com/rotblauer/catd/params"
 	"log"
 
 	"github.com/spf13/cobra"
 )
 
-// serveCmd represents the serve command
-var serveCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Start the webserver",
-	Long:  `Serves cat on the internet`,
+// tiledCmd represents the tiled command
+var tiledCmd = &cobra.Command{
+	Use:   "tiled",
+	Short: "Run the tiling daemon (HTTP RPC)",
+	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 
-		d := tiler.NewDaemon(nil)
-		if err := d.Run(); err != nil {
+		config := params.DefaultTileDaemonConfig()
+		d := tiled.NewDaemon(config)
+		if err := d.Start(); err != nil {
 			log.Fatalln(err)
 		}
 
-		server := &node.WebServer{
-			DaemonConfig: d.Config,
-		}
-
-		port, _ := cmd.Flags().GetInt("http.port")
-		server.Start("localhost", port)
+		<-common.Interrupted()
 		d.Interrupt <- struct{}{}
+		d.Wait()
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(tiledCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// serveCmd.PersistentFlags().String("foo", "", "A help for foo")
-	serveCmd.PersistentFlags().Int("http.port", 8080, "HTTP port to listen on")
+	// tiledCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// serveCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// tiledCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

@@ -8,9 +8,9 @@ import (
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
-	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 	"os"
 	"time"
@@ -104,8 +104,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return err
 	}
 	sinkStreamToJSONGZWriter(ctx, c, gzftwLast, sinkLastTracks)
-	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		SourceSchema: tiler.SourceSchema{
+	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tracks",
 			LayerName:  "tracks",
@@ -155,8 +155,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return err
 	}
 	sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps)
-	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		SourceSchema: tiler.SourceSchema{
+	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "snaps",
 			LayerName:  "snaps",
@@ -222,8 +222,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		return
 	}
 	sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
-	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		SourceSchema: tiler.SourceSchema{
+	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "laps",
 			LayerName:  "laps",
@@ -247,8 +247,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		return
 	}
 	sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
-	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		SourceSchema: tiler.SourceSchema{
+	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "naps",
 			LayerName:  "naps",
@@ -265,8 +265,8 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 		return
 	}
 	sinkStreamToJSONGZWriter(ctx, c, wr, tripDetectedSink)
-	sendBatchToCatRPCClient(ctx, c, &tiler.PushFeaturesRequestArgs{
-		SourceSchema: tiler.SourceSchema{
+	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "tripdetected",
 			LayerName:  "tripdetected",
@@ -362,7 +362,7 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 	}()
 }
 
-func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
+func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) {
 	if c.rpcClient == nil {
 		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
 		go stream.Sink(ctx, nil, in)
@@ -388,7 +388,7 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.Pus
 		}
 		args.JSONBytes = buf.Bytes()
 
-		err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
+		err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 		if err != nil {
 			c.logger.Error("Failed to call RPC client",
 				"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)

@@ -2,7 +2,6 @@ package flat
 
 import (
 	"compress/gzip"
-	"github.com/rotblauer/catd/conceptual"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -31,11 +30,7 @@ func NewFlatWithRoot(root string) *Flat {
 	return &Flat{path: root}
 }
 
-func (f *Flat) ForCat(catID conceptual.CatID) *Flat {
-	return f.Joining(CatsDir, catID.String())
-}
-
-func (f *Flat) Joining(paths ...string) *Flat {
+func (f *Flat) Joins(paths ...string) *Flat {
 	f.path = filepath.Join(append([]string{f.path}, paths...)...)
 	return f
 }

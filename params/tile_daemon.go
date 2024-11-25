@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type DaemonConfig struct {
+type TileDaemonConfig struct {
 	// RootDir is the parent directory for source and tile data.
 	// Source data is stored in rootdir/source/, tile data in rootdir/tiles/.
 	RootDir string
@@ -33,8 +33,8 @@ type DaemonConfig struct {
 	AwaitPendingOnShutdown bool
 }
 
-func DefaultDaemonConfig() *DaemonConfig {
-	return &DaemonConfig{
+func DefaultTileDaemonConfig() *TileDaemonConfig {
+	return &TileDaemonConfig{
 		// RootDir is the root directory for the tiler daemon.
 		// The daemon will create two subdirectories:
 		// - `tiles` for the final .mbtiles files

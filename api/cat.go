@@ -29,7 +29,7 @@ type Cat struct {
 	rpcClient *rpc.Client
 }
 
-func NewCat(catID conceptual.CatID, daemonConf *params.DaemonConfig) *Cat {
+func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
 	var client *rpc.Client
 	var err error
 	if daemonConf != nil {

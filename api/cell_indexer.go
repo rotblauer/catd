@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"github.com/golang/geo/s2"
 	"github.com/paulmach/orb"
+	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
-	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -42,8 +42,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		sub := levelFeed.Subscribe(freshies)
 		defer sub.Unsubscribe()
 
-		sendBatchToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiler.PushFeaturesRequestArgs{
-			SourceSchema: tiler.SourceSchema{
+		sendBatchToCatRPCClient[[]*cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
 				SourceName: "s2_cells",
 				LayerName:  fmt.Sprintf("level-%02d-polygons", level),

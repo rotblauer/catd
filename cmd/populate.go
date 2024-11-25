@@ -21,11 +21,12 @@ import (
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
-	"github.com/rotblauer/catd/tiler"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
 	"github.com/tidwall/gjson"
@@ -33,11 +34,9 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"os/signal"
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -62,19 +61,6 @@ Graceful shutdown is MANDATORY for data integrity. Be patient.
 This command can run idempotently, and incrementally on the same source,
 at least so far as a line-scan count will take it.
 The cat app, as it is, though, has no strong way of persistent de-duping, yet.
-
-Flags:
-
-  --sort           Sort the batches by track time. This is time consuming and makes populate work in batches (vs pure stream). (Default is true).
-  --workers        Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT. 
-                   For best results, use a value approximately equivalent to the total number cats. (Default is 8.)
-  --batch-size     Number of tracks per cat-batch. (Default is 100_000.)
-  --debounce       Debounce interval for tiling requests. (Default is 100h.)
-                   A long debounce interval will cause pending tiling requests 
-                   to (optionally) wait til daemon shutdown sequence.
-                   A short interval will cause pending tiling requests to fire quickly.
-  --await-pending  Await pending tiling requests on shutdown. (Default is false.)
-  --skip           Skip n lines before tracking. (Easier than tail|head.)
 
 Examples:
 
@@ -123,23 +109,19 @@ Missoula, Montana
 		setDefaultSlog(cmd, args)
 
 		ctx, ctxCanceler := context.WithCancel(context.Background())
-		interrupt := make(chan os.Signal, 2)
-		signal.Notify(interrupt,
-			os.Interrupt, os.Kill,
-			syscall.SIGTERM, syscall.SIGQUIT,
-		)
+		interrupt := common.Interrupted()
+
 		defer func() {
 			slog.Info("Import done")
 		}()
 
-		var dConfig *params.DaemonConfig
-		var d *tiler.Daemon
+		var d *tiled.TileDaemon
 		if !optTilingOff {
-			dConfig = params.DefaultDaemonConfig()
+			dConfig := params.DefaultTileDaemonConfig()
 			dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
 			dConfig.TilingPendingExpiry = optTilingPendingExpiry
-			d = tiler.NewDaemon(dConfig)
-			if err := d.Run(); err != nil {
+			d = tiled.NewDaemon(dConfig)
+			if err := d.Start(); err != nil {
 				log.Fatal(err)
 			}
 		} else {
@@ -165,7 +147,11 @@ Missoula, Montana
 				return
 			}
 
-			cat := api.NewCat(conceptual.CatID(w.name), dConfig)
+			var tiledConfig *params.TileDaemonConfig
+			if d != nil {
+				tiledConfig = d.Config
+			}
+			cat := api.NewCat(conceptual.CatID(w.name), tiledConfig)
 
 			slog.Info("Populating",
 				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
@@ -291,10 +277,10 @@ Missoula, Montana
 		workersWG.Wait()
 
 		if !optTilingOff {
-			slog.Info("Interrupting tiler")
+			slog.Info("Interrupting tiled")
 			d.Interrupt <- struct{}{}
-			slog.Info("Waiting on tiler")
-			<-d.Done
+			slog.Info("Waiting on tiled")
+			d.Wait()
 		}
 
 		slog.Info("Canceling context")
@@ -311,17 +297,33 @@ func init() {
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
 	// populateCmd.PersistentFlags().String("foo", "", "A help for foo")
-	populateCmd.PersistentFlags().BoolVar(&optSortTrackBatches, "sort", true, "Sort the track batches by time")
-	populateCmd.PersistentFlags().IntVar(&optWorkersN, "workers", runtime.NumCPU(), "Number of workers to run parallel")
-	populateCmd.PersistentFlags().IntVar(&params.DefaultBatchSize, "batch-size", 100_000, "Batch size (sort, cat/scan)")
-	populateCmd.PersistentFlags().Int64Var(&optSkipOverrideN, "skip", 0, "Skip first n lines")
+	pFlags := populateCmd.PersistentFlags()
+	pFlags.BoolVar(&optSortTrackBatches, "sort", true,
+		`Sort the batches by track time. 
+This is time consuming and makes populate work in batches (vs pure stream).
+Also relatively important for cat tracking.`)
 
-	// High number to (optionally) delay all tiling til close.
-	// The RequestTiling method defer to process until some duration of time has
-	// passed since its last call.
-	populateCmd.PersistentFlags().DurationVar(&optTilingPendingExpiry, "tiling.pending-after", 100*time.Hour, "Debounce interval for tiling requests")
-	populateCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "tiling.await-pending", false, "Await pending tiling requests on shutdown")
-	populateCmd.PersistentFlags().BoolVar(&optTilingOff, "tiling.off", false, "Disable tiling daemon (and cat tiling requests)")
+	pFlags.IntVar(&optWorkersN, "workers", runtime.NumCPU(),
+		`Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT.
+For best results, use a value approximately equivalent to the total number cats.`)
+
+	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", 100_000,
+		`Number of tracks per cat-batch through the cat-scanner. `)
+
+	pFlags.Int64Var(&optSkipOverrideN, "skip", 0,
+		`Skip n lines before the cat scanner scans. (Easier than zcat | tail | head.)`)
+
+	pFlags.DurationVar(&optTilingPendingExpiry, "tiling.pending-after", 100*time.Hour,
+		`Pending expiry interval for RequestTiling requests, aka "debounce" time.
+A long interval will cause pending tiling requests
+to (optionally) wait til daemon shutdown sequence.`)
+
+	pFlags.BoolVar(&optTilingAwaitPending, "tiling.await-pending", false,
+		`Await pending tiling requests on shutdown.`)
+
+	pFlags.BoolVar(&optTilingOff, "tiling.off", false,
+		`Disable tiling daemon (and cat tiling requests).`)
+
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// populateCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")

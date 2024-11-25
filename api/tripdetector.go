@@ -59,7 +59,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack)
 				if ct.IsEmpty() {
 					return false
 				}
-				reason := ct.Properties.MustString("MotionStateReason")
+				reason := ct.Properties.MustString("MotionStateReason", "init")
 				return reason != "init" && reason != "reset"
 			},
 			stream.Transform(ctx, func(ct cattrack.CatTrack) cattrack.CatTrack {

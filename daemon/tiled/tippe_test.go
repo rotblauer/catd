@@ -1,4 +1,4 @@
-package tiler
+package tiled
 
 import (
 	"github.com/rotblauer/catd/params"

@@ -1,9 +1,8 @@
-package node
+package webd
 
 import (
 	"encoding/json"
 	"github.com/rotblauer/catd/catdb/cache"
-	"github.com/rotblauer/catd/events"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log"
 	"log/slog"
@@ -20,20 +19,12 @@ type broadcats struct {
 	Features []*cattrack.CatTrack `json:"features"`
 }
 
-// m is a global melody instance.
-var m *melody.Melody
-
-// GetMelody does stuff
-func GetMelody() *melody.Melody {
-	return m
-}
-
-// InitMelody sets up the websocket handler.
-func InitMelody() *melody.Melody {
-	m = melody.New()
+// initMelody sets up the websocket handler.
+func (s *WebDaemon) initMelody() {
+	s.melodyInstance = melody.New()
 
 	// Incoming message about updated query params.
-	m.HandleConnect(func(s *melody.Session) {
+	s.melodyInstance.HandleConnect(func(s *melody.Session) {
 		log.Println("[websocket] connected", s.Request.RemoteAddr)
 		for _, v := range cache.LastPushTTLCache.Items() {
 			features := v.Value()
@@ -47,13 +38,13 @@ func InitMelody() *melody.Melody {
 	})
 
 	// Right now don't care about incoming messages from clients. Log and drop.
-	m.HandleMessage(loggingHandler)
+	s.melodyInstance.HandleMessage(loggingHandler)
 
-	m.HandleDisconnect(func(s *melody.Session) {
+	s.melodyInstance.HandleDisconnect(func(s *melody.Session) {
 		log.Println("[websocket] disconnected", s.Request.RemoteAddr)
 	})
 
-	m.HandleError(func(s *melody.Session, e error) {
+	s.melodyInstance.HandleError(func(s *melody.Session, e error) {
 		log.Println("[websocket] error", e, s.Request.RemoteAddr)
 	})
 
@@ -64,7 +55,7 @@ func InitMelody() *melody.Melody {
 	// but THIS DATA IS NOT THE ULTIMATELY STORED DATA.
 	// It is the data the cat sent us.
 	pushes := make(chan []*cattrack.CatTrack)
-	pushSub := events.HTTPPopulateFeed.Subscribe(pushes)
+	pushSub := s.feedPopulated.Subscribe(pushes)
 	go func() {
 		for {
 			select {
@@ -78,7 +69,7 @@ func InitMelody() *melody.Melody {
 					slog.Error("Failed to marshal populate event", "error", err)
 					continue
 				}
-				if err := m.Broadcast(b); err != nil {
+				if err := s.melodyInstance.Broadcast(b); err != nil {
 					slog.Warn("Failed to broadcast populate event", "error", err)
 				}
 			case err := <-pushSub.Err():
@@ -87,8 +78,7 @@ func InitMelody() *melody.Melody {
 			}
 		}
 	}()
-
-	return m
+	return
 }
 
 // on request

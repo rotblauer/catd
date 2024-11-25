@@ -64,13 +64,18 @@ func init() {
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
 
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.catd.yaml)")
-	rootCmd.PersistentFlags().StringVar(&params.DatadirRoot, "datadir", "/tmp/catd", "Root directory for data storage")
-	rootCmd.PersistentFlags().Int("verbosity", 0, "Verbosity level -5,-4..8 (golang/slog) https://pkg.go.dev/log/slog#Level")
+	pFlags := rootCmd.PersistentFlags()
+	pFlags.StringVar(&cfgFile, "config", "",
+		`Config file (default is $HOME/.catd.yaml)`)
+	pFlags.StringVar(&params.DatadirRoot, "datadir", "/tmp/catd",
+		`Root directory for data storage`)
+	pFlags.Int("verbosity", 0,
+		`Verbosity level -5, -4..8 (golang/slog) 
+https://pkg.go.dev/log/slog#Level`)
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	//rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // initConfig reads in config file and ENV variables if set.

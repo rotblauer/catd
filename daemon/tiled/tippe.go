@@ -1,4 +1,4 @@
-package tiler
+package tiled
 
 import (
 	"bufio"
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func (d *Daemon) tip(args *TilingRequestArgs, sources ...string) error {
+func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 	r, w := io.Pipe()
 
 	pipeErrs := make(chan error)
@@ -83,7 +83,7 @@ func (d *Daemon) tip(args *TilingRequestArgs, sources ...string) error {
 	}
 }
 
-func (d *Daemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) error {
+func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) error {
 	tippe := exec.Command(params.TippecanoeCommand, args.cliArgs...)
 	stdin, err := tippe.StdinPipe()
 	if err != nil {

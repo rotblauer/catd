@@ -1,9 +1,8 @@
-package node
+package webd
 
 import (
 	"fmt"
-	"github.com/gorilla/mux"
-	"github.com/rotblauer/catd/params"
+	ghandlers "github.com/gorilla/handlers"
 	"io"
 	"log"
 	"net"
@@ -13,71 +12,7 @@ import (
 	"strconv"
 	"time"
 	"unicode/utf8"
-
-	ghandlers "github.com/gorilla/handlers"
 )
-
-type WebServer struct {
-	DaemonConfig *params.DaemonConfig
-}
-
-func (s *WebServer) Start(addr string, port int) {
-	router := s.NewRouter()
-	http.Handle("/", router)
-
-	log.Printf("Starting web server on %s:%d", addr, port)
-	log.Fatal(http.ListenAndServe(addr+":"+strconv.Itoa(port), nil))
-}
-
-func (s *WebServer) NewRouter() *mux.Router {
-
-	m := InitMelody()
-	http.HandleFunc("/socat", func(w http.ResponseWriter, r *http.Request) {
-		m.HandleRequest(w, r)
-	})
-
-	/*
-		StrictSlash defines the trailing slash behavior for new routes. The initial value is false.
-		When true, if the route path is "/path/", accessing "/path" will perform a redirect to the former and vice versa. In other words, your application will always see the path as specified in the route.
-		When false, if the route path is "/path", accessing "/path/" will not match this route and vice versa.
-		The re-direct is a HTTP 301 (Moved Permanently). Note that when this is set for routes with a non-idempotent method (e.g. POST, PUT), the subsequent re-directed request will be made as a GET by most clients. Use middleware or client settings to modify this behaviour as needed.
-		Special case: when a route sets a path prefix using the PathPrefix() method, strict slash is ignored for that route because the redirect behavior can't be determined from a prefix alone. However, any subrouters created from that route inherit the original StrictSlash setting
-	*/
-	router := mux.NewRouter().StrictSlash(false)
-	router.Use(loggingMiddleware)
-
-	apiRoutes := router.NewRoute().Subrouter()
-
-	// All API routes use permissive CORS settings.
-	apiRoutes.Use(corsMiddleware)
-
-	// /ping is a simple server healthcheck endpoint
-	apiRoutes.Path("/ping").HandlerFunc(pingPong)
-
-	apiJSONRoutes := apiRoutes.NewRoute().Subrouter()
-	jsonMiddleware := contentTypeMiddlewareFor("application/json")
-	apiJSONRoutes.Use(jsonMiddleware)
-
-	apiJSONRoutes.Path("/last").HandlerFunc(handleLastTrack).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/catsnaps").HandlerFunc(handleGetCatSnaps).Methods(http.MethodGet)
-
-	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
-	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)
-
-	populateRoutes := authenticatedAPIRoutes.NewRoute().Subrouter()
-
-	populateRoutes.Path("/populate/").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
-	populateRoutes.Path("/populate").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
-
-	// TODO: Proxy to the tiler daemon's RPC server
-
-	return router
-}
-
-func pingPong(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("pong"))
-}
 
 func tokenAuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +48,7 @@ func tokenAuthenticationMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func permissiveCorsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Do stuff here
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -123,7 +58,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func contentTypeMiddlewareFor(contentType string) func(http.Handler) http.Handler {
+func contentTypeMiddlewareFunc(contentType string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Do stuff here

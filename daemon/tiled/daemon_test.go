@@ -1,4 +1,4 @@
-package tiler
+package tiled
 
 import (
 	"encoding/json"
