@@ -13,7 +13,7 @@ import (
 )
 
 type WebDaemon struct {
-	*params.WebDaemonConfig
+	Config         *params.WebDaemonConfig
 	logger         *slog.Logger
 	melodyInstance *melody.Melody
 	feedPopulated  event.FeedOf[[]*cattrack.CatTrack]
@@ -24,7 +24,7 @@ func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 		config = params.DefaultWebDaemonConfig()
 	}
 	return &WebDaemon{
-		WebDaemonConfig: config,
+		Config: config,
 
 		feedPopulated: event.FeedOf[[]*cattrack.CatTrack]{},
 		logger:        slog.With("d", "web"),
@@ -36,7 +36,7 @@ func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 func (s *WebDaemon) Run() error {
 	router := s.NewRouter()
 	http.Handle("/", router)
-	listeningOn := fmt.Sprintf("%s:%d", s.WebDaemonConfig.NetAddr, s.WebDaemonConfig.NetPort)
+	listeningOn := fmt.Sprintf("%s:%d", s.Config.NetAddr, s.Config.NetPort)
 	log.Printf("Starting web daemon on %s", listeningOn)
 	return http.ListenAndServe(listeningOn, nil)
 }

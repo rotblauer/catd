@@ -74,7 +74,7 @@ func (s *WebDaemon) handlePopulate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT better.
 	catID := features[0].CatID()
-	cat := api.NewCat(catID, s.TileDaemonConfig)
+	cat := api.NewCat(catID, s.Config.TileDaemonConfig)
 
 	ctx := context.Background()
 	featureVals := make([]cattrack.CatTrack, len(features))
