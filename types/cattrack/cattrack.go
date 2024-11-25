@@ -169,6 +169,14 @@ func (ct *CatTrack) Validate() error {
 	} else if _, ok := v.(float64); !ok {
 		return fmt.Errorf("accuracy not a float64")
 	}
+	if ct.HasRawB64Image() {
+		if v, ok := ct.Properties["img64"]; ok {
+			if _, k := v.(string); !k {
+				return fmt.Errorf("imgB64 not a string")
+			}
+		}
+	}
+	// TODO: Validate more. Expected/required types.
 	return nil
 }
 

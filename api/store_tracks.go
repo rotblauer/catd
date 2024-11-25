@@ -13,7 +13,7 @@ import (
 func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (stored <-chan cattrack.CatTrack, errs <-chan error) {
 	c.getOrInitState()
 
-	storedCh, errCh := make(chan cattrack.CatTrack), make(chan error)
+	storedCh, errCh := make(chan cattrack.CatTrack), make(chan error, 1)
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 

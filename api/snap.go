@@ -89,7 +89,8 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 	imported = ct
 	c.logger.Info("📷 Importing snap", "track", imported.StringPretty())
 	if imported.HasRawB64Image() {
-		jpegBytes, err := common.DecodeB64ToJPGBytes(imported.Properties.MustString("imgB64"))
+		raw := imported.Properties.MustString("imgB64")
+		jpegBytes, err := common.DecodeB64ToJPGBytes(raw)
 		if err != nil {
 			return imported, err
 		}
@@ -108,13 +109,28 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 				params.AWS_BUCKETNAME, imported.MustS3Key()))
 		}
 
-		err = c.State.StoreSnapLocally(imported, jpegBytes)
+		err = c.State.StoreSnapImage(imported, jpegBytes)
 		if err != nil {
-			c.logger.Error("Failed to store snap", "error", err)
+			c.logger.Error("Failed to store snap image", "error", err)
+			return imported, err
+		} else {
+
+			// Only delete the original base-64 data if we've successfully store the snap locally.
+			imported.DeletePropertySafe("imgB64")
+		}
+
+		err = c.State.StoreSnapJSONFile(imported)
+		if err != nil {
+			c.logger.Error("Failed to store snap JSON file", "error", err)
 			return imported, err
 		}
 
-		imported.DeletePropertySafe("imgB64")
+		err = c.State.StoreSnapKV(ct)
+		if err != nil {
+			c.logger.Error("Failed to store snap KV", "error", err)
+			return imported, err
+		}
+
 		return imported, nil
 	}
 
@@ -127,8 +143,11 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 		return imported, nil
 	}
 
-	// Store KV before trying download.
-	if err := c.State.StoreSnapLocally(imported, nil); err != nil {
+	// Store what we do have locally before trying download.
+	if err := c.State.StoreSnapKV(imported); err != nil {
+		return imported, err
+	}
+	if err := c.State.StoreSnapJSONFile(imported); err != nil {
 		return imported, err
 	}
 
@@ -145,7 +164,7 @@ func (c *Cat) importCatSnap(ct cattrack.CatTrack) (imported cattrack.CatTrack, e
 	c.State.Waiting.Add(1)
 	go func(snap cattrack.CatTrack) {
 		defer c.State.Waiting.Done()
-		target := c.State.SnapImagePath(snap)
+		target := c.State.SnapPathImage(snap)
 		if err := os.MkdirAll(filepath.Dir(target), 0770); err != nil {
 			return
 		}

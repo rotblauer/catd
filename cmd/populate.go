@@ -42,7 +42,7 @@ import (
 )
 
 var optSortTrackBatches bool
-var optWorkersN int
+var optWorkersN int = runtime.NumCPU()
 var optTilingDebounceInterval time.Duration
 var optTilingAwaitPending bool
 var optSkipOverrideN int64
@@ -226,7 +226,7 @@ Missoula, Montana
 		}
 
 		quit := make(chan struct{})
-		linesCh, errCh, _ := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
+		linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quit, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -247,6 +247,9 @@ Missoula, Montana
 		for {
 			select {
 			case lines := <-linesCh:
+				if len(linesCh) > optWorkersN {
+					panic("chan not buffered")
+				}
 				handleLinesBatch(lines)
 
 			case err := <-errCh:
@@ -255,6 +258,7 @@ Missoula, Montana
 					break readLoop
 				}
 				if err == nil {
+					log.Println("read loop received nil error... weird")
 					break readLoop
 				}
 				log.Fatal(err)

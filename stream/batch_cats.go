@@ -64,7 +64,7 @@ func storeReadCount(n int64, lastTrackStorePath string) error {
 	return nil
 }
 
-func readReadCount(lastTrackStorePath string) (int64, error) {
+func restoreReadCount(lastTrackStorePath string) (int64, error) {
 	f, err := os.Open(lastTrackStorePath)
 	if err != nil {
 		return 0, err
@@ -78,20 +78,22 @@ func readReadCount(lastTrackStorePath string) (int64, error) {
 	return strconv.ParseInt(string(data), 10, 64)
 }
 
-func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int, skip int64) (chan [][]byte, chan error, error) {
+func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int, skip int64) (<-chan [][]byte, chan error) {
+	if workers == 0 {
+		panic("cats too fast (refusing to send on unbuffered channel)")
+	}
+	output := make(chan [][]byte, workers)
+	err := make(chan error, 1)
 
-	ch := make(chan [][]byte, workers)
-	errs := make(chan error)
-
-	lastReadN, lastReadNRestoreErr := readReadCount("/tmp/catscann")
+	lastReadN, lastReadNRestoreErr := restoreReadCount("/tmp/catscann")
 	if lastReadNRestoreErr == nil {
 		slog.Info("Restored last read track n", "n", lastReadN)
 	} else {
 		slog.Warn("Failed to get last read track", "error", lastReadNRestoreErr)
 	}
 
-	go func(ch chan [][]byte, errs chan error, reader io.Reader) {
-		defer close(ch)
+	go func(out chan [][]byte, errs chan error, reader io.Reader) {
+		defer close(out)
 		defer close(errs)
 
 		readN, skippedN := int64(0), int64(0)
@@ -104,6 +106,14 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			interval: 5 * time.Second,
 		}
 
+		defer func() {
+			if err := storeReadCount(readN, "/tmp/catscann"); err != nil {
+				slog.Error("Cat scanner failed to store last read track", "error", err)
+			} else {
+				slog.Info("Cat scanner stored last read n", "n", readN)
+			}
+		}()
+
 		didSkip := int64(0)
 	readLoop:
 		for {
@@ -115,7 +125,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 				// Send remaining lines, an error expected when EOF.
 				for cat, lines := range catBatches {
 					if len(lines) > 0 {
-						ch <- lines
+						out <- lines
 						delete(catBatches, cat)
 					}
 				}
@@ -173,7 +183,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 
 			catBatches[name] = append(catBatches[name], msg)
 			if len(catBatches[name]) >= batchSize {
-				ch <- catBatches[name]
+				out <- catBatches[name]
 				catBatches[name] = [][]byte{}
 			}
 
@@ -188,24 +198,18 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 
 		tlogger.done()
 
-		if err := storeReadCount(readN, "/tmp/catscann"); err != nil {
-			slog.Error("Cat scanner failed to store last read track", "error", err)
-		} else {
-			slog.Info("Cat scanner stored last read n", "n", readN)
-		}
-
 		// Flush any remaining cats (partial batches)
-		for cat, lines := range catBatches {
-			if len(lines) > 0 {
-				slog.Info("Flushing remaining cat lines", "cat", cat, "len", len(lines))
-				ch <- lines
+		for cat, trackLines := range catBatches {
+			if len(trackLines) > 0 {
+				slog.Info("Cat-batch streamer flushing pending", "cat", cat, "track_lines", len(trackLines))
+				out <- trackLines
 				delete(catBatches, cat)
 			}
 		}
 
-	}(ch, errs, reader)
+	}(output, err, reader)
 
-	return ch, errs, nil
+	return output, err
 }
 
 /*

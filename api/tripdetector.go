@@ -19,7 +19,7 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack)
 	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
 
 	// If possible, read persisted cat tripdetector-state.
-	if err := c.readTripDetector(td); err != nil {
+	if err := c.restoreTripDetector(td); err != nil {
 		c.logger.Warn("Failed to read trip detector (new cat?)", "error", err)
 	} else {
 		last := td.LastPointN(0)
@@ -74,16 +74,6 @@ func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack)
 				cp.SetPropertySafe("IsTrip", td.Tripping)
 				cp.SetPropertySafe("MotionStateReason", td.MotionStateReason)
 
-				// FIXME/FIXED: These property writes are causing a fatal concurrent map read and map write.
-				// Can we use ID instead? Or some other hack?
-				// Why hasn't this issue happened before? (e.g. Sanitized tracks)
-				// ...
-				// The issue was in teleportation.go; it held a variable *cattrack.CatTrack in memory
-				// representing a last-seen track, cached outside scope of a go routine.
-				// This got its Properties hit real fast by the stream and boom, fatal concurrent r/w.
-				// This was fixed by using attribute variables for the only values I needed - time and coords.
-				// No pointers, no properties map, no problems.
-
 				return *cp
 			}, in))
 
@@ -112,7 +102,7 @@ func (c *Cat) storeTripDetector(td *tripdetector.TripDetector) error {
 	return nil
 }
 
-func (c *Cat) readTripDetector(td *tripdetector.TripDetector) error {
+func (c *Cat) restoreTripDetector(td *tripdetector.TripDetector) error {
 	read, err := c.State.ReadKV(state.CatStateBucket, []byte("tripdetector"))
 	if err != nil {
 		return err

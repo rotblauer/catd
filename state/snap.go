@@ -23,17 +23,17 @@ func (s *CatState) snapFolderHolderPath(ct cattrack.CatTrack) string {
 		fmt.Sprintf("%d", t.Year()), fmt.Sprintf("%02d", t.Month()))
 }
 
-func (s *CatState) SnapImagePath(ct cattrack.CatTrack) string {
+func (s *CatState) SnapPathImage(ct cattrack.CatTrack) string {
 	return filepath.Join(s.snapFolderHolderPath(ct), ct.MustS3Key()+".jpg")
 }
 
-func (s *CatState) SnapTrackPath(ct cattrack.CatTrack) string {
+func (s *CatState) SnapPathJSONFile(ct cattrack.CatTrack) string {
 	return filepath.Join(s.snapFolderHolderPath(ct), ct.MustS3Key()+".json")
 }
 
 // ValidateSnapLocalStore returns true if both the image and track exist
 func (s *CatState) ValidateSnapLocalStore(ct cattrack.CatTrack) error {
-	stat, err := os.Stat(s.SnapImagePath(ct))
+	stat, err := os.Stat(s.SnapPathImage(ct))
 	if err != nil {
 		return err
 	}
@@ -43,7 +43,7 @@ func (s *CatState) ValidateSnapLocalStore(ct cattrack.CatTrack) error {
 	if stat.IsDir() {
 		return fmt.Errorf("image is a directory")
 	}
-	stat, err = os.Stat(s.SnapTrackPath(ct))
+	stat, err = os.Stat(s.SnapPathJSONFile(ct))
 	if err != nil {
 		return err
 	}
@@ -56,10 +56,10 @@ func (s *CatState) ValidateSnapLocalStore(ct cattrack.CatTrack) error {
 	return nil
 }
 
-func (s *CatState) storeSnapFlat(ct cattrack.CatTrack, jpegData []byte) error {
+func (s *CatState) StoreSnapImage(ct cattrack.CatTrack, jpegData []byte) error {
 	// First, store the image, if any data provided.
 	if jpegData != nil {
-		target := s.SnapImagePath(ct)
+		target := s.SnapPathImage(ct)
 		if err := os.MkdirAll(filepath.Dir(target), 0770); err != nil {
 			return err
 		}
@@ -69,12 +69,12 @@ func (s *CatState) storeSnapFlat(ct cattrack.CatTrack, jpegData []byte) error {
 	}
 
 	// Second, store the track.
-	return s.storeSnapJSON(ct)
+	return s.StoreSnapJSONFile(ct)
 }
 
-func (s *CatState) storeSnapJSON(ct cattrack.CatTrack) error {
+func (s *CatState) StoreSnapJSONFile(ct cattrack.CatTrack) error {
 	// Second, store the track.
-	target := s.SnapTrackPath(ct)
+	target := s.SnapPathJSONFile(ct)
 	if err := os.MkdirAll(filepath.Dir(target), 0770); err != nil {
 		return err
 	}
@@ -95,11 +95,4 @@ func (s *CatState) StoreSnapKV(ct cattrack.CatTrack) error {
 		return err
 	}
 	return s.storeKV(CatSnapBucket, []byte(ct.MustS3Key()), j)
-}
-
-func (s *CatState) StoreSnapLocally(ct cattrack.CatTrack, jpegData []byte) error {
-	if err := s.storeSnapFlat(ct, jpegData); err != nil {
-		return err
-	}
-	return s.StoreSnapKV(ct)
 }
