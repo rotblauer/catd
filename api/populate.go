@@ -363,6 +363,11 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 }
 
 func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.PushFeaturesRequestArgs, in <-chan T) {
+	if c.rpcClient == nil {
+		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
+		go stream.Sink(ctx, nil, in)
+		return
+	}
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
@@ -386,7 +391,7 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiler.Pus
 		err := c.rpcClient.Call("Daemon.PushFeatures", args, nil)
 		if err != nil {
 			c.logger.Error("Failed to call RPC client",
-				"method", "Daemon.PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
+				"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
 		}
 	}()
 }

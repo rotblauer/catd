@@ -43,9 +43,10 @@ import (
 
 var optSortTrackBatches bool
 var optWorkersN int = runtime.NumCPU()
-var optTilingDebounceInterval time.Duration
+var optTilingPendingExpiry time.Duration
 var optTilingAwaitPending bool
 var optSkipOverrideN int64
+var optTilingOff bool
 
 // populateCmd represents the import command
 var populateCmd = &cobra.Command{
@@ -130,12 +131,18 @@ Missoula, Montana
 			slog.Info("Import done")
 		}()
 
-		dConfig := params.DefaultDaemonConfig()
-		dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
-		dConfig.DebounceTilingRequestsInterval = optTilingDebounceInterval
-		d := tiler.NewDaemon(dConfig)
-		if err := d.Run(); err != nil {
-			log.Fatal(err)
+		var dConfig *params.DaemonConfig
+		var d *tiler.Daemon
+		if !optTilingOff {
+			dConfig = params.DefaultDaemonConfig()
+			dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
+			dConfig.TilingPendingExpiry = optTilingPendingExpiry
+			d = tiler.NewDaemon(dConfig)
+			if err := d.Run(); err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			slog.Warn("Tiling daemon disabled")
 		}
 
 		// workersWG is used for clean up processing after the reader has finished.
@@ -157,7 +164,8 @@ Missoula, Montana
 				return
 			}
 
-			cat := api.NewCat(conceptual.CatID(w.name), d.Config)
+			cat := api.NewCat(conceptual.CatID(w.name), dConfig)
+
 			slog.Info("Populating",
 				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
 				"work-n", w.n,
@@ -275,10 +283,14 @@ Missoula, Montana
 		close(workCh)
 		slog.Info("Waiting on workers")
 		workersWG.Wait()
-		slog.Info("Interrupting tiler")
-		d.Interrupt <- struct{}{}
-		slog.Info("Waiting on tiler")
-		<-d.Done
+
+		if !optTilingOff {
+			slog.Info("Interrupting tiler")
+			d.Interrupt <- struct{}{}
+			slog.Info("Waiting on tiler")
+			<-d.Done
+		}
+
 		slog.Info("Canceling context")
 		ctxCanceler()
 		slog.Info("Au revoir!")
@@ -299,8 +311,11 @@ func init() {
 	populateCmd.PersistentFlags().Int64Var(&optSkipOverrideN, "skip", 0, "Skip first n lines")
 
 	// High number to (optionally) delay all tiling til close.
-	populateCmd.PersistentFlags().DurationVar(&optTilingDebounceInterval, "debounce", 100*time.Hour, "Debounce interval for tiling requests")
-	populateCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "await-pending", false, "Await pending tiling requests on shutdown")
+	// The RequestTiling method defer to process until some duration of time has
+	// passed since its last call.
+	populateCmd.PersistentFlags().DurationVar(&optTilingPendingExpiry, "tiling.pending-after", 100*time.Hour, "Debounce interval for tiling requests")
+	populateCmd.PersistentFlags().BoolVar(&optTilingAwaitPending, "tiling.await-pending", false, "Await pending tiling requests on shutdown")
+	populateCmd.PersistentFlags().BoolVar(&optTilingOff, "tiling.off", false, "Disable tiling daemon (and cat tiling requests)")
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// populateCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")

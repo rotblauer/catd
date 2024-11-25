@@ -30,11 +30,16 @@ type Cat struct {
 }
 
 func NewCat(catID conceptual.CatID, daemonConf *params.DaemonConfig) *Cat {
-	client, err := rpc.DialHTTP(daemonConf.RPCNetwork, daemonConf.RPCAddress)
-	if err != nil {
-		// FIXME
-		log.Fatal("RPC dialing:", err)
+	var client *rpc.Client
+	var err error
+	if daemonConf != nil {
+		client, err = rpc.DialHTTP(daemonConf.RPCNetwork, daemonConf.RPCAddress)
+		if err != nil {
+			// FIXME
+			log.Fatal("RPC dialing:", err)
+		}
 	}
+
 	return &Cat{
 		CatID:     catID,
 		logger:    slog.With("cat", catID),

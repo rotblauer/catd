@@ -7,22 +7,29 @@ import (
 )
 
 type DaemonConfig struct {
-	RootDir                        string
-	DebounceTilingRequestsInterval time.Duration
+	// RootDir is the parent directory for source and tile data.
+	// Source data is stored in rootdir/source/, tile data in rootdir/tiles/.
+	RootDir string
+
+	// TilingPendingExpiry is how long to "debounce" requests
+	// made to the RequestTiling method.
+	TilingPendingExpiry time.Duration
 
 	// EdgeTilingRunThreshold is the time threshold for edge tiling to complete.
-	// If edge tiling takes longer than this, the canonical source is tiled
-	// and edge will be rolled.
+	// If edge tiling takes longer than this, edge will be rolled and
+	// a tiling request for the canonical version will be triggered.
 	EdgeTilingRunThreshold time.Duration
 
 	RPCPath    string
 	RPCNetwork string
 	RPCAddress string
 
-	TmpDir string
+	// TilingTmpDir is the parent directory for temporary source and tile files.
+	// Cleanup not guaranteed. Probably best somewhere in /tmp.
+	TilingTmpDir string
 
 	// AwaitPendingOnShutdown will cause the daemon to wait for all pending
-	// Edge tile requests to complete (which may take a long time).
+	// tiling requests to complete (which may take a long time).
 	AwaitPendingOnShutdown bool
 }
 
@@ -36,11 +43,11 @@ func DefaultDaemonConfig() *DaemonConfig {
 		// In this way, the `source` directory will imitate the
 		// cat state directory (datadir/cats/).
 		// This allows an easy `cp -a` to init or reset the tiler daemon's data.
-		RootDir: filepath.Join(DatadirRoot, "tiled"),
-		TmpDir:  filepath.Join(os.TempDir(), "catd-tilerdaemon-tmp"),
+		RootDir:      filepath.Join(DatadirRoot, "tiled"),
+		TilingTmpDir: filepath.Join(os.TempDir(), "catd-tilerdaemon-tmp"),
 
 		// FIXME: Debounce should be derived from HTTP timeout threshold?
-		DebounceTilingRequestsInterval: 15 * time.Second,
+		TilingPendingExpiry: 15 * time.Second,
 
 		// FIXME: Should be based on expected or actual rate of tile generation requests,
 		// e.g. 1 / 100 seconds.

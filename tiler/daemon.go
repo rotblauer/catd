@@ -61,7 +61,7 @@ func NewDaemon(config *params.DaemonConfig) *Daemon {
 		flat:            flat.NewFlatWithRoot(config.RootDir),
 		logger:          slog.With("daemon", "tiler"),
 		tilingRunningM:  sync.Map{},
-		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.DebounceTilingRequestsInterval)),
+		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.TilingPendingExpiry)),
 		tilingEvents:    &event.FeedOf[TilingResponse]{},
 		Done:            make(chan struct{}, 1),
 		Interrupt:       make(chan struct{}, 1),
@@ -185,7 +185,7 @@ func (d *Daemon) awaitPendingTileRequests() {
 // Returns true if was not pending before call (and is added to queue).
 // Args from the last all are persisted.
 func (d *Daemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
-	d.pendingTTLCache.Set(args.id(), args, d.Config.DebounceTilingRequestsInterval)
+	d.pendingTTLCache.Set(args.id(), args, d.Config.TilingPendingExpiry)
 	d.pendingTTLCache.Touch(args.id())
 	return nil
 }
@@ -260,7 +260,7 @@ func (d *Daemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion
 	if err != nil {
 		return "", err
 	}
-	full := filepath.Join(d.Config.TmpDir, rel)
+	full := filepath.Join(d.Config.TilingTmpDir, rel)
 	//full += fmt.Sprintf(".%d", schema.requestID)
 	return full, nil
 }
@@ -385,10 +385,11 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		return fmt.Errorf("nil args")
 	}
 
-	d.logger.Info("PushFeatures", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName)
+	d.logger.Info("PushFeatures", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
+		"size", humanize.Bytes(uint64(len(args.JSONBytes))))
 
 	if err := args.validate(); err != nil {
-		slog.Warn("PushFeatures invalid args", "error", err)
+		slog.Error("PushFeatures invalid args", "error", err)
 		return err
 	}
 
@@ -417,7 +418,8 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		if err := d.writeGZ(source, b); err != nil {
 			return err
 		}
-		d.logger.Info("Wrote source", "source", source, "size", humanize.Bytes(uint64(len(args.JSONBytes))))
+		d.logger.Debug("Wrote source", "source", source,
+			"size", humanize.Bytes(uint64(len(args.JSONBytes))))
 	}
 
 	// Request edge tiling. Will get debounced.
@@ -434,7 +436,8 @@ func (d *Daemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeatures
 		TippeConfig: args.TippeConfig,
 	}, res)
 
-	d.logger.Info("PushFeatures done", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName, "error", err)
+	d.logger.Debug("PushFeatures done", "cat", args.CatID, "source",
+		args.SourceName, "layer", args.LayerName, "error", err)
 
 	return err
 }
