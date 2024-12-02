@@ -173,6 +173,27 @@ func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
 	return
 }
 
+func Split[T any](ctx context.Context, in <-chan T, outs ...chan T) {
+	go func() {
+		defer func() {
+			for _, out := range outs {
+				close(out)
+			}
+		}()
+		for element := range in {
+			element := element
+			for _, out := range outs {
+				out := out
+				select {
+				case <-ctx.Done():
+					return
+				case out <- element:
+				}
+			}
+		}
+	}()
+}
+
 func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]T) bool, in <-chan T) <-chan []T {
 	out := make(chan []T)
 	go func() {
