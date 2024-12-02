@@ -80,6 +80,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
+	dedupeCache := cache.NewDedupePassLRUFunc()
 	validated := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		if ct.IsEmpty() {
 			c.logger.Error("Invalid track: track is empty")
@@ -94,7 +95,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			c.logger.Error("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
 			return false
 		}
-		return true
+		// Dedupe with hash cache.
+		return dedupeCache(ct)
 	}, in)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
@@ -108,11 +110,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		pipedLast = sorted
 	}
 
-	// Dedupe with hash cache.
-	deduped := stream.Filter(ctx, cache.NewDedupePassLRUFunc(), pipedLast)
-
 	// Tee for storage globally (master) and per cat.
-	master, myCat := stream.Tee(ctx, deduped)
+	master, myCat := stream.Tee(ctx, pipedLast)
 
 	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
 	// Cat/thread safe because gz file locks.
