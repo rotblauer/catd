@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/api"
-	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/daemon/tiled"
@@ -163,8 +162,8 @@ Missoula, Montana
 			// tracks.geojson.gzs append.
 			// cat/state.dbs use last one... (but will break/incomplete snaps KV!).
 			// Snapper needs to mv .json and .jpeg files. Which it can do; no conflicts in path naming.
-			firstTrackTime := gjson.GetBytes(w.lines[0], "properties.Time").Time()
-			cat.State.Flat = flat.NewFlatWithRoot(cat.State.Flat.Path() + fmt.Sprintf(".%011d", firstTrackTime.Unix()))
+			//firstTrackTime := gjson.GetBytes(w.lines[0], "properties.Time").Time()
+			//cat.State.Flat = flat.NewFlatWithRoot(cat.State.Flat.Path() + fmt.Sprintf(".%011d", firstTrackTime.Unix()))
 
 			slog.Info("Populating",
 				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
