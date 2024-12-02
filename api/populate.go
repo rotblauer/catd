@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
@@ -12,9 +13,50 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"os"
 	"time"
 )
+
+func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err error) {
+
+	send := make(chan cattrack.CatTrack)
+	errs := make(chan error, 2)
+
+	go func() {
+		dec := json.NewDecoder(in)
+		for {
+			ct := cattrack.CatTrack{}
+			err := dec.Decode(&ct)
+			if err == io.EOF {
+				close(send)
+				errs <- err
+				return
+			}
+			if err == nil {
+				send <- ct
+				continue
+			}
+			// else try decoding/umarshaling as trackpoint...
+		}
+	}()
+
+	go func() {
+		errs <- c.Populate(ctx, sort, send)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err = <-errs:
+			if err != nil && !errors.Is(err, io.EOF) {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
 
 // Populate persists incoming CatTracks for one cat.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
