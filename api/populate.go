@@ -14,7 +14,6 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
-	"os"
 	"time"
 )
 
@@ -59,6 +58,7 @@ func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err 
 }
 
 // Populate persists incoming CatTracks for one cat.
+// FIXME: All functions should return errors, and this function should return first of any errors.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
 
 	// Blocking.
@@ -96,55 +96,48 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			return false
 		}
 		// Dedupe with hash cache.
-		return dedupeCache(ct)
+		if !dedupeCache(ct) {
+			c.logger.Warn("Deduped track", "track", ct.StringPretty())
+			return false
+		}
+		return true
 	}, in)
 
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
 
-	// Sorting is blocking. (!)
+	// Sorting is blocking.
 	pipedLast := sanitized
 	if sort {
 		// Catch is the new batch.
-		sorted := stream.CatchSizeSorting(ctx, params.DefaultBatchSize,
+		sorted := stream.BatchSort(ctx, params.DefaultBatchSize,
 			cattrack.SortFunc, sanitized)
 		pipedLast = sorted
 	}
 
-	// Tee for storage globally (master) and per cat.
-	master, myCat := stream.Tee(ctx, pipedLast)
+	//// Fork stream into snaps/no-snaps.
+	yesSnaps, noSnaps := stream.Fork(ctx, func(ct cattrack.CatTrack) bool {
+		return ct.IsSnap()
+	}, pipedLast)
 
-	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
-	// Cat/thread safe because gz file locks.
-	// Cat pushes will be stored in cat push/populate-batches.
-	gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
-		NamedGZWriter("master.geojson.gz", nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return err
-	}
-	sinkStreamToJSONGZWriter(ctx, c, gzftwMaster, master)
+	storeCh := make(chan cattrack.CatTrack)
+	sendTiledCh := make(chan cattrack.CatTrack)
+	indexingCh := make(chan cattrack.CatTrack)
+	tripdetectCh := make(chan cattrack.CatTrack)
+	stream.Split(ctx, noSnaps,
+		storeCh,
+		sendTiledCh,
+		indexingCh,
+		tripdetectCh,
+	)
 
 	// StoreTracks for each cat in catid/track.geojson.gz.
 	// This gets its own special cat-method for now because
 	// Populate blocks on its error handling.
 	// These errors are particularly important.
-	stored, storeErrs := c.StoreTracks(ctx, myCat)
+	storeErrs := c.StoreTracks(ctx, storeCh)
+	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
+	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
 
-	passSnaps, passLast := stream.Tee(ctx, stored)
-
-	// Sink this batch of tracks to cat's last_tracks store.
-	// Opens store file with flag OS_TRUNC.
-	// This batch also headed toward the tiler RPC. (TODO: Tiler streaming.)
-	sinkLastTracks, sendTracks := stream.Tee(ctx, passLast)
-
-	truncate := flat.DefaultGZFileWriterConfig()
-	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-	gzftwLast, err := c.State.Flat.NamedGZWriter("last_tracks.geojson.gz", truncate)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return err
-	}
-	sinkStreamToJSONGZWriter(ctx, c, gzftwLast, sinkLastTracks)
 	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
@@ -152,42 +145,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			LayerName:  "tracks",
 		},
 		TippeConfig: params.TippeConfigNameTracks,
-	}, sendTracks)
-
-	//// Fork stream into snaps/no-snaps.
-	yesSnaps := make(chan cattrack.CatTrack)
-	noSnaps := make(chan cattrack.CatTrack)
-	go func() {
-		defer close(yesSnaps)
-		defer close(noSnaps)
-		for element := range passSnaps {
-			track := element
-			if track.IsSnap() {
-				yesSnaps <- track
-			} else {
-				noSnaps <- track
-			}
-		}
-	}()
-
-	//ifSnaps, ifNoSnaps := stream.Tee(ctx, passSnaps)
-	//yesSnaps := stream.Filter(ctx, func(c cattrack.CatTrack) bool {
-	//	return c.IsSnap()
-	//}, ifSnaps)
-	//noSnaps := stream.Filter(ctx, func(c cattrack.CatTrack) bool {
-	//	return !c.IsSnap()
-	//}, ifNoSnaps)
-
-	//go stream.Sink(ctx, func(ct cattrack.CatTrack) {
-	//	if ct.IsSnap() {
-	//		yesSnaps <- ct
-	//	} else {
-	//		noSnaps <- ct
-	//	}
-	//}, passSnaps)
-
-	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
-	storeErrs = stream.Merge(ctx, storeErrs, snapErrs) // rly? TODO... more of?
+	}, sendTiledCh)
 
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter("snaps.geojson.gz", nil)
@@ -207,7 +165,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// S2 indexing pipeline. Stateful/cat.
 	// Trip detection pipeline. Laps, naps. Stateful/cat.
-	indexingCh, tripdetectCh := stream.Tee(ctx, noSnaps)
 	go c.S2IndexTracks(ctx, indexingCh)
 	go c.TripDetectionPipeline(ctx, tripdetectCh)
 

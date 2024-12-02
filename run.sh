@@ -12,12 +12,12 @@ review() {
     echo "- batch=${i} ---";
     shopt -s globstar
     local out=""
-    for f in /tmp/catd${i}/cats/**/*.geojson.gz; do
+    for f in /tmp/catd${i}/{,cats/**/}*.geojson.gz; do
       l=$(zcat "$f" | wc -l)
       out="${out}
 ${l} ${f}"
     done;
-    echo "${out}" | sort -k1 -n | tail -n 5
+    echo "${out}" | sort -r -k1 -n | tail -n 50
   done
 }
 
@@ -26,9 +26,9 @@ ${l} ${f}"
 run() {
   set -e
 
-  local source_gz="edge.20241008.json.gz"
+#  local source_gz="edge.20241008.json.gz"
 #  local source_gz="edge.json.gz"
-#  local source_gz="master.json.gz"
+  local source_gz="master.json.gz"
 
   go install . &&\
    for i in 250_000; do
@@ -44,7 +44,7 @@ run() {
 
 #    |& tee run.out; done
       # --skip 1_000_000 \
-#  review
+  review
 }
 run
 

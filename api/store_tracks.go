@@ -2,78 +2,89 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
+	"os"
 )
 
 // StoreTracks stores incoming CatTracks for one cat to disk.
-func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (stored <-chan cattrack.CatTrack, errs <-chan error) {
+func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (errs <-chan error) {
 	c.getOrInitState()
 
-	storedCh, errCh := make(chan cattrack.CatTrack), make(chan error, 1)
+	errCh := make(chan error, 1)
+	defer close(errCh)
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 
+	// Tee for storage globally (master) and per cat.
+	master := make(chan cattrack.CatTrack)
+	myCat := make(chan cattrack.CatTrack)
+	pushLast := make(chan cattrack.CatTrack)
+	count := make(chan cattrack.CatTrack)
+	stream.Split(ctx, in, master, myCat, pushLast, count)
+
 	c.State.Waiting.Add(1)
 	go func() {
-		defer close(storedCh)
-		defer close(errCh)
 		defer c.State.Waiting.Done()
+		// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
+		// Cat/thread safe because gz file locks.
+		// Cat pushes will be stored in cat push/populate-batches.
+		gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
+			NamedGZWriter("master.geojson.gz", nil)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			select {
+			case errCh <- err:
+			default:
+			}
+			return
+		}
+		sinkStreamToJSONGZWriter(ctx, c, gzftwMaster, master)
+	}()
 
-		storedN := int64(0)
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		truncate := flat.DefaultGZFileWriterConfig()
+		truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		gzftwLast, err := c.State.Flat.NamedGZWriter("last_tracks.geojson.gz", truncate)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+		sinkStreamToJSONGZWriter(ctx, c, gzftwLast, pushLast)
+	}()
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		countN := int64(0)
 		defer func() {
-			c.logger.Info("Stored cat tracks gz", "count", storedN)
+			c.logger.Info("Stored cat tracks gz", "count", countN)
 		}()
+		stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
+			countN++
+		}, count)
+	}()
 
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
 		wr, err := c.State.NamedGZWriter(flat.TracksFileName)
 		if err != nil {
 			c.logger.Error("Failed to create track writer", "error", err)
-			errCh <- err
+			select {
+			case errCh <- err:
+			default:
+			}
 			return
 		}
-		defer func() {
-			if err := wr.Close(); err != nil {
-				c.logger.Error("Failed to close track writer", "error", err)
-				errCh <- err
-			}
-		}()
-
-		enc := json.NewEncoder(wr.Writer())
-
-		storeResults := stream.Transform(ctx, func(ct cattrack.CatTrack) any {
-			if err := enc.Encode(ct); err != nil {
-				slog.Error("Failed to encode cat track gz", "error", err)
-				return err
-			}
-			c.logger.Log(ctx, slog.LevelDebug-1, "Stored cat track", "track", ct.StringPretty())
-
-			storedN++
-
-			return ct
-		}, in)
-
-		// Block on sending stored results to respective channels,
-		// but permitting context interruption.
-		for result := range storeResults {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			switch t := result.(type) {
-			case error:
-				errCh <- t
-			case cattrack.CatTrack:
-				storedCh <- t
-			default:
-				panic("impossible")
-			}
-		}
+		sinkStreamToJSONGZWriter(ctx, c, wr, myCat)
 	}()
-
-	return storedCh, errCh
+	return errCh
 }
