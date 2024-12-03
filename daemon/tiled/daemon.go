@@ -193,9 +193,8 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 // pending registers unique source files for tiling.
 // Returns true if was not pending before call (and is added to queue).
 // Args from the last all are persisted.
-func (d *TileDaemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
-	d.pendingTTLCache.Set(args.id(), args, d.Config.TilingPendingExpiry)
-	return nil
+func (d *TileDaemon) pending(args *TilingRequestArgs) {
+	d.pendingTTLCache.Set(args.id(), args, 0)
 }
 
 type SourceSchema struct {
@@ -320,11 +319,13 @@ func (d *TileDaemon) writeGZ(source string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer gzftw.Close()
-
+	defer func(gzftw *flat.GZFileWriter) {
+		err := gzftw.Close()
+		if err != nil {
+			d.logger.Error("Failed to close gz writer", "error", err)
+		}
+	}(gzftw)
 	wr := gzftw.Writer()
-	defer wr.Close()
-	defer wr.Flush()
 
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
@@ -369,6 +370,7 @@ func (d *TileDaemon) rollEdgeToBackup(args *TilingRequestArgs) error {
 	}
 	defer backup.Close()
 
+	// Lock the backup file for exclusive access.
 	if err := syscall.Flock(int(backup.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
