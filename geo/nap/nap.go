@@ -32,18 +32,23 @@ func NewState(config *params.NapConfig) *State {
 }
 
 func (s *State) Add(ct *cattrack.CatTrack) {
+	defer func() {
+		s.TimeLast = ct.MustTime()
+		s.Tracks = append(s.Tracks, ct)
+		mp := orb.MultiPoint{}
+		for _, t := range s.Tracks {
+			mp = append(mp, t.Geometry.(orb.Point))
+		}
+		s.Centroid, _ = planar.CentroidArea(mp)
+	}()
 	if s.IsDiscontinuous(ct) {
 		s.Flush()
 	}
-	s.Tracks = append(s.Tracks, ct)
 }
 
 func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	currentTime := ct.MustTime()
-	currentPoint := ct.Geometry.(orb.Point)
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
-		s.TimeLast = currentTime
-		s.Centroid = currentPoint
 		return false
 	}
 
@@ -57,12 +62,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	}
 
 	// Space
-	mp := orb.MultiPoint{}
-	for _, t := range s.Tracks {
-		mp = append(mp, t.Geometry.(orb.Point))
-	}
-	s.Centroid, _ = planar.CentroidArea(mp)
-	dist := geo.Distance(s.Centroid, currentPoint)
+	dist := geo.Distance(s.Centroid, ct.Point())
 
 	return dist > s.DwellDistance
 }

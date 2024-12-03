@@ -26,8 +26,8 @@ ${l} ${f}"
 run() {
   set -e
 
-#  local source_gz="edge.20241008.json.gz"
-  local source_gz="edge.json.gz"
+  local source_gz="edge.20241008.json.gz"
+#  local source_gz="edge.json.gz"
 #  local source_gz="master.json.gz"
 
   go install . &&\

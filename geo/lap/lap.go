@@ -30,10 +30,13 @@ func NewState(interval time.Duration) *State {
 }
 
 func (s *State) Add(ct *cattrack.CatTrack) {
+	defer func() {
+		s.TimeLast = ct.MustTime()
+		s.Tracks = append(s.Tracks, ct)
+	}()
 	if s.IsDiscontinuous(ct) {
 		s.Flush()
 	}
-	s.Tracks = append(s.Tracks, ct)
 }
 
 // IsDiscontinuous returns true if the CatTrack is not contiguous with the last.
@@ -42,11 +45,9 @@ func (s *State) Add(ct *cattrack.CatTrack) {
 func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	current := ct.MustTime()
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
-		s.TimeLast = current
 		return false
 	}
 	span := current.Sub(s.TimeLast)
-	s.TimeLast = current
 	return span > s.Interval || span < -1*time.Second
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"math"
+	"strings"
 	"time"
 )
 
@@ -156,14 +157,14 @@ func (d *TripDetector) Add(ct *cattrack.CatTrack) error {
 	}
 
 	weight := detectedNeutral
-	var idPC float64
-	var idPCC float64
-	var idX float64
-	var idRS float64
-	var idO float64
-	var idA float64
-	var idG float64
-	var idNI float64
+	//var idPC float64
+	//var idPCC float64
+	//var idX float64
+	//var idRS float64
+	//var idO float64
+	//var idA float64
+	//var idG float64
+	//var idNI float64
 
 	/*
 		d.DetectStopPointClustering(ct)
@@ -176,31 +177,37 @@ func (d *TripDetector) Add(ct *cattrack.CatTrack) error {
 		d.DetectStopNetworkInfo(ct)
 	*/
 
-	detectors := []func(*cattrack.CatTrack) DetectedT{
-		d.DetectStopPointClustering,
-		d.DetectStopPointClusteringCentroid,
-		d.DetectStopIntersection,
-		d.DetectStopReportedSpeeds,
-		d.DetectStopOverlaps,
-		d.DetectStopReportedActivities,
-		d.DetectStopGyroscope,
-		d.DetectStopNetworkInfo,
+	detectors := map[string]func(*cattrack.CatTrack) DetectedT{
+		"PC":  d.DetectStopPointClustering,
+		"PCC": d.DetectStopPointClusteringCentroid,
+		"X":   d.DetectStopIntersection,
+		"RS":  d.DetectStopReportedSpeeds,
+		"OL":  d.DetectStopOverlaps,
+		"A":   d.DetectStopReportedActivities,
+		"G":   d.DetectStopGyroscope,
+		"N":   d.DetectStopNetworkInfo,
 	}
 
-	results := make(chan DetectedT, len(detectors))
-	for _, detector := range detectors {
-		go func() {
-			results <- detector(ct)
-		}()
+	reasons := []string{}
+	type detectedTrace struct {
+		DetectedT
+		Reason string
+	}
+	results := make(chan detectedTrace, len(detectors))
+	for id, detector := range detectors {
+		go func(name string) {
+			res := detector(ct)
+			results <- detectedTrace{res, name}
+		}(id)
 	}
 	for i := 0; i < len(detectors); i++ {
-		weight += <-results
+		res := <-results
+		weight += res.DetectedT
+		reasons = append(reasons, fmt.Sprintf("%s: %v", res.Reason, res.DetectedT))
 	}
 	close(results)
 
-	// FIXME
-	d.MotionStateReason = fmt.Sprintf(`idPC: %v, idPCC: %v, idX: %v, idO: %v, idRS: %v, idA: %v, idG: %v, idNI: %v`,
-		idPC, idPCC, idX, idO, idRS, idA, idG, idNI)
+	d.MotionStateReason = strings.Join(reasons, ", ")
 
 	//weight += idPC
 	//weight += idPCC

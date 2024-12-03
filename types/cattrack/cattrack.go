@@ -214,10 +214,10 @@ func (ct *CatTrack) StringPretty() string {
 	pt := ct.Point()
 	t := time.Time{}
 	t, _ = ct.Time()
-	return fmt.Sprintf("%s/%v/%q/%.0f/%.2f",
+	return fmt.Sprintf("%s/%v/%s/%.0f/%.2f",
 		ct.CatID(),
 		t.In(time.Local).Format("2006-01-02 15:04:05"),
-		fmt.Sprintf("%v, %v", pt.Lat(), pt.Lon()),
+		fmt.Sprintf("[%v,%v]", pt.Lat(), pt.Lon()),
 		ct.Properties.MustFloat64("Accuracy", -1),
 		ct.Properties.MustFloat64("Speed", -1),
 	)

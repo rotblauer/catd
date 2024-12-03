@@ -114,7 +114,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		pipedLast = sorted
 	}
 
-	//// Fork stream into snaps/no-snaps.
+	// Fork stream into snaps/no-snaps.
 	yesSnaps, noSnaps := stream.Fork(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
 	}, pipedLast)
@@ -198,7 +198,14 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 	completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
 		duration := ct.Properties["Duration"].(float64)
-		return duration > 120
+		if duration < 120 {
+			return false
+		}
+		dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
+		if dist < 100 {
+			return false
+		}
+		return true
 	}, completedLaps)
 
 	// Simplify the lap geometry.
