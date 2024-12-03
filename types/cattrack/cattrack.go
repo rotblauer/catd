@@ -1,7 +1,6 @@
 package cattrack
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
@@ -34,18 +33,18 @@ func (ct *CatTrack) DeletePropertySafe(key string) {
 	ct.Properties = p
 }
 
-func (ct *CatTrack) MarshalJSON() ([]byte, error) {
-	f := geojson.Feature(*ct)
-	ff := &f
-	return ff.MarshalJSON()
+func (ct CatTrack) MarshalJSON() ([]byte, error) {
+	f := geojson.Feature(ct)
+	return f.MarshalJSON()
 }
 
 func (ct *CatTrack) UnmarshalJSON(data []byte) error {
-	f := geojson.NewFeature(orb.Point{})
-	if err := json.Unmarshal(data, f); err != nil {
+	f, err := geojson.UnmarshalFeature(data)
+	if err != nil {
 		return err
 	}
 	*ct = *(*CatTrack)(f)
+	//ct.Geometry = geojson.NewGeometry(f.Geometry).Geometry()
 	return nil
 }
 
