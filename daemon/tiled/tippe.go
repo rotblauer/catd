@@ -15,7 +15,13 @@ import (
 func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 	r, w := io.Pipe()
 
-	pipeErrs := make(chan error)
+	tipErrs := make(chan error, 1)
+	go func() {
+		defer close(tipErrs)
+		tipErrs <- d.tipFromReader(r, args)
+	}()
+
+	pipeErrs := make(chan error, 1)
 	go func() {
 		defer w.Close()
 		defer close(pipeErrs)
@@ -36,7 +42,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 
 			rr := reader.Reader()
 
-			// Copy will not return an "expected" EOF.
+			// Copy will not return an EOF as an error.
 			_, err = io.Copy(w, rr)
 
 			// Close the reader before handling Copy errors.
@@ -59,28 +65,18 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 				return
 			}
 		}
+		pipeErrs <- nil
 	}()
 
-	tipErrs := make(chan error)
-	go func() {
-		tipErrs <- d.tipFromReader(r, args)
-	}()
-
-	for {
-		// Listen for tippe first.
+	for _, errCh := range []chan error{tipErrs, pipeErrs} {
 		select {
-		case err := <-tipErrs:
+		case err := <-errCh:
 			if err != nil {
 				return err
 			}
 		}
-
-		// Then catch IO errors.
-		select {
-		case err := <-pipeErrs:
-			return err
-		}
 	}
+	return nil
 }
 
 func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) error {
@@ -108,7 +104,7 @@ func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) er
 		defer close(tippeErr)
 		scanner := bufio.NewScanner(tippeStderr)
 		for scanner.Scan() {
-			log.Println(fmt.Sprintf("%s %s", scanner.Text(), args.id()))
+			log.Println(fmt.Sprintf("++ %s %s", scanner.Text(), args.id()))
 		}
 		tippeErr <- tippe.Wait()
 	}()
