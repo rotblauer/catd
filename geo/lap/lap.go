@@ -48,7 +48,13 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return false
 	}
 	span := current.Sub(s.TimeLast)
-	return span > s.Interval || span < -1*time.Second
+	if span > s.Interval || span < -1*time.Second {
+		return true
+	}
+	return false
+	//currentAct := activity.FromString(ct.Properties.MustString("Activity"))
+	//lastAct := activity.FromString(s.Tracks[len(s.Tracks)-1].Properties.MustString("Activity"))
+	//return !activity.IsContinuous(currentAct, lastAct)
 }
 
 func (s *State) Flush() {

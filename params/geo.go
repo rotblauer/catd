@@ -24,6 +24,10 @@ type TrackCleaningConfig struct {
 	// If calculated speed is X times faster than reported speed, it's a teleportation.
 	TeleportSpeedFactor float64
 
+	// TeleportMinDistance is the minimum distance between two points to consider teleportation.
+	// This helps remove spurious teleportations for small distances (e.g. speed=0.04, distance=10).
+	TeleportMinDistance float64
+
 	// Teleportations must happen within this window of time.
 	// Otherwise, it'll be considered signal loss instead.
 	TeleportWindow time.Duration
@@ -35,6 +39,7 @@ var DefaultCleanConfig = &TrackCleaningConfig{
 	WangUrbanCanyonWindow:   60 * time.Second,
 	TeleportSpeedFactor:     10.0,
 	TeleportWindow:          60 * time.Second,
+	TeleportMinDistance:     25.0,
 }
 
 type TripDetectorConfig struct {
@@ -44,7 +49,7 @@ type TripDetectorConfig struct {
 }
 
 var DefaultTripDetectorConfig = &TripDetectorConfig{
-	DwellInterval:  2 * time.Minute,
+	DwellInterval:  1 * time.Minute,
 	DwellDistance:  50,
 	SpeedThreshold: 0.5,
 }

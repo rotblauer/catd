@@ -49,13 +49,14 @@ func IsContinuous(a, b Activity) bool {
 	if a == TrackerStateUnknown || b == TrackerStateUnknown {
 		return true
 	}
-	if a == TrackerStateStationary && b >= TrackerStateWalking {
-		return false
-	}
-	if a >= TrackerStateWalking && b == TrackerStateStationary {
-		return false
-	}
-	return true
+	return a == b
+	//if a == TrackerStateStationary && b >= TrackerStateWalking {
+	//	return false
+	//}
+	//if a >= TrackerStateWalking && b == TrackerStateStationary {
+	//	return false
+	//}
+	//return true
 }
 
 func FromAny(a any) Activity {
