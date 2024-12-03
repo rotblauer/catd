@@ -44,7 +44,6 @@ func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*ct = *(*CatTrack)(f)
-	//ct.Geometry = geojson.NewGeometry(f.Geometry).Geometry()
 	return nil
 }
 
