@@ -45,9 +45,9 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 			// Copy will not return an EOF as an error.
 			_, err = io.Copy(w, rr)
 
-			// Close the reader before handling Copy errors.
-			if err := rr.Close(); err != nil {
-				d.logger.Error("tip failed to close source file reader", "source", source, "error", err)
+			// Handle the copy errors.
+			if err != nil {
+				d.logger.Error("tip failed to pipe source gz file", "source", source, "error", err)
 				select {
 				case pipeErrs <- err:
 				default:
@@ -55,9 +55,9 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 				return
 			}
 
-			// Handle the copy errors.
-			if err != nil {
-				d.logger.Error("tip failed to pipe source gz file", "source", source, "error", err)
+			// Close the reader before handling Copy errors.
+			if err := rr.Close(); err != nil {
+				d.logger.Error("tip failed to close source file reader", "source", source, "error", err)
 				select {
 				case pipeErrs <- err:
 				default:
@@ -76,7 +76,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -100,7 +100,7 @@ func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) er
 	log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))
 	tippeStderr, _ := tippe.StderrPipe()
 
-	tippeErr := make(chan error)
+	tippeErr := make(chan error, 1)
 	go func() {
 		defer close(tippeErr)
 		scanner := bufio.NewScanner(tippeStderr)
