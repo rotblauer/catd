@@ -12,8 +12,8 @@ import (
 
 type CatNap geojson.Feature
 
-func (cn *CatNap) MarshalJSON() ([]byte, error) {
-	return (*geojson.Feature)(cn).MarshalJSON()
+func (cn CatNap) MarshalJSON() ([]byte, error) {
+	return (geojson.Feature)(cn).MarshalJSON()
 }
 
 func (cn *CatNap) UnmarshalJSON(data []byte) error {

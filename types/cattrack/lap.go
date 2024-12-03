@@ -13,8 +13,8 @@ import (
 
 type CatLap geojson.Feature
 
-func (cl *CatLap) MarshalJSON() ([]byte, error) {
-	return (*geojson.Feature)(cl).MarshalJSON()
+func (cl CatLap) MarshalJSON() ([]byte, error) {
+	return (geojson.Feature)(cl).MarshalJSON()
 }
 
 func (cl *CatLap) UnmarshalJSON(data []byte) error {
