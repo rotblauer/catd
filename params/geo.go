@@ -17,6 +17,9 @@ type TrackCleaningConfig struct {
 	// It is derived as the distance between the target point and the centroid of the 5 points before and after it.
 	WangUrbanCanyonDistance float64
 
+	// WangUrbanCanyonWindow is the window of points to consider for the Wang Urban Canyon test.
+	WangUrbanCanyonWindow time.Duration
+
 	// TeleportSpeedFactor is the factor to determine teleportation.
 	// If calculated speed is X times faster than reported speed, it's a teleportation.
 	TeleportSpeedFactor float64
@@ -29,8 +32,9 @@ type TrackCleaningConfig struct {
 var DefaultCleanConfig = &TrackCleaningConfig{
 	AccuracyThreshold:       100.0,
 	WangUrbanCanyonDistance: 200.0,
-	TeleportWindow:          60 * time.Second,
+	WangUrbanCanyonWindow:   60 * time.Second,
 	TeleportSpeedFactor:     10.0,
+	TeleportWindow:          60 * time.Second,
 }
 
 type TripDetectorConfig struct {

@@ -49,6 +49,16 @@ func (f *WangUrbanCanyonFilter) Filter(ctx context.Context, in <-chan cattrack.C
 			target := buffer[bufferFront]
 			tail := buffer[bufferFront+1:]
 
+			// Signal loss is not eligible for filtering.
+			if tail[len(tail)-1].MustTime().Sub(head[0].MustTime()) > params.DefaultCleanConfig.WangUrbanCanyonWindow {
+				select {
+				case <-ctx.Done():
+					return
+				case out <- *target:
+				}
+				continue
+			}
+
 			// Find the centroid of the tail.
 			tailCenter, _ := planar.CentroidArea(orb.MultiPoint{tail[0].Point(), tail[1].Point(), tail[2].Point(), tail[3].Point(), tail[4].Point()})
 			// Find the centroid of the head.

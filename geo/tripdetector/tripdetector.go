@@ -156,26 +156,60 @@ func (d *TripDetector) Add(ct *cattrack.CatTrack) error {
 	}
 
 	weight := detectedNeutral
-	idPC := d.DetectStopPointClustering(ct)
-	idPCC := d.DetectStopPointClusteringCentroid(ct)
-	idX := d.DetectStopIntersection(ct)
-	idRS := d.DetectStopReportedSpeeds(ct)
-	idO := d.DetectStopOverlaps(ct)
-	idA := d.DetectStopReportedActivities(ct)
-	idG := d.DetectStopGyroscope(ct)
-	idNI := d.DetectStopNetworkInfo(ct)
+	var idPC float64
+	var idPCC float64
+	var idX float64
+	var idRS float64
+	var idO float64
+	var idA float64
+	var idG float64
+	var idNI float64
 
+	/*
+		d.DetectStopPointClustering(ct)
+		d.DetectStopPointClusteringCentroid(ct)
+		d.DetectStopIntersection(ct)
+		d.DetectStopReportedSpeeds(ct)
+		d.DetectStopOverlaps(ct)
+		d.DetectStopReportedActivities(ct)
+		d.DetectStopGyroscope(ct)
+		d.DetectStopNetworkInfo(ct)
+	*/
+
+	detectors := []func(*cattrack.CatTrack) DetectedT{
+		d.DetectStopPointClustering,
+		d.DetectStopPointClusteringCentroid,
+		d.DetectStopIntersection,
+		d.DetectStopReportedSpeeds,
+		d.DetectStopOverlaps,
+		d.DetectStopReportedActivities,
+		d.DetectStopGyroscope,
+		d.DetectStopNetworkInfo,
+	}
+
+	results := make(chan DetectedT, len(detectors))
+	for _, detector := range detectors {
+		go func() {
+			results <- detector(ct)
+		}()
+	}
+	for i := 0; i < len(detectors); i++ {
+		weight += <-results
+	}
+	close(results)
+
+	// FIXME
 	d.MotionStateReason = fmt.Sprintf(`idPC: %v, idPCC: %v, idX: %v, idO: %v, idRS: %v, idA: %v, idG: %v, idNI: %v`,
 		idPC, idPCC, idX, idO, idRS, idA, idG, idNI)
 
-	weight += idPC
-	weight += idPCC
-	weight += idX
-	weight += idRS
-	weight += idO
-	weight += idA
-	weight += idG
-	weight += idNI
+	//weight += idPC
+	//weight += idPCC
+	//weight += idX
+	//weight += idRS
+	//weight += idO
+	//weight += idA
+	//weight += idG
+	//weight += idNI
 
 	// TODO: tinker?
 	if weight < detectedStop {
