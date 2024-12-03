@@ -19,5 +19,5 @@ func FilterElevation(ct cattrack.CatTrack) bool {
 	elevation := ct.Properties.MustFloat64("Elevation")
 	deepestDive := -100.0
 	return elevation > common.ElevationOfDeadSea-deepestDive &&
-		elevation < common.ElevationOfTroposphere
+		elevation < common.ElevationOfTroposphere*1.2
 }

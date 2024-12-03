@@ -1,5 +1,7 @@
 ```
 http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tripdetected/tripdetected_edge/tiles/{z}/{x}/{y}.pbf
+
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tracks/tracks_edge/tiles/{z}/{x}/{y}.pbf
 ```
 
 ---

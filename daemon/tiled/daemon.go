@@ -98,7 +98,8 @@ func (d *TileDaemon) Start() error {
 
 	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
 		d.logger.Info("Running pending tiling", "args", item.Value().id())
-		if _, ok := d.tilingRunningM.Load(item.Value().id()); ok {
+		// Reset pending if an equivalent request is still running.
+		if _, ok := d.tilingRunningM.Load(item.Key()); ok {
 			d.pending(item.Value())
 			return
 		}
@@ -116,29 +117,27 @@ func (d *TileDaemon) Start() error {
 		d.logger.Info("TileDaemon RPC HTTP server started",
 			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
 
-		for {
-			select {
-			case <-d.Interrupt:
+		// Block until interrupted
+		<-d.Interrupt
 
-				// Running pending tiling is important for `import` porting in.
-				d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
-				d.running.Wait()
+		// Running pending tiling is important for `import` porting in.
+		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
+		d.running.Wait()
 
-				d.pendingTTLCache.Stop()
+		d.pendingTTLCache.Stop()
 
-				// Run all pending tiling on shutdown.
-				// This is a blocking operation, graceful though it may be, and long though it may be.
-				// A real server (and not development) should probably just abort these stragglers.
-				if d.Config.AwaitPendingOnShutdown {
-					d.awaitPendingTileRequests()
-				}
-
-				d.logger.Info("TileDaemon interrupted", "awaiting", "running")
-				d.running.Wait()
-				d.logger.Info("TileDaemon exiting")
-				return
-			}
+		// Run all pending tiling on shutdown.
+		// This is a blocking operation, graceful though it may be, and long though it may be.
+		// A real server (and not development) should probably just abort these stragglers.
+		if d.Config.AwaitPendingOnShutdown {
+			d.awaitPendingTileRequests()
 		}
+
+		d.logger.Info("TileDaemon interrupted", "awaiting", "running")
+		d.running.Wait()
+		d.logger.Info("TileDaemon exiting")
+		return
+
 	}()
 	return nil
 }
@@ -196,7 +195,6 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 // Args from the last all are persisted.
 func (d *TileDaemon) pending(args *TilingRequestArgs) (last *TilingRequestArgs) {
 	d.pendingTTLCache.Set(args.id(), args, d.Config.TilingPendingExpiry)
-	d.pendingTTLCache.Touch(args.id())
 	return nil
 }
 
@@ -334,7 +332,7 @@ func (d *TileDaemon) writeGZ(source string, data []byte) error {
 	enc := json.NewEncoder(wr)
 
 	for {
-		var v interface{}
+		var v json.RawMessage
 		if err := dec.Decode(&v); err != nil {
 			if err == io.EOF {
 				break
@@ -432,9 +430,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			return err
 		}
 
-		b := make([]byte, len(args.JSONBytes))
-		copy(b, args.JSONBytes)
-		if err := d.writeGZ(source, b); err != nil {
+		if err := d.writeGZ(source, args.JSONBytes); err != nil {
 			return err
 		}
 		d.logger.Debug("Wrote source", "source", source,
@@ -444,9 +440,6 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 	args.JSONBytes = nil
 
 	// Request edge tiling. Will get debounced.
-	res := &TilingResponse{
-		Elapsed: time.Duration(666),
-	}
 	err := d.RequestTiling(&TilingRequestArgs{
 		SourceSchema: SourceSchema{
 			CatID:      args.CatID,
@@ -455,7 +448,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 		},
 		Version:     SourceVersionEdge,
 		TippeConfig: args.TippeConfig,
-	}, res)
+	}, nil)
 
 	d.logger.Debug("PushFeatures done", "cat", args.CatID, "source",
 		args.SourceName, "layer", args.LayerName, "error", err)

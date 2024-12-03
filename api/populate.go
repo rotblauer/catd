@@ -370,7 +370,7 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) {
 	if c.rpcClient == nil {
 		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		go stream.Sink(ctx, nil, in)
+		//go stream.Sink(ctx, nil, in)
 		return
 	}
 	c.State.Waiting.Add(1)
@@ -382,8 +382,9 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 			return
 		}
 
-		buf := new(bytes.Buffer)
+		buf := bytes.NewBuffer([]byte{})
 		enc := json.NewEncoder(buf)
+
 		for _, el := range all {
 			cp := el
 			if err := enc.Encode(cp); err != nil {
@@ -391,13 +392,18 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 				return
 			}
 		}
-		args.JSONBytes = buf.Bytes()
+
+		args.JSONBytes = make([]byte, buf.Len())
+		copy(args.JSONBytes, buf.Bytes())
+		buf.Reset()
+		all = nil
 
 		err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 		if err != nil {
 			c.logger.Error("Failed to call RPC client",
 				"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
 		}
+		return
 	}()
 }
 
