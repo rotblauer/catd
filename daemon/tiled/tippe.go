@@ -76,6 +76,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 			}
 		}
 	}
+	
 	return nil
 }
 
