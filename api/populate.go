@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/daemon/tiled"
@@ -166,7 +165,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// S2 indexing pipeline. Stateful/cat.
 	// Trip detection pipeline. Laps, naps. Stateful/cat.
 	go c.S2IndexTracks(ctx, indexingCh)
-	go c.TripDetectionPipeline(ctx, tripdetectCh)
+	//go c.TripDetectionPipeline(ctx, tripdetectCh)
+	go c.ActDetectionPipeline(ctx, tripdetectCh)
 
 	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")
@@ -178,145 +178,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	c.logger.Info("Blocking on cat pipelines")
 	c.State.Waiting.Wait()
 	return lastErr
-}
-
-func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
-	lapTracks := make(chan cattrack.CatTrack)
-	napTracks := make(chan cattrack.CatTrack)
-	defer close(lapTracks)
-	defer close(napTracks)
-
-	cleaned := c.CleanTracks(ctx, in)
-	tripdetected := c.TripDetectTracks(ctx, cleaned)
-
-	// Synthesize new/derivative/aggregate features:
-	// ... LineStrings for laps, Points for naps.
-
-	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
-	// and restored on cat restart.
-	// TODO Send incomplete lap on close. This will be nice to have.
-	completedLaps := c.TrackLaps(ctx, lapTracks)
-	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
-		duration := ct.Properties["Duration"].(float64)
-		if duration < 120 {
-			return false
-		}
-		dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
-		if dist < 100 {
-			return false
-		}
-		return true
-	}, completedLaps)
-
-	// Simplify the lap geometry.
-	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
-	simplified := stream.Transform(ctx, func(ct cattrack.CatLap) cattrack.CatLap {
-		cp := new(cattrack.CatLap)
-		*cp = ct
-		geom := simplifier.Simplify(ct.Geometry)
-		cp.Geometry = geom
-		return *cp
-	}, filterLaps)
-
-	// End of the line for all cat laps...
-	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
-
-	wr, err := c.State.Flat.NamedGZWriter("laps.geojson.gz", nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return
-	}
-	sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "laps",
-			LayerName:  "laps",
-		},
-		TippeConfig: params.TippeConfigNameLaps,
-	}, sendLaps)
-
-	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
-	// and restored on cat restart.
-	completedNaps := c.TrackNaps(ctx, napTracks)
-	filteredNaps := stream.Filter(ctx, func(ct cattrack.CatNap) bool {
-		return ct.Properties.MustFloat64("Duration", 0) > 120
-	}, completedNaps)
-
-	// End of the line for all cat naps...
-	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
-
-	wr, err = c.State.Flat.NamedGZWriter("naps.geojson.gz", nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return
-	}
-	sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "naps",
-			LayerName:  "naps",
-		},
-		TippeConfig: params.TippeConfigNameNaps,
-	}, sendNaps)
-
-	tripDetectedFork, tripDetectedPass := stream.Tee(ctx, tripdetected)
-	tripDetectedSink, tripDetectedSend := stream.Tee(ctx, tripDetectedPass)
-
-	wr, err = c.State.Flat.NamedGZWriter("tripdetected.geojson.gz", nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return
-	}
-	sinkStreamToJSONGZWriter(ctx, c, wr, tripDetectedSink)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "tripdetected",
-			LayerName:  "tripdetected",
-		},
-		TippeConfig: params.TippeConfigNameTripDetected,
-	}, tripDetectedSend)
-
-	// Block on tripdetect.
-	c.logger.Info("Trip detector blocking")
-	stream.Sink(ctx, func(ct cattrack.CatTrack) {
-		if ct.Properties.MustBool("IsTrip") {
-			lapTracks <- ct
-		} else {
-			napTracks <- ct
-		}
-	}, tripDetectedFork)
-}
-
-func pipeThroughFlatJSONGZFile[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) (out chan T) {
-	c.State.Waiting.Add(1)
-	out = make(chan T)
-	go func() {
-		defer c.State.Waiting.Done()
-		defer close(out)
-		defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
-		defer func() {
-			if err := wr.Close(); err != nil {
-				c.logger.Error("Failed to close writer", "error", err)
-			}
-		}()
-		w := wr.Writer()
-		enc := json.NewEncoder(w)
-		for element := range in {
-			el := element
-			if err := enc.Encode(el); err != nil {
-				c.logger.Error("Failed to write", "error", err)
-			}
-			select {
-			case out <- el:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return out
 }
 
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
@@ -341,29 +202,6 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 				c.logger.Error("Failed to write", "error", err)
 			}
 		}, in)
-
-		//all := stream.Collect(ctx, in)
-		//for _, el := range all {
-		//	if err := enc.Encode(el); err != nil {
-		//		c.logger.Error("Failed to write", "error", err)
-		//		return
-		//	}
-		//}
-
-		//batches := stream.Batch(ctx, nil, func(b []T) bool {
-		//	//return len(b) == 100 // panics every time
-		//	return len(b) == 10_000 // ok sometimes
-		//}, in)
-		//for batch := range batches {
-		//	batch := batch
-		//	for _, el := range batch {
-		//		el := el
-		//		if err := enc.Encode(el); err != nil {
-		//			c.logger.Error("Failed to write", "error", err)
-		//			return
-		//		}
-		//	}
-		//}
 	}()
 }
 
@@ -393,10 +231,7 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 			}
 		}
 
-		args.JSONBytes = make([]byte, buf.Len())
-		copy(args.JSONBytes, buf.Bytes())
-		buf.Reset()
-		all = nil
+		args.JSONBytes = buf.Bytes()
 
 		err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 		if err != nil {

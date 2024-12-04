@@ -3,6 +3,7 @@ module github.com/rotblauer/catd
 go 1.22.2
 
 require (
+	github.com/VividCortex/ewma v1.2.0
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/dustin/go-humanize v1.0.1
 	github.com/ethereum/go-ethereum v1.14.11

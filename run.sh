@@ -34,7 +34,7 @@ run() {
   go install . &&\
    for i in 100_000; do
     rm -f /tmp/catscann;
-    zcat ~/tdata/"${source_gz}" | grep --line-buffered rye \
+    zcat ~/tdata/"${source_gz}" | grep --line-buffered rye | grep 2024-08-0 \
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \

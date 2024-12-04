@@ -13,6 +13,7 @@ const (
 	TrackerStateRunning
 	TrackerStateCycling
 	TrackerStateDriving
+	TrackerStateFlying
 )
 
 var (
