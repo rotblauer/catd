@@ -1,8 +1,6 @@
 package act
 
 import (
-	//"github.com/VividCortex/ewma"
-	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geo"
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -21,24 +19,39 @@ type ActivityMode struct {
 type WrappedTrack struct {
 	cattrack.CatTrack
 	TimeOffset time.Duration
-}
 
-type Cat struct {
-	// Instantaneous raw gauges
-	Start           time.Time
-	Time            time.Time
-	Location        orb.Point
-	ReportedSpeed   float64
-	ReportedHeading float64
-
-	// Instantaneous derived gauges
-	CalculatedSpeed   float64
-	CalculatedHeading float64
+	SpeedCalculated float64
 
 	AccelerationReported   float64
 	AccelerationCalculated float64
 
+	HeadingCalculated      float64
+	HeadingDeltaReported   float64
+	HeadingDeltaCalculated float64
+}
+
+func (w WrappedTrack) Speed() float64 {
+	return w.Properties.MustFloat64("Speed", -1)
+}
+
+func (w WrappedTrack) Heading() float64 {
+	return w.Properties.MustFloat64("Heading", -1)
+}
+
+type Cat struct {
+	// Instantaneous raw gauges
+	Start time.Time
+
+	Last           WrappedTrack
 	IntervalPoints []WrappedTrack
+
+	WindowSpan time.Duration
+
+	WindowAccelerationReported   float64
+	WindowAccelerationCalculated float64
+
+	WindowSpeedReported   float64
+	WindowSpeedCalculated float64
 
 	ActivityState         activity.Activity
 	ActivityStateStart    time.Time
@@ -55,13 +68,7 @@ type Cat struct {
 func NewCat() *Cat {
 	return &Cat{
 		Start:          time.Time{},
-		Time:           time.Time{},
 		IntervalPoints: make([]WrappedTrack, 0),
-
-		ReportedSpeed:     -1,
-		CalculatedSpeed:   -1,
-		ReportedHeading:   -1,
-		CalculatedHeading: -1,
 
 		ActivityState:         TrackerStateActivityUndetermined,
 		ActivityStateStart:    time.Time{},
@@ -78,6 +85,7 @@ func NewCat() *Cat {
 
 func (c *Cat) Reset() {
 	cc := NewCat()
+	cc.ActivityState = c.ActivityState
 	*c = *cc
 }
 
@@ -110,6 +118,24 @@ func ActivityIsAction(act activity.Activity) bool {
 		return false
 	}
 	return true
+}
+
+func (c *Cat) push(ct WrappedTrack) {
+	c.WindowSpan += ct.TimeOffset
+	c.pushActivityMode(ct)
+	c.WindowAccelerationReported += ct.AccelerationReported
+	c.WindowAccelerationCalculated += ct.AccelerationCalculated
+	c.WindowSpeedReported += ct.Speed() * ct.TimeOffset.Seconds()
+	c.WindowSpeedCalculated += ct.SpeedCalculated * ct.TimeOffset.Seconds()
+}
+
+func (c *Cat) drop(ct WrappedTrack) {
+	c.WindowAccelerationReported -= ct.AccelerationReported
+	c.WindowAccelerationCalculated -= ct.AccelerationCalculated
+	c.WindowSpeedReported -= ct.Speed() * ct.TimeOffset.Seconds()
+	c.WindowSpeedCalculated -= ct.SpeedCalculated * ct.TimeOffset.Seconds()
+	c.dropActivityMode(ct)
+	c.WindowSpan -= ct.TimeOffset
 }
 
 func (c *Cat) pushActivityMode(ct WrappedTrack) {
@@ -168,7 +194,7 @@ type Improver struct {
 
 func NewImprover() *Improver {
 	return &Improver{
-		TransitionWindow:         1 * time.Minute,
+		TransitionWindow:         30 * time.Second,
 		StationarySpeedThreshold: 0.42,
 		Cat:                      NewCat(),
 	}
@@ -183,7 +209,7 @@ func (p *Improver) dropExpiredTracks(ct WrappedTrack) error {
 	for _, track := range p.Cat.IntervalPoints {
 		span := ct.MustTime().Sub(track.MustTime())
 		if span > p.TransitionWindow {
-			p.Cat.dropActivityMode(track)
+			p.Cat.drop(track)
 		} else {
 			p.Cat.IntervalPoints[outputI] = track
 			outputI++
@@ -216,21 +242,20 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	if p.Cat.IsUninitialized() {
 		timeOffset = 1 * time.Second
 	} else {
-		timeOffset = ctTime.Sub(p.Cat.Time)
+		timeOffset = ctTime.Sub(p.Cat.Last.MustTime())
 	}
 	if timeOffset > p.TransitionWindow {
 		timeOffset = p.TransitionWindow
 	}
-	ct.TimeOffset = timeOffset
 
 	var calculatedSpeed float64
 	var accelerationReported float64
 	var accelerationCalculated float64
 	if !p.Cat.IsWindowEmpty() {
-		dist := geo.Distance(p.Cat.Location, ctPoint)
+		dist := geo.Distance(p.Cat.Last.Point(), ctPoint)
 		calculatedSpeed = dist / timeOffset.Seconds()
-		accelerationReported = (ctReportedSpeed - p.Cat.ReportedSpeed) / timeOffset.Seconds()
-		accelerationCalculated = (calculatedSpeed - p.Cat.CalculatedSpeed) / timeOffset.Seconds()
+		accelerationReported = (ctReportedSpeed - p.Cat.Last.Speed()) / timeOffset.Seconds()
+		accelerationCalculated = (calculatedSpeed - p.Cat.Last.SpeedCalculated) / timeOffset.Seconds()
 	} else {
 		calculatedSpeed = ctReportedSpeed
 	}
@@ -238,25 +263,23 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	var calculatedHeading float64 = -1
 	ctHeading := ct.Properties.MustFloat64("Heading", -1)
 	if !p.Cat.IsWindowEmpty() {
-		calculatedHeading = geo.Bearing(p.Cat.Location, ctPoint)
+		calculatedHeading = geo.Bearing(p.Cat.Last.Point(), ctPoint)
 	}
 
+	ct.TimeOffset = timeOffset
+	ct.SpeedCalculated = calculatedSpeed
+	ct.AccelerationReported = accelerationReported
+	ct.AccelerationCalculated = accelerationCalculated
+	ct.HeadingCalculated = calculatedHeading
+	ct.HeadingDeltaReported = ctHeading - p.Cat.Last.Heading()
+
 	defer func() {
-		if p.Cat.IsUninitialized() {
-			p.Cat.Start = ctTime
-		}
-		p.Cat.Time = ctTime
-		p.Cat.Location = ctPoint
-		p.Cat.ReportedSpeed = ctReportedSpeed
-		p.Cat.CalculatedSpeed = calculatedSpeed
-		p.Cat.ReportedHeading = ctHeading
-		p.Cat.CalculatedHeading = calculatedHeading
-		p.Cat.AccelerationReported = accelerationReported
-		p.Cat.AccelerationCalculated = accelerationCalculated
+		p.Cat.Last = ct
 		p.Cat.IntervalPoints = append(p.Cat.IntervalPoints, ct)
 	}()
 
 	if p.Cat.IsUninitialized() {
+		p.Cat.Start = ctTime
 		actState := ctAct
 		if actState == activity.TrackerStateUnknown {
 			actState = activity.TrackerStateStationary
@@ -264,13 +287,83 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		p.Cat.setActivityState(actState, ctTime)
 	}
 
-	p.Cat.pushActivityMode(ct)
+	p.Cat.push(ct)
+	sortedActs := p.Cat.SortedActs()
+
+	isTransition := false
+	if ActivityIsAction(p.Cat.ActivityState) {
+		// The cat is moving.
+		// A transition is when the cat stops moving.
+		tx := 0
+		if p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() < -(p.StationarySpeedThreshold / p.Cat.WindowSpan.Seconds()) {
+			tx++
+		}
+		if p.Cat.WindowSpeedCalculated < p.StationarySpeedThreshold &&
+			p.Cat.WindowSpeedReported < p.StationarySpeedThreshold {
+			tx++
+		}
+		if sortedActs[0].Activity == activity.TrackerStateStationary {
+			tx++
+		}
+		if ct.Heading() < 0 {
+			tx++
+		}
+		if math.Abs(ct.HeadingDeltaReported) > 90 {
+			tx++
+		}
+		if tx > 3 {
+			isTransition = true
+		}
+	} else {
+		// The cat is stationary.
+		// A transition is when the cat starts moving.
+		tx := 0
+		if p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold/p.Cat.WindowSpan.Seconds() {
+			tx++
+		}
+		if p.Cat.WindowSpeedCalculated > p.StationarySpeedThreshold &&
+			p.Cat.WindowSpeedReported > p.StationarySpeedThreshold {
+			tx++
+		}
+		if sortedActs[0].Activity > activity.TrackerStateStationary {
+			tx++
+		}
+		if tx >= 2 {
+			isTransition = true
+		}
+	}
+	if isTransition {
+		if !ActivityIsAction(p.Cat.ActivityState) {
+			ok := false
+			for _, act := range sortedActs {
+				if act.Activity > activity.TrackerStateStationary {
+					p.Cat.setActivityState(act.Activity, ctTime)
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				// TODO
+			}
+		} else {
+			p.Cat.setActivityState(activity.TrackerStateStationary, ctTime)
+		}
+	}
 
 	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateStart) > p.TransitionWindow
 	if activityStateExpired {
-		mostAct := p.Cat.SortedActs()[0]
+		mostAct := sortedActs[0]
+		// TODO: Smooth this by checking the previous state.
+		// Driving:Walking (esp. urban commuters)
+		// Walking:Driving (esp. urban commuters)
+		// Running:Cycling (rye runs)
+		// Cycling:Driving (ia bikes)
+		// Stationary:Driving (ferry, raft)
+		// Stationary:Flying
 		if mostAct.Magnitude > 0 {
 			p.Cat.setActivityState(mostAct.Activity, ctTime)
+		} else {
+			//p.Cat.setActivityState(p.Cat.ActivityState, ctTime)
 		}
 	}
 
@@ -284,12 +377,14 @@ func (c *Cat) setActivityState(act activity.Activity, t time.Time) {
 
 func (p *Improver) Improve(ct cattrack.CatTrack) error {
 	// Check non-chrneological tracks and reset if out of order.
-	span := ct.MustTime().Sub(p.Cat.Time)
-	if span < -1*time.Second || span > p.TransitionWindow*2 {
-		p.Cat.Reset()
-	}
-	if span <= time.Second {
-		return nil
+	if !p.Cat.IsUninitialized() {
+		span := ct.MustTime().Sub(p.Cat.Last.MustTime())
+		if span < -1*time.Second || span > p.TransitionWindow*2 {
+			p.Cat.Reset()
+		}
+		if span <= time.Second {
+			return nil
+		}
 	}
 
 	return p.improve(WrappedTrack{CatTrack: ct})

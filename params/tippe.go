@@ -145,7 +145,7 @@ var (
 		"--include", "Elevation",
 		"--include", "Speed",
 		"--include", "Accuracy",
-		// "--include", "Heading",
+		"--include", "Heading",
 		"--include", "UnixTime",
 		"-EUnixTime:max",
 		"-EElevation:max",

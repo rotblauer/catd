@@ -185,7 +185,7 @@ Missoula, Montana
 			o := sync.Once{}
 			//for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
 			o.Do(func() {
-				slog.Warn("Worker unblocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
+				slog.Info("Worker unblocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
 			})
 			//}
 

@@ -12,7 +12,7 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 	c.getOrInitState()
 	out := make(chan cattrack.CatTrack)
 
-	var im *act.Improver
+	im := &act.Improver{}
 	if err := c.restoreActImprover(im); err != nil {
 		c.logger.Warn("Failed to read act improver (new cat?)", "error", err)
 		im = act.NewImprover()
@@ -30,6 +30,7 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 				c.logger.Debug("Stored act improver state")
 			}
 		}()
+		defer close(out)
 
 		for track := range in {
 			if err := im.Improve(track); err != nil {

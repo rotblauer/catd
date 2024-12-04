@@ -25,14 +25,14 @@ func (c *Cat) ActDetectionPipeline(ctx context.Context, in <-chan cattrack.CatTr
 	// TODO Send incomplete lap on close. This will be nice to have.
 	completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
-		duration := ct.Properties["Duration"].(float64)
-		if duration < 120 {
-			return false
-		}
-		dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
-		if dist < 100 {
-			return false
-		}
+		//duration := ct.Properties["Duration"].(float64)
+		//if duration < 120 {
+		//	return false
+		//}
+		//dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
+		//if dist < 100 {
+		//	return false
+		//}
 		return true
 	}, completedLaps)
 
