@@ -37,7 +37,7 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 			}
 
 			if im.Cat.ActivityState != act.TrackerStateActivityUndetermined {
-				track.SetPropertySafe("Activity", im.Cat.ActivityState)
+				track.SetPropertySafe("Activity", im.Cat.ActivityState.String())
 			}
 
 			select {
