@@ -249,7 +249,6 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 		}
 
 		buf := bytes.NewBuffer([]byte{})
-		defer buf.Reset()
 		enc := json.NewEncoder(buf)
 
 		for _, el := range all {
@@ -261,9 +260,6 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 		}
 
 		args.JSONBytes = buf.Bytes()
-		defer func() {
-			args.JSONBytes = nil
-		}()
 
 		err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 		if err != nil {

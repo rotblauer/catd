@@ -343,7 +343,6 @@ func (d *TileDaemon) writeGZ(source string, data []byte) error {
 		if err := enc.Encode(v); err != nil {
 			return err
 		}
-		v = nil
 	}
 	return nil
 }
