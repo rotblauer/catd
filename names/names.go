@@ -13,7 +13,7 @@ const TesterCatName = "tester"
 // It is initialized in the params package.
 var AliasesToMatchers = map[string]string{
 	"rye":         `(?i)(^Rye.*|^Kitty.*|^jl$)`,
-	"ia":          `(?i)(.*Papa.*|^P2$|^Isaac.*|.*moto.*|^iha$|^ubp52$)`,
+	"ia":          `(?i)(.*Papa.*|^P2$|^Isaac.*|.*moto.*|^iha$|^ia|^ubp52$)`,
 	"jr":          `(?i)(^Big.*Ma.*)`,
 	"kd":          `(?i)^Kayleigh.*`,
 	"kk":          `(?i)(^KK.*|^kek$)`,
