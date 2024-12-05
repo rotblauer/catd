@@ -149,9 +149,9 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 		d.logger.Info("TileDaemon pending job", "key", key)
 		req := d.pendingTTLCache.Get(key).Value()
 
-		// Skip all but edge requests.
-		// Edge run will trigger canonical if DNE.
-		if req.Version != SourceVersionEdge {
+		// Only run edge requests if we're not skipping edge.
+		// Edge runs may trigger canonical (if DNE, or run duration exceeds threshold).
+		if !d.Config.SkipEdge && req.Version != SourceVersionEdge {
 			continue
 		}
 		requests = append(requests, req)

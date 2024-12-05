@@ -206,7 +206,6 @@ Missoula, Montana
 			} else {
 				slog.Info("Populator worker done", "cat", cat.CatID)
 			}
-			cat.Close()
 		}
 
 		// Spin up the workers.
@@ -228,6 +227,9 @@ Missoula, Montana
 		receivedWorkN.Store(0)
 
 		handleLinesBatch := func(lines [][]byte) {
+			if len(lines) == 0 {
+				return
+			}
 			cat := names.AliasOrSanitizedName(gjson.GetBytes(lines[0], "properties.Name").String())
 			workersWG.Add(1)
 			receivedWorkN.Add(1)

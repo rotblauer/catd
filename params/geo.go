@@ -13,9 +13,15 @@ type TrackCleaningConfig struct {
 	// If the accuracy is greater than this value, it's considered inaccurate.
 	AccuracyThreshold float64
 
-	// WangUrbanCanyonDistance is the distance threshold to determine if a point is in an urban canyon.
-	// It is derived as the distance between the target point and the centroid of the 5 points before and after it.
-	WangUrbanCanyonDistance float64
+	// WangUrbanCanyonMinDistance is the minimum distance threshold to determine if a point is in an urban canyon.
+	// It is derived as the distance between the target point and the centroids of the 5 points before and after it.
+	WangUrbanCanyonMinDistance float64
+
+	// WangUrbanCanyonDistanceFromSpeedMul is the multiplier to determine the distance threshold for the Wang Urban Canyon test
+	// using the speed of the target point.
+	// Low speeds require a lower distance threshold.
+	// Minimum distance is bounded by WangUrbanCanyonMinDistance.
+	WangUrbanCanyonDistanceFromSpeedMul float64
 
 	// WangUrbanCanyonWindow is the window of points to consider for the Wang Urban Canyon test.
 	WangUrbanCanyonWindow time.Duration
@@ -34,12 +40,13 @@ type TrackCleaningConfig struct {
 }
 
 var DefaultCleanConfig = &TrackCleaningConfig{
-	AccuracyThreshold:       100.0,
-	WangUrbanCanyonDistance: 200.0,
-	WangUrbanCanyonWindow:   60 * time.Second,
-	TeleportSpeedFactor:     10.0,
-	TeleportWindow:          60 * time.Second,
-	TeleportMinDistance:     25.0,
+	AccuracyThreshold:                   100.0,
+	WangUrbanCanyonMinDistance:          200.0,
+	WangUrbanCanyonDistanceFromSpeedMul: 10.0,
+	WangUrbanCanyonWindow:               60 * time.Second,
+	TeleportSpeedFactor:                 10.0,
+	TeleportWindow:                      60 * time.Second,
+	TeleportMinDistance:                 25.0,
 }
 
 type TripDetectorConfig struct {

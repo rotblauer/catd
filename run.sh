@@ -12,7 +12,7 @@ review() {
     echo "- batch=${i} ---";
     shopt -s globstar
     local out=""
-    for f in /tmp/catd${i}/{,cats/**/,tiled/source/**/}*.geojson.gz; do
+    for f in /tmp/catd${i}/{,cats/**/}*.geojson.gz; do
       l=$(zcat "$f" | wc -l)
       out="${out}
 ${l} ${f}"

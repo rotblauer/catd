@@ -54,6 +54,10 @@ func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan cattrack.Cat
 
 			dist := geo.Distance(lastPoint, track.Point())
 
+			// Conservatively, subtract the accuracy (a radius) from the distance.
+			// Negative values are harmless.
+			//dist -= track.Properties.MustFloat64("Accuracy", 0)
+
 			// Compare the reported speed against the calculated speed.
 			// If the calculated speed exceeds the reported speed by X factor, it's a teleportation point.
 			calculatedSpeed := dist / interval.Seconds()
