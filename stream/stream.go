@@ -289,7 +289,7 @@ func BroadcastTo[T any](ctx context.Context, streams ...chan<- T) chan<- T {
 	return out
 }
 
-func Split[T any](ctx context.Context, in <-chan T, outs ...chan T) {
+func TeeMany[T any](ctx context.Context, in <-chan T, outs ...chan T) {
 	go func() {
 		defer func() {
 			for _, out := range outs {
@@ -335,7 +335,7 @@ func Split[T any](ctx context.Context, in <-chan T, outs ...chan T) {
 	*/
 }
 
-func Fork[T any](ctx context.Context, filter func(T) bool, in <-chan T) (hit, miss chan T) {
+func TeeFilter[T any](ctx context.Context, filter func(T) bool, in <-chan T) (hit, miss chan T) {
 	hit = make(chan T)
 	miss = make(chan T)
 	go func() {

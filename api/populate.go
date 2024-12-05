@@ -142,7 +142,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}
 
 	// Fork stream into snaps/no-snaps.
-	yesSnaps, noSnaps := stream.Fork(ctx, func(ct cattrack.CatTrack) bool {
+	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
 	}, pipedLast)
 
@@ -150,7 +150,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	sendTiledCh := make(chan cattrack.CatTrack)
 	indexingCh := make(chan cattrack.CatTrack)
 	tripdetectCh := make(chan cattrack.CatTrack)
-	stream.Split(ctx, noSnaps,
+	stream.TeeMany(ctx, noSnaps,
 		storeCh,
 		sendTiledCh,
 		indexingCh,

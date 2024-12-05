@@ -23,7 +23,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	myCat := make(chan cattrack.CatTrack)
 	pushLast := make(chan cattrack.CatTrack)
 	count := make(chan cattrack.CatTrack)
-	stream.Split(ctx, in, master, myCat, pushLast, count)
+	stream.TeeMany(ctx, in, master, myCat, pushLast, count)
 
 	c.State.Waiting.Add(1)
 	go func() {
