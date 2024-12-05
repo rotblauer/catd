@@ -27,9 +27,11 @@ run() {
   set -e
 
 #  local source_gz="edge.20241008.json.gz"
-#  local source_gz="edge.json.gz"
+  local source_gz="edge.json.gz"
 #  local source_gz="master.json.gz"
-  local source_gz="local/yyyy-mm/2024*.json.gz"
+#  local source_gz="local/yyyy-mm/2024*.json.gz"
+#  local source_gz="local/yyyy-mm/2024-07.json.gz"
+#  local source_gz="local/yyyy-mm/2024-09.json.gz"
 
   go install . &&\
    for i in 100_000; do

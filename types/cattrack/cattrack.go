@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
 	"strings"
@@ -214,10 +215,12 @@ func (ct *CatTrack) StringPretty() string {
 	pt := ct.Point()
 	t := time.Time{}
 	t, _ = ct.Time()
-	return fmt.Sprintf("%s/%v/%s/%.0f/%.2f",
+	return fmt.Sprintf("%s %v %s+/-%.0fm %.2fm/s",
 		ct.CatID(),
 		t.In(time.Local).Format("2006-01-02 15:04:05"),
-		fmt.Sprintf("[%v,%v]", pt.Lat(), pt.Lon()),
+		fmt.Sprintf("[%v,%v]",
+			common.DecimalToFixed(pt.Lat(), common.GPSPrecision5),
+			common.DecimalToFixed(pt.Lon(), common.GPSPrecision5)),
 		ct.Properties.MustFloat64("Accuracy", -1),
 		ct.Properties.MustFloat64("Speed", -1),
 	)

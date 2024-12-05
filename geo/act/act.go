@@ -54,8 +54,9 @@ type Cat struct {
 	WindowSpeedReported   float64
 	WindowSpeedCalculated float64
 
-	ActivityState      activity.Activity
-	ActivityStateStart time.Time
+	ActivityState          activity.Activity
+	ActivityStateStart     time.Time
+	ActivityStateLastCheck time.Time
 
 	ActivityAlternateState      activity.Activity
 	ActivityAlternateStateStart time.Time
@@ -418,59 +419,62 @@ func (p *Improver) improve(ct WrappedTrack) error {
 
 	// No transition: but is cat is acting as cat was acting...?
 	// Maybe revise the activity state.
-	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateStart) > p.TransitionWindow
-	if activityStateExpired {
-		for i, act := range sortedActsAll {
-			if act.Magnitude <= 0 {
-				continue
-			}
+	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateLastCheck) > p.TransitionWindow
+	if !activityStateExpired {
+		return nil
+	}
+	p.Cat.ActivityStateLastCheck = ctTime
 
-			// Same state? Continuity preferred. Return early.
-			if act.Activity == p.Cat.ActivityState {
-				// Clear any alternate realities.
-				p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
-				return nil
-			}
+	for i, act := range sortedActsAll {
+		if act.Magnitude <= 0 {
+			continue
+		}
 
-			// Here we get to fix stationary-labeled tracks that are actually moving.
-			// Empirically, stationary tracks are most often mislabeled for
-			// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
-			if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-				meanSpeed := p.Cat.WindowSpeedCalculated / p.Cat.WindowSpan.Seconds()
-				if meanSpeed > common.SpeedOfHighwayDriving*2 {
-					p.Cat.setActivityState(p.Cat.Flying, ctTime)
-					return nil
-				} else if meanSpeed > common.SpeedOfDrivingMin {
-					p.Cat.setActivityState(p.Cat.Driving, ctTime)
-					return nil
-				} else if meanSpeed > common.SpeedOfCyclingMin {
-					p.Cat.setActivityState(p.Cat.Cycling, ctTime)
-					return nil
-				}
-			}
-
-			// Blend running:walking, driving:cycling, preferring a long-term incumbent
-			// until a continuing alternative overtakes the majority of the incumbent.
-			// Note that above, in the case of a repeat activity mode (same state as current),
-			// the alternate state is cleared, so this measures only consecutive activities.
-			if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-				p.Cat.setActivityAlternateState(act, ctTime)
-				relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
-				relativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
-				if relativeAge > relativeAgeIncumbent/2 {
-					p.Cat.setActivityState(act, ctTime)
-					return nil
-				}
-			}
-
-			if act.Activity == activity.TrackerStateUnknown {
-				continue
-			}
-
-			// Different states.
-			p.Cat.setActivityState(act, ctTime)
+		// Same state? Continuity preferred. Return early.
+		if act.Activity == p.Cat.ActivityState {
+			// Clear any alternate realities.
+			p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
 			return nil
 		}
+
+		// Here we get to fix stationary-labeled tracks that are actually moving.
+		// Empirically, stationary tracks are most often mislabeled for
+		// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
+		if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+			meanSpeed := p.Cat.WindowSpeedCalculated / p.Cat.WindowSpan.Seconds()
+			if meanSpeed > common.SpeedOfHighwayDriving*2 {
+				p.Cat.setActivityState(p.Cat.Flying, ctTime)
+				return nil
+			} else if meanSpeed > common.SpeedOfDrivingMin {
+				p.Cat.setActivityState(p.Cat.Driving, ctTime)
+				return nil
+			} else if meanSpeed > common.SpeedOfCyclingMin {
+				p.Cat.setActivityState(p.Cat.Cycling, ctTime)
+				return nil
+			}
+		}
+
+		// Blend running:walking, driving:cycling, preferring a long-term incumbent
+		// until a continuing alternative overtakes the majority of the incumbent.
+		// Note that above, in the case of a repeat activity mode (same state as current),
+		// the alternate state is cleared, so this measures only consecutive activities.
+		//if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+		//	p.Cat.setActivityAlternateState(act, ctTime)
+		//	relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
+		//	relativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
+		//	if relativeAge > relativeAgeIncumbent/2 {
+		//		p.Cat.setActivityState(act, ctTime)
+		//		return nil
+		//	}
+		//}
+
+		if act.Activity == activity.TrackerStateUnknown {
+			continue
+		}
+
+		// Different states.
+		p.Cat.setActivityState(act, ctTime)
+		return nil
 	}
 
 	return nil

@@ -95,9 +95,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			c.logger.Error("Failed to dial RPC client", "error", err)
 			return err
 		}
-		c.logger.Info("Dialled RPC client")
+		c.logger.Info("Dialed RPC client", "network", c.tiledConf.RPCNetwork, "address", c.tiledConf.RPCAddress)
 	} else {
-		c.logger.Debug("No tiled config, not dialling RPC client")
+		c.logger.Debug("No tiled config, not dialing RPC client")
 	}
 
 	started := time.Now()
