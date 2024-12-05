@@ -221,7 +221,6 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 			}
 		}()
 
-		// TODO
 		w := wr.Writer()
 		enc := json.NewEncoder(w)
 
@@ -270,16 +269,3 @@ func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.Pus
 		return
 	}()
 }
-
-/*
-	fatal error: concurrent map read and map write
-
-	goroutine 4787 [running]:
-	github.com/paulmach/orb/geojson.Properties.MustBool(0xc00314e030?, {0xa48197?, 0xf60500?}, {0x0, 0x0, 0x16?})
-	        /home/ia/go/pkg/mod/github.com/paulmach/orb@v0.11.1/geojson/properties.go:14 +0x3f
-	github.com/rotblauer/catd/api.(*Cat).TripDetectionPipeline(0xc002a041e0, {0xb3a610, 0xc0000b6cd0}, 0xc00218ea80)
-	        /home/ia/dev/rotblauer/catd/api/populate.go:209 +0x5c7
-	created by github.com/rotblauer/catd/api.(*Cat).Populate in goroutine 22
-	        /home/ia/dev/rotblauer/catd/api/populate.go:75 +0x4f7
-
-*/

@@ -63,18 +63,6 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
-		countN := int64(0)
-		defer func() {
-			c.logger.Info("Stored cat tracks gz", "count", countN)
-		}()
-		stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
-			countN++
-		}, count)
-	}()
-
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
 		wr, err := c.State.NamedGZWriter(flat.TracksFileName)
 		if err != nil {
 			c.logger.Error("Failed to create track writer", "error", err)
@@ -85,6 +73,18 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 			return
 		}
 		sinkStreamToJSONGZWriter(ctx, c, wr, myCat)
+	}()
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		countN := int64(0)
+		defer func() {
+			c.logger.Info("Stored cat tracks gz", "count", countN)
+		}()
+		stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
+			countN++
+		}, count)
 	}()
 	return errCh
 }
