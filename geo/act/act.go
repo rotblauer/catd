@@ -48,11 +48,11 @@ type Cat struct {
 
 	WindowSpan time.Duration
 
-	WindowAccelerationReported   float64
-	WindowAccelerationCalculated float64
+	WindowAccelerationReportedSum   float64
+	WindowAccelerationCalculatedSum float64
 
-	WindowSpeedReported   float64
-	WindowSpeedCalculated float64
+	WindowSpeedReportedSum   float64
+	WindowSpeedCalculatedSum float64
 
 	ActivityState          activity.Activity
 	ActivityStateStart     time.Time
@@ -92,7 +92,6 @@ func NewCat() *Cat {
 
 func (c *Cat) Reset() {
 	cc := NewCat()
-	cc.ActivityState = c.ActivityState
 	*c = *cc
 }
 
@@ -146,17 +145,17 @@ func IsActivityActive(act activity.Activity) bool {
 func (c *Cat) push(ct WrappedTrack) {
 	c.WindowSpan += ct.TimeOffset
 	c.pushActivityMode(ct)
-	c.WindowAccelerationReported += ct.AccelerationReported
-	c.WindowAccelerationCalculated += ct.AccelerationCalculated
-	c.WindowSpeedReported += ct.Speed() * ct.TimeOffset.Seconds()
-	c.WindowSpeedCalculated += ct.SpeedCalculated * ct.TimeOffset.Seconds()
+	c.WindowAccelerationReportedSum += ct.AccelerationReported
+	c.WindowAccelerationCalculatedSum += ct.AccelerationCalculated
+	c.WindowSpeedReportedSum += ct.Speed() * ct.TimeOffset.Seconds()
+	c.WindowSpeedCalculatedSum += ct.SpeedCalculated * ct.TimeOffset.Seconds()
 }
 
 func (c *Cat) drop(ct WrappedTrack) {
-	c.WindowAccelerationReported -= ct.AccelerationReported
-	c.WindowAccelerationCalculated -= ct.AccelerationCalculated
-	c.WindowSpeedReported -= ct.Speed() * ct.TimeOffset.Seconds()
-	c.WindowSpeedCalculated -= ct.SpeedCalculated * ct.TimeOffset.Seconds()
+	c.WindowAccelerationReportedSum -= ct.AccelerationReported
+	c.WindowAccelerationCalculatedSum -= ct.AccelerationCalculated
+	c.WindowSpeedReportedSum -= ct.Speed() * ct.TimeOffset.Seconds()
+	c.WindowSpeedCalculatedSum -= ct.SpeedCalculated * ct.TimeOffset.Seconds()
 	c.dropActivityMode(ct)
 	c.WindowSpan -= ct.TimeOffset
 }
@@ -278,8 +277,65 @@ func (p *Improver) activityAccelerated(act activity.Activity, mul float64) bool 
 	case activity.TrackerStateFlying:
 		referenceSpeed = common.SpeedOfCommercialFlight
 	}
-	return p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() <
+	return p.Cat.WindowAccelerationReportedSum/p.Cat.WindowSpan.Seconds() <
 		mul*(referenceSpeed/p.Cat.WindowSpan.Seconds())
+}
+
+// isNapLapTransition returns true if the cat is transitioning from nap to lap or vice versa.
+// It relies on the cat state and the current track, so callers
+// should call p.push(ct) before calling this function.
+func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
+	sortedActsAll := p.Cat.SortedActsAll()
+
+	// The cat is moving.
+	// A transition is when the cat stops moving.
+	if IsActivityActive(p.Cat.ActivityState) {
+		tx := 0
+		if p.activityAccelerated(p.Cat.ActivityState, -1) {
+			tx++
+		}
+		if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold &&
+			p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold {
+			tx++
+		}
+		if act := sortedActsAll[0]; act.Activity.IsKnown() && !act.Activity.IsActive() {
+			tx++
+		}
+		if ct.Heading() < 0 {
+			tx++
+		}
+		if math.Abs(ct.HeadingDeltaReported) > 90 || math.Abs(ct.HeadingDeltaCalculated) > 120 {
+			tx++
+		}
+		if ct.Speed() < 0 {
+			tx++
+		}
+		if tx >= 4 {
+			return true
+		}
+		return false
+	}
+
+	// The cat is stationary.
+	// A transition is when the cat starts moving.
+	tx := 0
+	if p.activityAccelerated(p.Cat.ActivityState, 1) {
+		tx++
+	}
+	if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold &&
+		p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold {
+		tx++
+	}
+	if p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() > common.SpeedOfWalkingMean {
+		tx++
+	}
+	if sortedActsAll[0].Activity.IsActive() {
+		tx++
+	}
+	if tx > 2 {
+		return true
+	}
+	return false
 }
 
 func (p *Improver) improve(ct WrappedTrack) error {
@@ -349,56 +405,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	sortedActsKnown := p.Cat.SortedActsKnown()
 	sortedActsAll := p.Cat.SortedActsAll()
 
-	isNapLapTransition := false
-
-	// The cat is moving.
-	// A transition is when the cat stops moving.
-	if IsActivityActive(p.Cat.ActivityState) {
-		tx := 0
-		if p.activityAccelerated(p.Cat.ActivityState, -1) {
-			tx++
-		}
-		if p.Cat.WindowSpeedCalculated/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold &&
-			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold {
-			tx++
-		}
-		if !sortedActsAll[0].Activity.IsActive() {
-			tx++
-		}
-		if ct.Heading() < 0 {
-			tx++
-		}
-		if math.Abs(ct.HeadingDeltaReported) > 90 || math.Abs(ct.HeadingDeltaCalculated) > 120 {
-			tx++
-		}
-		if ct.Speed() < 0 {
-			tx++
-		}
-		if tx >= 4 {
-			isNapLapTransition = true
-		}
-	} else {
-		// The cat is stationary.
-		// A transition is when the cat starts moving.
-		tx := 0
-		if p.activityAccelerated(p.Cat.ActivityState, 1) {
-			tx++
-		}
-		if p.Cat.WindowSpeedCalculated/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold &&
-			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold {
-			tx++
-		}
-		if p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() > common.SpeedOfWalkingMax {
-			tx++
-		}
-		if sortedActsAll[0].Activity.IsActive() {
-			tx++
-		}
-		if tx > 2 {
-			isNapLapTransition = true
-		}
-	}
-	if isNapLapTransition {
+	if p.isNapLapTransition(ct) {
 		// Nap -> Lap
 		if !IsActivityActive(p.Cat.ActivityState) {
 			for _, act := range sortedActsKnown {
@@ -441,7 +448,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		// Empirically, stationary tracks are most often mislabeled for
 		// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
 		if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-			meanSpeed := p.Cat.WindowSpeedCalculated / p.Cat.WindowSpan.Seconds()
+			meanSpeed := p.Cat.WindowSpeedCalculatedSum / p.Cat.WindowSpan.Seconds()
 			if meanSpeed > common.SpeedOfHighwayDriving*2 {
 				p.Cat.setActivityState(p.Cat.Flying, ctTime)
 				return nil

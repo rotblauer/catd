@@ -35,8 +35,8 @@ func TestAccelerationStuff(t *testing.T) {
 		}
 		if im.Cat.ActivityState.IsActive() {
 			t.Log(im.Cat.ActivityState,
-				"acc", im.Cat.WindowAccelerationReported/im.Cat.WindowSpan.Seconds(),
-				"speed", im.Cat.WindowSpeedReported/im.Cat.WindowSpan.Seconds(),
+				"acc", im.Cat.WindowAccelerationReportedSum/im.Cat.WindowSpan.Seconds(),
+				"speed", im.Cat.WindowSpeedReportedSum/im.Cat.WindowSpan.Seconds(),
 			)
 		}
 	}

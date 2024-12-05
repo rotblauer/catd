@@ -29,6 +29,10 @@ func (a Activity) IsActive() bool {
 	return a > TrackerStateStationary
 }
 
+func (a Activity) IsKnown() bool {
+	return a != TrackerStateUnknown
+}
+
 func (a Activity) String() string {
 	switch a {
 	case TrackerStateUnknown:

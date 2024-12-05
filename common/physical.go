@@ -9,7 +9,8 @@ package common
 // - Temperature is in kelvin... wait? what?
 
 const SpeedOfWalkingMin = 0.42              // or 1.5 km/h or 1 mph
-const SpeedOfWalkingMax = 1.4               // or 5 km/h
+const SpeedOfWalkingMax = 1.78              // or 6.4 km/h or 4 mph
+const SpeedOfWalkingMean = 1.2              // or 4.3 km/h or 2.7 mph
 const SpeedOfRunningMin = 2.23              // or 8 km/h or 5 mph
 const SpeedOfRunningMax = 5.56              // or 12 mph or 20 km/h
 const SpeedOfCyclingMin = SpeedOfRunningMin // or 25 km/h
