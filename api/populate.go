@@ -142,29 +142,30 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}
 
 	// Fork stream into snaps/no-snaps.
+	// Snaps are a different animal than normal cat tracks.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
 	}, pipedLast)
 
+	// All non-snap tracks flow to these channels.
 	storeCh := make(chan cattrack.CatTrack)
 	sendTiledCh := make(chan cattrack.CatTrack)
-	indexingCh := make(chan cattrack.CatTrack)
-	tripdetectCh := make(chan cattrack.CatTrack)
+	areaPipeCh := make(chan cattrack.CatTrack)
+	vectorPipeCh := make(chan cattrack.CatTrack)
 	stream.TeeMany(ctx, noSnaps,
 		storeCh,
 		sendTiledCh,
-		indexingCh,
-		tripdetectCh,
+		areaPipeCh,
+		vectorPipeCh,
 	)
 
-	// StoreTracks for each cat in catid/track.geojson.gz.
-	// This gets its own special cat-method for now because
-	// Populate blocks on its error handling.
-	// These errors are particularly important.
 	storeErrs := c.StoreTracks(ctx, storeCh)
+
+	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
 	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
 
+	// P.S. Don't send all tracks to tiled unless development.
 	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
@@ -191,10 +192,10 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}, sendSnaps)
 
 	// S2 indexing pipeline. Stateful/cat.
-	// Trip detection pipeline. Laps, naps. Stateful/cat.
-	go c.S2IndexTracks(ctx, indexingCh)
-	//go c.TripDetectionPipeline(ctx, tripdetectCh)
-	go c.ActDetectionPipeline(ctx, tripdetectCh)
+	go c.S2IndexTracks(ctx, areaPipeCh)
+	// Laps, naps.
+	go c.CatActPipeline(ctx, vectorPipeCh)
+	//go c.TripDetectionPipeline(ctx, vectorPipeCh)
 
 	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")
