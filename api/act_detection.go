@@ -95,7 +95,7 @@ func (c *Cat) ActDetectionPipeline(ctx context.Context, in <-chan cattrack.CatTr
 	}()
 	stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
 		activity := activity2.FromString(ct.Properties.MustString("Activity", ""))
-		if act.ActivityIsAction(activity) {
+		if act.IsActivityActive(activity) {
 			lapTracks <- ct
 		} else {
 			napTracks <- ct

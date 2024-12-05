@@ -22,9 +22,10 @@ var (
 	activityRunning    = regexp.MustCompile(`(?i)run`)
 	activityCycling    = regexp.MustCompile(`(?i)cycle|bike|biking`)
 	activityDriving    = regexp.MustCompile(`(?i)drive|driving|automotive`)
+	activityFly        = regexp.MustCompile(`(?i)^fly|^air`)
 )
 
-func (a Activity) IsMoving() bool {
+func (a Activity) IsActive() bool {
 	return a > TrackerStateStationary
 }
 
@@ -42,6 +43,8 @@ func (a Activity) String() string {
 		return "Bike"
 	case TrackerStateDriving:
 		return "Automotive"
+	case TrackerStateFlying:
+		return "Fly"
 	}
 	return "Unknown"
 }

@@ -2,6 +2,7 @@ package act
 
 import (
 	"github.com/paulmach/orb/geo"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"math"
@@ -53,10 +54,10 @@ type Cat struct {
 	WindowSpeedReported   float64
 	WindowSpeedCalculated float64
 
-	ActivityState         activity.Activity
-	ActivityStateStart    time.Time
-	ActivityStateIsAction bool
+	ActivityState      activity.Activity
+	ActivityStateStart time.Time
 
+	Unknown    ActivityMode
 	Stationary ActivityMode
 	Walking    ActivityMode
 	Running    ActivityMode
@@ -70,9 +71,8 @@ func NewCat() *Cat {
 		Start:          time.Time{},
 		IntervalPoints: make([]WrappedTrack, 0),
 
-		ActivityState:         TrackerStateActivityUndetermined,
-		ActivityStateStart:    time.Time{},
-		ActivityStateIsAction: false,
+		ActivityState:      TrackerStateActivityUndetermined,
+		ActivityStateStart: time.Time{},
 
 		Stationary: ActivityMode{Activity: activity.TrackerStateStationary},
 		Walking:    ActivityMode{Activity: activity.TrackerStateWalking},
@@ -97,7 +97,7 @@ func (c *Cat) IsWindowEmpty() bool {
 	return len(c.IntervalPoints) == 0
 }
 
-func (c *Cat) SortedActs() []ActivityMode {
+func (c *Cat) SortedActsKnown() []ActivityMode {
 	modes := []ActivityMode{
 		c.Stationary, c.Walking, c.Running, c.Cycling, c.Driving, c.Flying,
 	}
@@ -113,7 +113,23 @@ func (c *Cat) SortedActs() []ActivityMode {
 	return modes
 }
 
-func ActivityIsAction(act activity.Activity) bool {
+func (c *Cat) SortedActsAll() []ActivityMode {
+	modes := []ActivityMode{
+		c.Unknown, c.Stationary, c.Walking, c.Running, c.Cycling, c.Driving, c.Flying,
+	}
+	slices.SortFunc(modes, func(a, b ActivityMode) int {
+		if a.Magnitude > b.Magnitude {
+			return -1
+		} else if a.Magnitude < b.Magnitude {
+			return 1
+		} else {
+			return 0
+		}
+	})
+	return modes
+}
+
+func IsActivityActive(act activity.Activity) bool {
 	if act <= activity.TrackerStateStationary {
 		return false
 	}
@@ -142,6 +158,7 @@ func (c *Cat) pushActivityMode(ct WrappedTrack) {
 	weight := ct.TimeOffset.Seconds()
 	switch activity.FromAny(ct.Properties["Activity"]) {
 	case activity.TrackerStateUnknown:
+		c.Unknown.Magnitude += weight
 	case activity.TrackerStateStationary:
 		c.Stationary.Magnitude += weight
 	case activity.TrackerStateWalking:
@@ -163,6 +180,8 @@ func (c *Cat) dropActivityMode(ct WrappedTrack) {
 	weight := ct.TimeOffset.Seconds()
 	switch activity.FromAny(ct.Properties["Activity"]) {
 	case activity.TrackerStateUnknown:
+		c.Unknown.Magnitude -= weight
+		c.Unknown.Magnitude = math.Max(c.Unknown.Magnitude, 0)
 	case activity.TrackerStateStationary:
 		c.Stationary.Magnitude -= weight
 		c.Stationary.Magnitude = math.Max(c.Stationary.Magnitude, 0)
@@ -194,8 +213,8 @@ type Improver struct {
 
 func NewImprover() *Improver {
 	return &Improver{
-		TransitionWindow:         30 * time.Second,
-		StationarySpeedThreshold: 0.42,
+		TransitionWindow:         20 * time.Second,
+		StationarySpeedThreshold: common.SpeedOfWalkingMin,
 		Cat:                      NewCat(),
 	}
 }
@@ -205,24 +224,55 @@ func (p *Improver) dropExpiredTracks(ct WrappedTrack) error {
 		return nil
 	}
 	// Drop any old tracks which are out of the transition window.
-	outputI := 0
-	for _, track := range p.Cat.IntervalPoints {
+	outputI := -1
+	for i, track := range p.Cat.IntervalPoints {
 		span := ct.MustTime().Sub(track.MustTime())
 		if span > p.TransitionWindow {
 			p.Cat.drop(track)
-		} else {
-			p.Cat.IntervalPoints[outputI] = track
-			outputI++
+			continue
 		}
+		// Index falls within timespan.
+		outputI = i
+		break
+	}
+	// If no index within timespan, all expired. Clear.
+	if outputI < 0 {
+		p.Cat.IntervalPoints = make([]WrappedTrack, 0)
+		return nil
 	}
 
-	// Prevent memory leak by erasing truncated values
-	// (not needed if values don'track contain pointers, directly or indirectly)
-	//for j := i; j < len(s); j++ {
-	//	s[j] = nil
-	//}
-	p.Cat.IntervalPoints = p.Cat.IntervalPoints[:outputI]
+	p.Cat.IntervalPoints = p.Cat.IntervalPoints[outputI:]
 	return nil
+}
+
+// activityAccelerated returns true if the activity is accelerating.
+// Use mul=-1 to check for deceleration.
+func (p *Improver) activityAccelerated(act activity.Activity, mul float64) bool {
+	if mul == 0 {
+		mul = 1
+	}
+	var referenceSpeed float64 = p.StationarySpeedThreshold
+	/*
+		0.42 / 20 = 0.021
+		1.4 / 20 = 0.07
+		2.23 / 20 = 0.1115
+		5.56 / 20 = 0.278
+		6.7 / 20 = 0.335
+	*/
+	switch act {
+	case activity.TrackerStateWalking:
+		referenceSpeed = common.SpeedOfWalkingMin
+	case activity.TrackerStateRunning:
+		referenceSpeed = common.SpeedOfRunningMin
+	case activity.TrackerStateCycling:
+		referenceSpeed = common.SpeedOfCyclingMin
+	case activity.TrackerStateDriving:
+		referenceSpeed = common.SpeedOfDrivingMin
+	case activity.TrackerStateFlying:
+		referenceSpeed = common.SpeedOfCommercialFlight
+	}
+	return p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() <
+		mul*(referenceSpeed/p.Cat.WindowSpan.Seconds())
 }
 
 func (p *Improver) improve(ct WrappedTrack) error {
@@ -280,99 +330,150 @@ func (p *Improver) improve(ct WrappedTrack) error {
 
 	if p.Cat.IsUninitialized() {
 		p.Cat.Start = ctTime
-		actState := ctAct
-		if actState == activity.TrackerStateUnknown {
-			actState = activity.TrackerStateStationary
+		act := ctAct
+		if act == activity.TrackerStateUnknown {
+			act = activity.TrackerStateStationary
 		}
-		p.Cat.setActivityState(actState, ctTime)
+		p.Cat.setActivityState(ActivityMode{Activity: act}, ctTime)
 	}
 
+	// Do the maths.
 	p.Cat.push(ct)
-	sortedActs := p.Cat.SortedActs()
+	sortedActsKnown := p.Cat.SortedActsKnown()
+	sortedActsAll := p.Cat.SortedActsAll()
 
-	isTransition := false
-	if ActivityIsAction(p.Cat.ActivityState) {
-		// The cat is moving.
-		// A transition is when the cat stops moving.
+	isNapLapTransition := false
+
+	// The cat is moving.
+	// A transition is when the cat stops moving.
+	if IsActivityActive(p.Cat.ActivityState) {
 		tx := 0
-		if p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() < -(p.StationarySpeedThreshold / p.Cat.WindowSpan.Seconds()) {
+		if p.activityAccelerated(p.Cat.ActivityState, -1) {
 			tx++
 		}
-		if p.Cat.WindowSpeedCalculated < p.StationarySpeedThreshold &&
-			p.Cat.WindowSpeedReported < p.StationarySpeedThreshold {
+		if p.Cat.WindowSpeedCalculated/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold &&
+			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold {
 			tx++
 		}
-		if sortedActs[0].Activity == activity.TrackerStateStationary {
+		if sortedActsAll[0].Activity == activity.TrackerStateStationary {
 			tx++
 		}
 		if ct.Heading() < 0 {
 			tx++
 		}
-		if math.Abs(ct.HeadingDeltaReported) > 90 {
+		if math.Abs(ct.HeadingDeltaReported) > 90 || math.Abs(ct.HeadingDeltaCalculated) > 120 {
 			tx++
 		}
-		if tx > 3 {
-			isTransition = true
+		if ct.Speed() < 0 {
+			tx++
+		}
+		if tx >= 4 {
+			isNapLapTransition = true
 		}
 	} else {
 		// The cat is stationary.
 		// A transition is when the cat starts moving.
 		tx := 0
-		if p.Cat.WindowAccelerationReported/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold/p.Cat.WindowSpan.Seconds() {
+		if p.activityAccelerated(p.Cat.ActivityState, 1) {
 			tx++
 		}
-		if p.Cat.WindowSpeedCalculated > p.StationarySpeedThreshold &&
-			p.Cat.WindowSpeedReported > p.StationarySpeedThreshold {
+		if p.Cat.WindowSpeedCalculated/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold &&
+			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold {
 			tx++
 		}
-		if sortedActs[0].Activity > activity.TrackerStateStationary {
+		if sortedActsAll[0].Activity > activity.TrackerStateStationary {
 			tx++
 		}
 		if tx >= 2 {
-			isTransition = true
+			isNapLapTransition = true
 		}
 	}
-	if isTransition {
-		if !ActivityIsAction(p.Cat.ActivityState) {
-			ok := false
-			for _, act := range sortedActs {
-				if act.Activity > activity.TrackerStateStationary {
-					p.Cat.setActivityState(act.Activity, ctTime)
-					ok = true
-					break
+	if isNapLapTransition {
+		// Nap -> Lap
+		if !IsActivityActive(p.Cat.ActivityState) {
+			for _, act := range sortedActsKnown {
+				if act.Activity.IsActive() && act.Magnitude > 0 {
+					p.Cat.setActivityState(act, ctTime)
+					return nil
 				}
 			}
-			if !ok {
-				// TODO
-			}
-		} else {
-			p.Cat.setActivityState(activity.TrackerStateStationary, ctTime)
+
+			// TODO/FIXME? Default nap -> lap.activity.
+			p.Cat.setActivityState(p.Cat.Walking, ctTime)
+			return nil
 		}
+		// Lap -> Nap
+		p.Cat.setActivityState(p.Cat.Stationary, ctTime)
+		return nil
 	}
 
+	// No transition: but is cat is acting as cat was acting...?
+	// Maybe revise the activity state.
 	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateStart) > p.TransitionWindow
 	if activityStateExpired {
-		mostAct := sortedActs[0]
-		// TODO: Smooth this by checking the previous state.
-		// Driving:Walking (esp. urban commuters)
-		// Walking:Driving (esp. urban commuters)
-		// Running:Cycling (rye runs)
-		// Cycling:Driving (ia bikes)
-		// Stationary:Driving (ferry, raft)
-		// Stationary:Flying
-		if mostAct.Magnitude > 0 {
-			p.Cat.setActivityState(mostAct.Activity, ctTime)
-		} else {
-			//p.Cat.setActivityState(p.Cat.ActivityState, ctTime)
+
+		// Naive, ok:
+		// mostAct := sortedActsKnown[0]
+		// if mostAct.Magnitude > 0 {
+		// 	p.Cat.setActivityState(mostAct, ctTime)
+		// } else {
+		// }
+
+		for _, act := range sortedActsAll {
+			if act.Magnitude <= 0 {
+				continue
+			}
+
+			// Same state? Continuity preferred. Return early.
+			if act.Activity == p.Cat.ActivityState {
+				return nil
+			}
+
+			////Blend running:walking, driving:cycling, preferring a long-term incumbent.
+			//if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+			//	if p.Cat.ActivityState-1 == act.Activity || p.Cat.ActivityState+1 == act.Activity {
+			//		relativeAge := ctTime.Sub(p.Cat.ActivityStateStart)
+			//		if relativeAge > 10*p.TransitionWindow {
+			//			return nil
+			//		}
+			//	}
+			//}
+
+			if act.Activity == activity.TrackerStateUnknown {
+				continue
+				//if p.Cat.ActivityState.IsActive() {
+				//	// Cat has transitioned from, say, walking to driving.
+				//	// It is suggested that a state change has occurred, but we're not sure yet what kind.
+				//	//p.Cat.WindowAccelerationReported
+				//} else {
+				//	p.Cat.setActivityState(act, ctTime)
+				//}
+			}
+
+			// TODO: Smooth this by checking the previous state.
+			// Driving:Walking (esp. urban commuters)
+			// Walking:Driving (esp. urban commuters)
+			// Running:Cycling (rye runs)
+			// Cycling:Driving (ia bikes)
+			// Stationary:Driving (ferry, raft)
+			// Stationary:Flying
+
+			// Different states.
+			p.Cat.setActivityState(act, ctTime)
+			return nil
 		}
 	}
 
 	return nil
 }
 
-func (c *Cat) setActivityState(act activity.Activity, t time.Time) {
-	c.ActivityState = act
+func (c *Cat) setActivityState(act ActivityMode, t time.Time) {
+	if act.Activity == c.ActivityState {
+		// do something
+		return
+	}
 	c.ActivityStateStart = t
+	c.ActivityState = act.Activity
 }
 
 func (p *Improver) Improve(ct cattrack.CatTrack) error {

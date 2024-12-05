@@ -49,7 +49,7 @@ type TripDetectorConfig struct {
 }
 
 var DefaultTripDetectorConfig = &TripDetectorConfig{
-	DwellInterval:  1 * time.Minute,
+	DwellInterval:  2 * time.Minute, // TODO Separate into lap threshold vs. td window.
 	DwellDistance:  50,
 	SpeedThreshold: 0.5,
 }
