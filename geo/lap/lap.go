@@ -15,18 +15,20 @@ import (
 )
 
 type State struct {
-	Interval time.Duration
-	Tracks   []*cattrack.CatTrack // the points represented by the linestring
-	TimeLast time.Time
-	ch       chan cattrack.CatLap
+	Interval        time.Duration
+	Tracks          []*cattrack.CatTrack // the points represented by the linestring
+	TimeLast        time.Time
+	SplitActivities bool
+	ch              chan cattrack.CatLap
 }
 
-func NewState(interval time.Duration) *State {
+func NewState(interval time.Duration, splitActivities bool) *State {
 	return &State{
-		Interval: interval,
-		Tracks:   make([]*cattrack.CatTrack, 0),
-		TimeLast: time.Time{},
-		ch:       make(chan cattrack.CatLap),
+		Interval:        interval,
+		Tracks:          make([]*cattrack.CatTrack, 0),
+		TimeLast:        time.Time{},
+		SplitActivities: splitActivities,
+		ch:              make(chan cattrack.CatLap),
 	}
 }
 
@@ -53,6 +55,9 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return true
 	}
 	//return false
+	if !s.SplitActivities {
+		return false
+	}
 	currentAct := activity.FromString(ct.Properties.MustString("Activity"))
 	lastAct := activity.FromString(s.Tracks[len(s.Tracks)-1].Properties.MustString("Activity"))
 	return !activity.IsContinuous(currentAct, lastAct)

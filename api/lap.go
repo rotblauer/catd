@@ -13,7 +13,7 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan
 	c.getOrInitState()
 
 	out := make(chan cattrack.CatLap)
-	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval)
+	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval, false)
 
 	// Attempt to restore lap-builder state.
 	if data, err := c.State.ReadKV(state.CatStateBucket, []byte("lapstate")); err == nil && data != nil {
