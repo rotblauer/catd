@@ -57,6 +57,9 @@ type Cat struct {
 	ActivityState      activity.Activity
 	ActivityStateStart time.Time
 
+	ActivityAlternateState      activity.Activity
+	ActivityAlternateStateStart time.Time
+
 	Unknown    ActivityMode
 	Stationary ActivityMode
 	Walking    ActivityMode
@@ -73,6 +76,9 @@ func NewCat() *Cat {
 
 		ActivityState:      TrackerStateActivityUndetermined,
 		ActivityStateStart: time.Time{},
+
+		ActivityAlternateState:      TrackerStateActivityUndetermined,
+		ActivityAlternateStateStart: time.Time{},
 
 		Stationary: ActivityMode{Activity: activity.TrackerStateStationary},
 		Walking:    ActivityMode{Activity: activity.TrackerStateWalking},
@@ -355,7 +361,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold {
 			tx++
 		}
-		if sortedActsAll[0].Activity == activity.TrackerStateStationary {
+		if !sortedActsAll[0].Activity.IsActive() {
 			tx++
 		}
 		if ct.Heading() < 0 {
@@ -381,10 +387,13 @@ func (p *Improver) improve(ct WrappedTrack) error {
 			p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold {
 			tx++
 		}
-		if sortedActsAll[0].Activity > activity.TrackerStateStationary {
+		if p.Cat.WindowSpeedReported/p.Cat.WindowSpan.Seconds() > common.SpeedOfWalkingMax {
 			tx++
 		}
-		if tx >= 2 {
+		if sortedActsAll[0].Activity.IsActive() {
+			tx++
+		}
+		if tx > 2 {
 			isNapLapTransition = true
 		}
 	}
@@ -411,52 +420,52 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	// Maybe revise the activity state.
 	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateStart) > p.TransitionWindow
 	if activityStateExpired {
-
-		// Naive, ok:
-		// mostAct := sortedActsKnown[0]
-		// if mostAct.Magnitude > 0 {
-		// 	p.Cat.setActivityState(mostAct, ctTime)
-		// } else {
-		// }
-
-		for _, act := range sortedActsAll {
+		for i, act := range sortedActsAll {
 			if act.Magnitude <= 0 {
 				continue
 			}
 
 			// Same state? Continuity preferred. Return early.
 			if act.Activity == p.Cat.ActivityState {
+				// Clear any alternate realities.
+				p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
 				return nil
 			}
 
-			////Blend running:walking, driving:cycling, preferring a long-term incumbent.
-			//if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-			//	if p.Cat.ActivityState-1 == act.Activity || p.Cat.ActivityState+1 == act.Activity {
-			//		relativeAge := ctTime.Sub(p.Cat.ActivityStateStart)
-			//		if relativeAge > 10*p.TransitionWindow {
-			//			return nil
-			//		}
-			//	}
-			//}
+			// Here we get to fix stationary-labeled tracks that are actually moving.
+			// Empirically, stationary tracks are most often mislabeled for
+			// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
+			if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+				meanSpeed := p.Cat.WindowSpeedCalculated / p.Cat.WindowSpan.Seconds()
+				if meanSpeed > common.SpeedOfHighwayDriving*2 {
+					p.Cat.setActivityState(p.Cat.Flying, ctTime)
+					return nil
+				} else if meanSpeed > common.SpeedOfDrivingMin {
+					p.Cat.setActivityState(p.Cat.Driving, ctTime)
+					return nil
+				} else if meanSpeed > common.SpeedOfCyclingMin {
+					p.Cat.setActivityState(p.Cat.Cycling, ctTime)
+					return nil
+				}
+			}
+
+			// Blend running:walking, driving:cycling, preferring a long-term incumbent
+			// until a continuing alternative overtakes the majority of the incumbent.
+			// Note that above, in the case of a repeat activity mode (same state as current),
+			// the alternate state is cleared, so this measures only consecutive activities.
+			if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+				p.Cat.setActivityAlternateState(act, ctTime)
+				relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
+				relativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
+				if relativeAge > relativeAgeIncumbent/2 {
+					p.Cat.setActivityState(act, ctTime)
+					return nil
+				}
+			}
 
 			if act.Activity == activity.TrackerStateUnknown {
 				continue
-				//if p.Cat.ActivityState.IsActive() {
-				//	// Cat has transitioned from, say, walking to driving.
-				//	// It is suggested that a state change has occurred, but we're not sure yet what kind.
-				//	//p.Cat.WindowAccelerationReported
-				//} else {
-				//	p.Cat.setActivityState(act, ctTime)
-				//}
 			}
-
-			// TODO: Smooth this by checking the previous state.
-			// Driving:Walking (esp. urban commuters)
-			// Walking:Driving (esp. urban commuters)
-			// Running:Cycling (rye runs)
-			// Cycling:Driving (ia bikes)
-			// Stationary:Driving (ferry, raft)
-			// Stationary:Flying
 
 			// Different states.
 			p.Cat.setActivityState(act, ctTime)
@@ -474,6 +483,15 @@ func (c *Cat) setActivityState(act ActivityMode, t time.Time) {
 	}
 	c.ActivityStateStart = t
 	c.ActivityState = act.Activity
+}
+
+func (c *Cat) setActivityAlternateState(act ActivityMode, t time.Time) {
+	if act.Activity == c.ActivityAlternateState {
+		// do something
+		return
+	}
+	c.ActivityAlternateStateStart = t
+	c.ActivityAlternateState = act.Activity
 }
 
 func (p *Improver) Improve(ct cattrack.CatTrack) error {
