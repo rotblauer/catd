@@ -11,6 +11,13 @@ type TileDaemonConfig struct {
 	// Source data is stored in rootdir/source/, tile data in rootdir/tiles/.
 	RootDir string
 
+	// SkipEdge will skip edge tiling.
+	// All PushFeature requests will be treated as canonical.
+	// This is useful for development and initial runs,
+	// where long-deferred edge tiling would amass large numbers
+	// of deferred edge files needlessly.
+	SkipEdge bool
+
 	// TilingPendingExpiry is how long to "debounce" requests
 	// made to the RequestTiling method.
 	TilingPendingExpiry time.Duration

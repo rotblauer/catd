@@ -43,9 +43,10 @@ import (
 
 var optSortTrackBatches bool
 var optWorkersN int = runtime.NumCPU()
+var optSkipOverrideN int64
+var optTilingSkipEdge bool
 var optTilingPendingExpiry time.Duration
 var optTilingAwaitPending bool
-var optSkipOverrideN int64
 var optTilingOff bool
 
 // populateCmd represents the import command
@@ -127,6 +128,7 @@ Missoula, Montana
 			dConfig := params.DefaultTileDaemonConfig()
 			dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
 			dConfig.TilingPendingExpiry = optTilingPendingExpiry
+			dConfig.SkipEdge = optTilingSkipEdge
 			d = tiled.NewDaemon(dConfig)
 			if err := d.Start(); err != nil {
 				log.Fatal(err)
@@ -335,6 +337,11 @@ to (optionally) wait til daemon shutdown sequence.`)
 
 	pFlags.BoolVar(&optTilingAwaitPending, "tiled.await-pending", true,
 		`Await pending tiling requests on shutdown.`)
+
+	pFlags.BoolVar(&optTilingSkipEdge, "tiled.skip-edge", false,
+		`Skip edge tiling. All PushFeature requests will be treated as canonical.
+This is useful for development and initial runs, 
+where long-deferred edge tiling could amass large amounts of edge data needlessly.`)
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:

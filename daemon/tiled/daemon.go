@@ -411,10 +411,15 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 
 	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 
-	for _, version := range []TileSourceVersion{
+	versions := []TileSourceVersion{
 		SourceVersionCanonical,
 		SourceVersionEdge,
-	} {
+	}
+	if d.Config.SkipEdge {
+		versions = versions[:1]
+	}
+
+	for _, version := range versions {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
 		if err != nil {
 			return fmt.Errorf("failed to get source path: %w", err)
@@ -441,14 +446,14 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 
 	args.JSONBytes = nil
 
-	// Request edge tiling. Will get debounced.
+	// Request tiling. Will get debounced.
 	err := d.RequestTiling(&TilingRequestArgs{
 		SourceSchema: SourceSchema{
 			CatID:      args.CatID,
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
 		},
-		Version:     SourceVersionEdge,
+		Version:     versions[len(versions)-1],
 		TippeConfig: args.TippeConfig,
 	}, nil)
 
