@@ -41,6 +41,8 @@ we should tally the number of tracks in a cell, or some other metrics/aggregatio
 package s2
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -86,8 +88,41 @@ func UnmarshalIndexer(v []byte) (Indexer, error) {
 	if err := json.Unmarshal(v, &targetIndexCountT); err == nil {
 		return targetIndexCountT, nil
 	}
+	var targetWrappedTrack WrappedTrack
+	if err := json.Unmarshal(v, &targetWrappedTrack); err == nil {
+		return targetWrappedTrack, nil
+	}
 	// TODO: add other possible types
 	return nil, fmt.Errorf("unknown type")
+}
+
+func (wt WrappedTrack) SafeSetProperty(k string, v interface{}) WrappedTrack {
+	props := wt.Properties.Clone()
+	props[k] = v
+	wt.Properties = props
+	return wt
+}
+
+// Index indexes the given CatTracks into the S2 cell index(es).
+// Having WrappedTrack implement the Indexer is... maybe a great idea?
+// Or maybe just "merge" the index structure to the wrapped track somehow.
+func (wt WrappedTrack) Index(old, next Indexer) Indexer {
+	cp := wt
+	nextCount := next.(WrappedTrack).Properties.MustInt("Count", 1)
+	if old == nil || old.IsEmpty() {
+		cp = cp.SafeSetProperty("Count", nextCount)
+		return cp
+	}
+	oldWrapped := old.(WrappedTrack)
+	oldCount := oldWrapped.Properties.MustInt("Count", 1)
+	nextCount = oldCount + nextCount
+	oldWrapped = oldWrapped.SafeSetProperty("Count", nextCount)
+	return oldWrapped
+}
+
+func (wt WrappedTrack) IsEmpty() bool {
+	_, ok := wt.Properties["Count"]
+	return !ok
 }
 
 type IndexCountT struct {
@@ -105,15 +140,6 @@ func (it IndexCountT) Index(old, next Indexer) Indexer {
 
 func (it IndexCountT) IsEmpty() bool {
 	return it.Count == 0
-}
-
-func (wt WrappedTrack) IndexerForLevel(level CellLevel) Indexer {
-	switch level {
-	case CellLevel23:
-		return IndexCountT{Count: 1}
-	default:
-		return IndexCountT{Count: 1}
-	}
 }
 
 func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, batchSize int) (*CellIndexer, error) {
@@ -165,7 +191,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}, nil
 }
 
-func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
+func (ci *CellIndexer) FeedOfIndexedTracksForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
 	v, ok := ci.indexFeeds[level]
 	if !ok {
 		return nil, fmt.Errorf("level %d not found", level)
@@ -197,21 +223,18 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
 		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
-	uniqMap := make(map[string]cattrack.CatTrack)
+	mapIDNext := make(map[string]WrappedTrack)
 
 	cache := ci.Caches[level]
 	for _, ct := range tracks {
-		ctIdxr := WrappedTrack(ct).IndexerForLevel(level)
+		ctIdxr := WrappedTrack(ct)
 		cellID := getTrackCellID(ct, level)
 
 		var old, next Indexer
-		old = nil
 
 		v, exists := cache.Get(cellID.ToToken())
 		if exists {
 			old = v.(Indexer)
-		} else {
-			uniqMap[cellID.ToToken()] = ct
 		}
 		next = ctIdxr.Index(old, ctIdxr)
 		cache.Add(cellID.ToToken(), next)
@@ -235,8 +258,16 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
-				delete(uniqMap, k)
-				old, err = UnmarshalIndexer(v)
+				r, err := gzip.NewReader(bytes.NewBuffer(v))
+				if err != nil {
+					return err
+				}
+				ungzipped := bytes.NewBuffer([]byte{})
+				if _, err := ungzipped.ReadFrom(r); err != nil {
+					return err
+				}
+				_ = r.Close()
+				old, err = UnmarshalIndexer(ungzipped.Bytes())
 				if err != nil {
 					return err
 				}
@@ -246,9 +277,19 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 			if err != nil {
 				return err
 			}
-			if err := b.Put([]byte(k), encoded); err != nil {
+			buf := bytes.NewBuffer([]byte{})
+			w, err := gzip.NewWriterLevel(buf, gzip.BestCompression)
+			if err != nil {
 				return err
 			}
+			if _, err := w.Write(encoded); err != nil {
+				return err
+			}
+			_ = w.Close()
+			if err := b.Put([]byte(k), buf.Bytes()); err != nil {
+				return err
+			}
+			mapIDNext[k] = next.(WrappedTrack)
 		}
 		return nil
 	})
@@ -256,18 +297,18 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		return err
 	}
 
-	var uniqTracks []cattrack.CatTrack
-	for _, ct := range uniqMap {
-		uniqTracks = append(uniqTracks, ct)
+	var outTracks []cattrack.CatTrack
+	for _, ct := range mapIDNext {
+		outTracks = append(outTracks, cattrack.CatTrack(ct))
 	}
 
 	enc := json.NewEncoder(ci.FlatFiles[level].Writer())
-	for _, ct := range uniqTracks {
+	for _, ct := range outTracks {
 		if err := enc.Encode(ct); err != nil {
 			return err
 		}
 	}
-	ci.indexFeeds[level].Send(uniqTracks)
+	ci.indexFeeds[level].Send(outTracks)
 	return nil
 }
 

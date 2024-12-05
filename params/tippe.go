@@ -26,7 +26,7 @@ func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
 	case TippeConfigNameTripDetected:
 		return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	case TippeConfigNameCells:
-		return TippeCellsArgs.Copy(), true
+		return DefaultTippeConfigs.Cells(), true
 	}
 	return nil, false
 }
@@ -38,6 +38,7 @@ var DefaultTippeConfigs = &struct {
 	Snaps  func() CLIFlagsT
 	Laps   func() CLIFlagsT
 	Naps   func() CLIFlagsT
+	Cells  func() CLIFlagsT
 }{
 	Tracks: func() CLIFlagsT {
 		return TippeTracksArgs.Copy()
@@ -51,6 +52,7 @@ var DefaultTippeConfigs = &struct {
 	Naps: func() CLIFlagsT {
 		return TippeNapsArgs.Copy()
 	},
+	Cells: func() CLIFlagsT { return TippeCellsArgs.Copy() },
 }
 
 var (

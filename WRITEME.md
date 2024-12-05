@@ -1,5 +1,14 @@
 
 ```
+./hack-geojson-polygons.sh
+http://localhost:40223/public/?geojson=http://localhost:8010/level-13.json,http://localhost:8010/level-16.json
+```
+
+```
+http://localhost:40223/public/?geojson=http://localhost:8010/out.json
+```
+
+```
 http://localhost:40223/public/?vector=http://localhost:3001/services/ia/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/laps/laps/tiles/{z}/{x}/{y}.pbf
 http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf
 

@@ -10,6 +10,7 @@ import (
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"math/rand"
 	"time"
 )
 
@@ -49,7 +50,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 
 			// FIXME Shove me off to own function.
 			// Beware routines. Must wait in.
-			levelFeed, err := cellIndexer.FeedOfUniquesForLevel(level)
+			levelFeed, err := cellIndexer.FeedOfIndexedTracksForLevel(level)
 			if err != nil {
 				c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 				return
@@ -113,6 +114,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 					//}
 
 					cp.Geometry = orb.Polygon{orb.Ring(vertices)}
+					cp.ID = rand.Int63()
 					outs = append(outs, cp)
 				}
 				return outs
@@ -124,7 +126,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 					SourceName: "s2_cells",
 					LayerName:  fmt.Sprintf("level-%02d-polygons", level),
 				},
-				TippeConfig: params.TippeConfigNameTracks,
+				TippeConfig: params.TippeConfigNameCells,
 			}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, txed))
 		}
 	}
