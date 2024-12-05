@@ -1,6 +1,16 @@
+
+```
+http://localhost:40223/public/?vector=http://localhost:3001/services/ia/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/laps/laps/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf
+
+http://localhost:40223/public/?vector=http://localhost:3001/services/ia/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/rye/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf
+```
+
+---
+
 ```
 http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tripdetected/tripdetected_edge/tiles/{z}/{x}/{y}.pbf
-
 http://localhost:8080/public/?vector=http://localhost:3001/services/rye/naps/naps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps_edge/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/tracks/tracks_edge/tiles/{z}/{x}/{y}.pbf
 ```
 

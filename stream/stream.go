@@ -245,6 +245,24 @@ func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
 	return out
 }
 
+func Unslice[S []T, T any](ctx context.Context, in <-chan S) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		for element := range in {
+			sl := element
+			for _, e := range sl {
+				select {
+				case <-ctx.Done():
+					return
+				case out <- e:
+				}
+			}
+		}
+	}()
+	return out
+}
+
 func Broadcast[T any](ctx context.Context, in <-chan T, n int) []<-chan T {
 	outs := make([]chan T, n)
 	for i := range outs {

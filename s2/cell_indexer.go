@@ -46,14 +46,13 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/geo/s2"
-	"github.com/golang/groupcache/lru"
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
-	"log"
 	"log/slog"
 	"path/filepath"
 	"time"
@@ -63,13 +62,58 @@ const s2DBName = "s2.db"
 
 type CellIndexer struct {
 	CatID     conceptual.CatID
-	Caches    map[CellLevel]*lru.Cache
+	Caches    map[CellLevel]*lru.Cache[string, Indexer]
 	Levels    []CellLevel
 	DB        *bbolt.DB
 	FlatFiles map[CellLevel]*flat.GZFileWriter
 	BatchSize int
+	IndexerFn func(old, next Indexer) Indexer
 
-	uniqueIndexFeeds map[CellLevel]*event.FeedOf[[]*cattrack.CatTrack]
+	logger *slog.Logger
+
+	uniqueIndexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
+}
+
+type WrappedTrack cattrack.CatTrack
+
+type Indexer interface {
+	Index(old, next Indexer) Indexer
+	IsEmpty() bool
+}
+
+func UnmarshalIndexer(v []byte) (Indexer, error) {
+	var targetIndexCountT IndexCountT
+	if err := json.Unmarshal(v, &targetIndexCountT); err == nil {
+		return targetIndexCountT, nil
+	}
+	// TODO: add other possible types
+	return nil, fmt.Errorf("unknown type")
+}
+
+type IndexCountT struct {
+	Count int
+}
+
+func (it IndexCountT) Index(old, next Indexer) Indexer {
+	if old == nil || old.IsEmpty() {
+		old = IndexCountT{}
+	}
+	return IndexCountT{
+		Count: old.(IndexCountT).Count + next.(IndexCountT).Count,
+	}
+}
+
+func (it IndexCountT) IsEmpty() bool {
+	return it.Count == 0
+}
+
+func (wt WrappedTrack) IndexerForLevel(level CellLevel) Indexer {
+	switch level {
+	case CellLevel23:
+		return IndexCountT{Count: 1}
+	default:
+		return IndexCountT{Count: 1}
+	}
 }
 
 func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, batchSize int) (*CellIndexer, error) {
@@ -87,7 +131,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, err
 	}
 
-	uniqueIndexFeeds := make(map[CellLevel]*event.FeedOf[[]*cattrack.CatTrack], len(levels))
+	uniqueIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
 	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
 
 	for _, level := range levels {
@@ -97,12 +141,16 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		}
 		flatFileMap[level] = gzf
 
-		uniqueIndexFeeds[level] = &event.FeedOf[[]*cattrack.CatTrack]{}
+		uniqueIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
 
-	caches := make(map[CellLevel]*lru.Cache)
+	caches := make(map[CellLevel]*lru.Cache[string, Indexer], len(levels))
 	for _, level := range levels {
-		caches[level] = lru.New(10_000)
+		c, err := lru.New[string, Indexer](batchSize)
+		if err != nil {
+			return nil, err
+		}
+		caches[level] = c
 	}
 
 	return &CellIndexer{
@@ -113,10 +161,11 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		FlatFiles:        flatFileMap,
 		BatchSize:        batchSize,
 		uniqueIndexFeeds: uniqueIndexFeeds,
+		logger:           slog.With("indexer", "s2"),
 	}, nil
 }
 
-func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]*cattrack.CatTrack], error) {
+func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
 	v, ok := ci.uniqueIndexFeeds[level]
 	if !ok {
 		return nil, fmt.Errorf("level %d not found", level)
@@ -133,14 +182,7 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 		func(tracks []cattrack.CatTrack) bool {
 			return len(tracks) == ci.BatchSize
 		}, in)
-	batchPtrs := stream.Transform(ctx, func(tracks []cattrack.CatTrack) []*cattrack.CatTrack {
-		out := make([]*cattrack.CatTrack, len(tracks))
-		for i, t := range tracks {
-			out[i] = &t
-		}
-		return out
-	}, batches)
-	for batch := range batchPtrs {
+	for batch := range batches {
 		for _, level := range ci.Levels {
 			if err := ci.index(level, batch); err != nil {
 				return err
@@ -150,15 +192,75 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	return nil
 }
 
-func (ci *CellIndexer) index(level CellLevel, tracks []*cattrack.CatTrack) error {
+func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error {
 	start := time.Now()
 	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
 		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
-	_, uniqTracks := ci.filterAndIndexUniqCatTracks(level, tracks)
-	if len(uniqTracks) == 0 {
-		return nil
+	uniqMap := make(map[string]cattrack.CatTrack)
+
+	cache := ci.Caches[level]
+	for _, ct := range tracks {
+		ctIdxr := WrappedTrack(ct).IndexerForLevel(level)
+		cellID := getTrackCellID(ct, level)
+
+		var old, next Indexer
+		old = nil
+
+		v, exists := cache.Get(cellID.ToToken())
+		if exists {
+			old = v.(Indexer)
+		} else {
+			uniqMap[cellID.ToToken()] = ct
+		}
+		next = ctIdxr.Index(old, ctIdxr)
+		cache.Add(cellID.ToToken(), next)
 	}
+
+	err := ci.DB.Update(func(tx *bbolt.Tx) error {
+		bucket := dbBucket(level)
+		b, err := tx.CreateBucketIfNotExists(bucket)
+		if err != nil {
+			return err
+		}
+		for _, k := range cache.Keys() {
+			cVal, ok := cache.Peek(k)
+			if !ok {
+				panic("cache key not found")
+			}
+
+			var old Indexer
+
+			v := b.Get([]byte(k))
+
+			// Non-nil value means non-unique track/index.
+			if v != nil {
+				delete(uniqMap, k)
+				old, err = UnmarshalIndexer(v)
+				if err != nil {
+					return err
+				}
+			}
+			next := cVal.Index(old, cVal)
+			encoded, err := json.Marshal(next)
+			if err != nil {
+				return err
+			}
+			if err := b.Put([]byte(k), encoded); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	var uniqTracks []cattrack.CatTrack
+	for _, ct := range uniqMap {
+		uniqTracks = append(uniqTracks, ct)
+	}
+
 	enc := json.NewEncoder(ci.FlatFiles[level].Writer())
 	for _, ct := range uniqTracks {
 		if err := enc.Encode(ct); err != nil {
@@ -181,88 +283,88 @@ func (ci *CellIndexer) Close() error {
 	return nil
 }
 
-// filterAndIndexUniqCatTracks returns unique cellIDs and associated tracks for the given cat.
-// It attempts first to cross-reference all tracks against the cache. This step returns the indices of the tracks that are not in the cache.
-// Those uncached tracks are then cross-referenced against the index db, which writes them if they are unique.
-// Only the DB-access part of the process is blocking, since the cache is only a nice-to-have and we
-// don't care if some cache misses are false negatives.
-func (ci *CellIndexer) filterAndIndexUniqCatTracks(level CellLevel, tracks []*cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []*cattrack.CatTrack) {
-	if len(tracks) == 0 {
-		return uniqCellIDs, uniqTracks
-	}
+//// filterAndIndexUniqCatTracks returns unique cellIDs and associated tracks for the given cat.
+//// It attempts first to cross-reference all tracks against the cache. This step returns the indices of the tracks that are not in the cache.
+//// Those uncached tracks are then cross-referenced against the index db, which writes them if they are unique.
+//// Only the DB-access part of the process is blocking, since the cache is only a nice-to-have and we
+//// don't care if some cache misses are false negatives.
+//func (ci *CellIndexer) filterAndIndexUniqCatTracks(level CellLevel, tracks []cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []cattrack.CatTrack) {
+//	if len(tracks) == 0 {
+//		return uniqCellIDs, uniqTracks
+//	}
+//
+//	// create a cellid slice analogous to tracks
+//	cellIDs := getTrackCellIDs(tracks, level)
+//	if len(cellIDs) != len(tracks) {
+//		log.Fatalln("len(cellIDs) != len(tracks)", len(cellIDs), len(tracks))
+//	}
+//
+//	// returns the indices of uniq tracks (== uniq cellIDs)
+//	uniqCellIDTrackIndices := ci.uniqIndexesFromCache(level, cellIDs) // eg. 0, 23, 42, 99
+//
+//	// if there are no uniq cellIDs, return early
+//	if len(uniqCellIDTrackIndices) == 0 {
+//		return
+//	}
+//
+//	tmpUniqCellIDs := make([]s2.CellID, len(uniqCellIDTrackIndices))
+//	tmpUniqTracks := make([]cattrack.CatTrack, len(uniqCellIDTrackIndices))
+//	for ii, idx := range uniqCellIDTrackIndices {
+//		tmpUniqCellIDs[ii] = cellIDs[idx]
+//		tmpUniqTracks[ii] = tracks[idx]
+//	}
+//
+//	// so now we've whittled the tracks to only those not in the cache
+//	// we need to check the db for those that did not have cache hits
+//
+//	// further whittle the uniqs based on db hits/misses
+//	_uniqCellIDs, _uniqTracks, err := ci.filterUniqFromDBWriting(level, tmpUniqCellIDs, tmpUniqTracks)
+//	if err != nil {
+//		log.Fatalln(err)
+//	}
+//	return _uniqCellIDs, _uniqTracks
+//}
 
-	// create a cellid slice analogous to tracks
-	cellIDs := getTrackCellIDs(tracks, level)
-	if len(cellIDs) != len(tracks) {
-		log.Fatalln("len(cellIDs) != len(tracks)", len(cellIDs), len(tracks))
-	}
+//// filterUniqFromDBWriting filters the givens cellIDs and tracklines to those which were not found in the database.
+//// The unique cells will be written before the function returns.
+//// I think it's important to read+write in the same transaction, so that the db is not left in an inconsistent state
+//// with multiple routines potentially accessing it.
+//// I expect that bolt will lock the db for the duration of the transaction,
+//// so that other routines will block until the transaction is complete.
+//func (ci *CellIndexer) filterUniqFromDBWriting(level CellLevel, cellIDs []s2.CellID, tracks []cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []cattrack.CatTrack, err error) {
+//	bucket := dbBucket(level)
+//	err = ci.DB.Update(func(tx *bbolt.Tx) error {
+//		b, err := tx.CreateBucketIfNotExists(bucket)
+//		if err != nil {
+//			return err
+//		}
+//		for i, cellID := range cellIDs {
+//			v := b.Get(cellIDDBKey(cellID))
+//			if v == nil {
+//				uniqCellIDs = append(uniqCellIDs, cellID)
+//				uniqTracks = append(uniqTracks, tracks[i])
+//
+//				// Write the new cell to the index.
+//				err = b.Put(cellIDDBKey(cellID), []byte{0x1})
+//				if err != nil {
+//					return err
+//				}
+//			}
+//		}
+//		return nil
+//	})
+//	return
+//}
 
-	// returns the indices of uniq tracks (== uniq cellIDs)
-	uniqCellIDTrackIndices := ci.uniqIndexesFromCache(level, cellIDs) // eg. 0, 23, 42, 99
-
-	// if there are no uniq cellIDs, return early
-	if len(uniqCellIDTrackIndices) == 0 {
-		return
-	}
-
-	tmpUniqCellIDs := make([]s2.CellID, len(uniqCellIDTrackIndices))
-	tmpUniqTracks := make([]*cattrack.CatTrack, len(uniqCellIDTrackIndices))
-	for ii, idx := range uniqCellIDTrackIndices {
-		tmpUniqCellIDs[ii] = cellIDs[idx]
-		tmpUniqTracks[ii] = tracks[idx]
-	}
-
-	// so now we've whittled the tracks to only those not in the cache
-	// we need to check the db for those that did not have cache hits
-
-	// further whittle the uniqs based on db hits/misses
-	_uniqCellIDs, _uniqTracks, err := ci.filterUniqFromDBWriting(level, tmpUniqCellIDs, tmpUniqTracks)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	return _uniqCellIDs, _uniqTracks
-}
-
-// filterUniqFromDBWriting filters the givens cellIDs and tracklines to those which were not found in the database.
-// The unique cells will be written before the function returns.
-// I think it's important to read+write in the same transaction, so that the db is not left in an inconsistent state
-// with multiple routines potentially accessing it.
-// I expect that bolt will lock the db for the duration of the transaction,
-// so that other routines will block until the transaction is complete.
-func (ci *CellIndexer) filterUniqFromDBWriting(level CellLevel, cellIDs []s2.CellID, tracks []*cattrack.CatTrack) (uniqCellIDs []s2.CellID, uniqTracks []*cattrack.CatTrack, err error) {
-	bucket := dbBucket(level)
-	err = ci.DB.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists(bucket)
-		if err != nil {
-			return err
-		}
-		for i, cellID := range cellIDs {
-			v := b.Get(cellIDDBKey(cellID))
-			if v == nil {
-				uniqCellIDs = append(uniqCellIDs, cellID)
-				uniqTracks = append(uniqTracks, tracks[i])
-
-				// Write the new cell to the index.
-				err = b.Put(cellIDDBKey(cellID), []byte{0x1})
-				if err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	return
-}
-
-// uniqIndexesFromCache returns the indices of the given cellIDs that are not in the LRU cache.
-func (ci *CellIndexer) uniqIndexesFromCache(level CellLevel, cellIDs []s2.CellID) (uniqIndices []int) {
-	for i, cellID := range cellIDs {
-		if !ci.trackInCacheByCellID(level, cellID) {
-			uniqIndices = append(uniqIndices, i)
-		}
-	}
-	return uniqIndices
-}
+//// uniqIndexesFromCache returns the indices of the given cellIDs that are not in the LRU cache.
+//func (ci *CellIndexer) uniqIndexesFromCache(level CellLevel, cellIDs []s2.CellID) (uniqIndices []int) {
+//	for i, cellID := range cellIDs {
+//		if !ci.trackInCacheByCellID(level, cellID) {
+//			uniqIndices = append(uniqIndices, i)
+//		}
+//	}
+//	return uniqIndices
+//}
 
 // CellIDWithLevel returns the cellID truncated to the given level.
 func CellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
@@ -274,7 +376,7 @@ func CellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
 
 // getTrackCellID returns the cellID for the given track line, which is a raw string of a JSON-encoded geojson cat track.
 // It applies the global cellLevel to the returned cellID.
-func getTrackCellID(ct *cattrack.CatTrack, level CellLevel) s2.CellID {
+func getTrackCellID(ct cattrack.CatTrack, level CellLevel) s2.CellID {
 	//var coords []float64
 	//// Use GJSON to avoid slow unmarshalling of the entire line.
 	//gjson.Get(line, "geometry.coordinates").ForEach(func(key, value gjson.Result) bool {
@@ -285,28 +387,29 @@ func getTrackCellID(ct *cattrack.CatTrack, level CellLevel) s2.CellID {
 	return CellIDWithLevel(s2.CellIDFromLatLng(s2.LatLngFromDegrees(coords[1], coords[0])), level)
 }
 
-func getTrackCellIDs(cts []*cattrack.CatTrack, level CellLevel) (cellIDs []s2.CellID) {
-	for _, ct := range cts {
-		cellIDs = append(cellIDs, getTrackCellID(ct, level))
-	}
-	return cellIDs
-}
+//func getTrackCellIDs(cts []cattrack.CatTrack, level CellLevel) (cellIDs []s2.CellID) {
+//	for _, ct := range cts {
+//		cellIDs = append(cellIDs, getTrackCellID(ct, level))
+//	}
+//	return cellIDs
+//}
 
 func dbBucket(level CellLevel) []byte { return []byte{byte(level)} }
-func cellIDCacheKey(cellID s2.CellID) string {
-	return fmt.Sprintf("%s", cellID.ToToken())
-}
-func cellIDDBKey(cellID s2.CellID) []byte {
-	return []byte(cellID.ToToken())
-}
 
-// trackInCacheByCellID returns true if the given cellID for some cat exists in the LRU cache.
-// If not, it will be added to the cache.
-func (ci *CellIndexer) trackInCacheByCellID(level CellLevel, cellID s2.CellID) (exists bool) {
-	key := cellIDCacheKey(cellID)
-	if _, ok := ci.Caches[level].Get(key); ok {
-		return ok
-	}
-	ci.Caches[level].Add(key, true)
-	return false
-}
+//func cellIDCacheKey(cellID s2.CellID) string {
+//	return fmt.Sprintf("%s", cellID.ToToken())
+//}
+//func cellIDDBKey(cellID s2.CellID) []byte {
+//	return []byte(cellID.ToToken())
+//}
+
+//// trackInCacheByCellID returns true if the given cellID for some cat exists in the LRU cache.
+//// If not, it will be added to the cache.
+//func (ci *CellIndexer) trackInCacheByCellID(level CellLevel, cellID s2.CellID) (exists bool) {
+//	key := cellIDCacheKey(cellID)
+//	if _, ok := ci.Caches[level].Get(key); ok {
+//		return ok
+//	}
+//	ci.Caches[level].Add(key, true)
+//	return false
+//}

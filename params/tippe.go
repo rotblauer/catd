@@ -202,6 +202,8 @@ var (
 
 		// -zg: Automatically choose a maxzoom that should be sufficient to clearly distinguish the features and the detail within each feature
 		"--maximum-zoom", "g", // guess
+		//"--minimum-zoom", "3",
+		//"--maximum-zoom", "18",
 
 		// --coalesce-densest-as-needed: If the tiles are too big at low or medium zoom levels,
 		// merge as many features together as are necessary to allow tiles to be created with those features that are still distinguished
