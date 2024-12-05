@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"slices"
+	"sync"
 )
 
 // Slice, et al., taken from:
@@ -223,9 +224,12 @@ func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
 	out := make(chan T)
 	go func() {
 		defer close(out)
+		wg := sync.WaitGroup{}
+		wg.Add(len(ins))
 		for _, inn := range ins {
 			in := inn
 			go func() {
+				defer wg.Done()
 				for element := range in {
 					el := element
 					select {
@@ -236,6 +240,7 @@ func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
 				}
 			}()
 		}
+		wg.Wait()
 	}()
 	return out
 }
