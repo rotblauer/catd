@@ -71,7 +71,7 @@ type CellIndexer struct {
 
 	logger *slog.Logger
 
-	uniqueIndexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
+	indexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
 }
 
 type WrappedTrack cattrack.CatTrack
@@ -131,7 +131,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		return nil, err
 	}
 
-	uniqueIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
+	indexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
 	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
 
 	for _, level := range levels {
@@ -141,7 +141,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		}
 		flatFileMap[level] = gzf
 
-		uniqueIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
+		indexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
 
 	caches := make(map[CellLevel]*lru.Cache[string, Indexer], len(levels))
@@ -154,19 +154,19 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	return &CellIndexer{
-		CatID:            catID,
-		Levels:           levels,
-		Caches:           caches,
-		DB:               db,
-		FlatFiles:        flatFileMap,
-		BatchSize:        batchSize,
-		uniqueIndexFeeds: uniqueIndexFeeds,
-		logger:           slog.With("indexer", "s2"),
+		CatID:      catID,
+		Levels:     levels,
+		Caches:     caches,
+		DB:         db,
+		FlatFiles:  flatFileMap,
+		BatchSize:  batchSize,
+		indexFeeds: indexFeeds,
+		logger:     slog.With("indexer", "s2"),
 	}, nil
 }
 
 func (ci *CellIndexer) FeedOfUniquesForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
-	v, ok := ci.uniqueIndexFeeds[level]
+	v, ok := ci.indexFeeds[level]
 	if !ok {
 		return nil, fmt.Errorf("level %d not found", level)
 	}
@@ -267,7 +267,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 			return err
 		}
 	}
-	ci.uniqueIndexFeeds[level].Send(uniqTracks)
+	ci.indexFeeds[level].Send(uniqTracks)
 	return nil
 }
 

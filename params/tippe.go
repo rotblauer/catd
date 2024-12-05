@@ -225,6 +225,8 @@ var (
 		// You can probably go up to about 10 without too much visible difference.
 		"--simplification", "10",
 
+		"--generate-ids",
+
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
@@ -232,6 +234,7 @@ var (
 		"--include", "Elevation",
 		"--include", "Speed",
 		"--include", "Accuracy",
+		"--include", "Count",
 		// "--include", "Heading",
 		"--include", "UnixTime",
 		"--single-precision",

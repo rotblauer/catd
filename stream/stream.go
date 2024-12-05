@@ -249,8 +249,8 @@ func Unslice[S []T, T any](ctx context.Context, in <-chan S) <-chan T {
 	out := make(chan T)
 	go func() {
 		defer close(out)
-		for element := range in {
-			sl := element
+		for sl := range in {
+			sl := sl
 			for _, e := range sl {
 				select {
 				case <-ctx.Done():
