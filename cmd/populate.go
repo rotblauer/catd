@@ -32,6 +32,8 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"sync"
@@ -106,6 +108,12 @@ Missoula, Montana
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
+
+		//defer profile.Start(profile.MemProfile).Stop()
+
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
 
 		ctx, ctxCanceler := context.WithCancel(context.Background())
 		interrupt := common.Interrupted()
@@ -196,6 +204,7 @@ Missoula, Montana
 			} else {
 				slog.Info("Populator worker done", "cat", cat.CatID)
 			}
+			cat.Close()
 		}
 
 		// Spin up the workers.

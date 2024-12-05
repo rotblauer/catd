@@ -56,6 +56,13 @@ func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err 
 	return nil
 }
 
+func (c *Cat) Close() {
+	c.State.Close()
+	if c.rpcClient != nil {
+		c.rpcClient.Close()
+	}
+}
+
 // Populate persists incoming CatTracks for one cat.
 // FIXME: All functions should return errors, and this function should return first of any errors.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
