@@ -13,6 +13,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"net/rpc"
 	"time"
 )
 
@@ -57,10 +58,23 @@ func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err 
 }
 
 func (c *Cat) Close() {
-	c.State.Close()
-	if c.rpcClient != nil {
-		c.rpcClient.Close()
+	if err := c.State.Close(); err != nil {
+		c.logger.Error("Failed to close cat state", "error", err)
 	}
+	if c.rpcClient != nil {
+		if err := c.rpcClient.Close(); err != nil {
+			c.logger.Error("Failed to close RPC client", "error", err)
+		}
+	}
+}
+
+func (c *Cat) dialRPCServer() error {
+	client, err := rpc.DialHTTP(c.tiledConf.RPCNetwork, c.tiledConf.RPCAddress)
+	if err != nil {
+		return err
+	}
+	c.rpcClient = client
+	return nil
 }
 
 // Populate persists incoming CatTracks for one cat.
@@ -75,13 +89,20 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return
 	}
 	c.logger.Info("Populate has the lock on state conn")
+
+	if c.tiledConf != nil {
+		if err := c.dialRPCServer(); err != nil {
+			c.logger.Error("Failed to dial RPC client", "error", err)
+			return err
+		}
+		c.logger.Info("Dialled RPC client")
+	} else {
+		c.logger.Debug("No tiled config, not dialling RPC client")
+	}
+
 	started := time.Now()
 	defer func() {
-		if err := c.State.Close(); err != nil {
-			c.logger.Error("Failed to close cat state", "error", err)
-		} else {
-			c.logger.Debug("Closed cat state")
-		}
+		c.Close()
 		c.logger.Info("Populate done",
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()

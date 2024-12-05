@@ -4,7 +4,6 @@ import (
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/state"
-	"log"
 	"log/slog"
 	"net/rpc"
 )
@@ -26,24 +25,15 @@ type Cat struct {
 	// logger logs lines with the cat name attached.
 	logger *slog.Logger
 
+	tiledConf *params.TileDaemonConfig
 	rpcClient *rpc.Client
 }
 
 func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
-	var client *rpc.Client
-	var err error
-	if daemonConf != nil {
-		client, err = rpc.DialHTTP(daemonConf.RPCNetwork, daemonConf.RPCAddress)
-		if err != nil {
-			// FIXME
-			log.Fatal("RPC dialing:", err)
-		}
-	}
-
 	return &Cat{
 		CatID:     catID,
 		logger:    slog.With("cat", catID),
-		rpcClient: client,
+		tiledConf: daemonConf,
 	}
 }
 
