@@ -47,7 +47,11 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	}, filterLaps)
 
 	// End of the line for all cat laps...
-	sinkLaps, sendLaps := stream.Tee(ctx, simplified)
+	//sinkLaps, sendLaps := stream.Tee(ctx, simplified)
+	sinkLaps := make(chan cattrack.CatLap)
+	sendLaps := make(chan cattrack.CatLap)
+	notifyLaps := make(chan cattrack.CatLap)
+	stream.TeeMany(ctx, simplified, sinkLaps, sendLaps, notifyLaps)
 
 	wr, err := c.State.Flat.NamedGZWriter("laps.geojson.gz", nil)
 	if err != nil {
@@ -63,6 +67,9 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 		},
 		TippeConfig: params.TippeConfigNameLaps,
 	}, sendLaps)
+	go stream.Sink(ctx, func(ct cattrack.CatLap) {
+		c.completedLaps.Send(ct)
+	}, notifyLaps)
 
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.

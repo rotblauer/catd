@@ -1,9 +1,11 @@
 package api
 
 import (
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/state"
+	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"net/rpc"
 )
@@ -27,13 +29,16 @@ type Cat struct {
 
 	tiledConf *params.TileDaemonConfig
 	rpcClient *rpc.Client
+
+	completedLaps event.FeedOf[cattrack.CatLap]
 }
 
 func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
 	return &Cat{
-		CatID:     catID,
-		logger:    slog.With("cat", catID),
-		tiledConf: daemonConf,
+		CatID:         catID,
+		logger:        slog.With("cat", catID),
+		tiledConf:     daemonConf,
+		completedLaps: event.FeedOf[cattrack.CatLap]{},
 	}
 }
 
