@@ -71,7 +71,10 @@ type CellIndexer struct {
 	DB        *bbolt.DB
 	FlatFiles map[CellLevel]*flat.GZFileWriter
 	BatchSize int
-	IndexerFn func(old, next Indexer) Indexer
+
+	// IndexerT is (a value of) the type of the Indexer implementation.
+	// The Indexer defines logic about how merge non-unique cat tracks.
+	IndexerT Indexer
 
 	Waiting sync.WaitGroup
 
@@ -112,12 +115,15 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	return &CellIndexer{
-		CatID:          catID,
-		Levels:         levels,
-		Caches:         make(map[CellLevel]*lru.Cache[string, Indexer], len(levels)),
-		DB:             db,
-		FlatFiles:      flatFileMap,
-		BatchSize:      batchSize,
+		CatID:     catID,
+		Levels:    levels,
+		Caches:    make(map[CellLevel]*lru.Cache[string, Indexer], len(levels)),
+		DB:        db,
+		FlatFiles: flatFileMap,
+		BatchSize: batchSize,
+
+		// TODO? Expose this in signature.
+		IndexerT:       &ICT{},
 		indexFeeds:     indexFeeds,
 		uniqIndexFeeds: uniqIndexFeeds,
 		logger:         slog.With("indexer", "s2"),
@@ -187,8 +193,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		// FIXME Converting and asserting the Indexer type makes this non-generic.
 		// Use reflect or tags or something to
 		// be able to handle any Indexer interface implementation.
-		fixme := &ICT{}
-		ict := fixme.FromCatTrack(ct)
+		ict := ci.IndexerT.FromCatTrack(ct)
 		next = ict.Index(old, ict)
 
 		cache.Add(cellID.ToToken(), next)
@@ -244,11 +249,10 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 					return err
 				}
 
-				fixme := &ICT{}
-				old = fixme.FromCatTrack(ct)
+				old = ci.IndexerT.FromCatTrack(ct)
 			}
 
-			next := (&ICT{}).Index(old, nextIdxr)
+			next := ci.IndexerT.Index(old, nextIdxr)
 			nextTrack := next.ApplyToCatTrack(next, track)
 			outTracks = append(outTracks, nextTrack)
 
