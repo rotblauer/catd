@@ -31,14 +31,14 @@ run() {
 #  local source_gz="master.json.gz"
 #  local source_gz="local/yyyy-mm/2024*.json.gz"
 #  local source_gz="local/yyyy-mm/2024-07.json.gz"
-  local source_gz="local/yyyy-mm/2024-09.json.gz"
+#  local source_gz="local/yyyy-mm/2024-09.json.gz"
 #  local source_gz="local/yyyy-mm/2024-12.json.gz"
 #  local source_gz="local/yyyy-mm/2024-1*.json.gz"
-#  local source_gz="local/yyyy-mm/2024-1*.json.gz"
+  local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
   filter() {
-    cat
-#    grep -E '2024-1[1,2]'
+#    cat
+    grep -E '2024-1[1,2]'
   }
 
   go install . &&\

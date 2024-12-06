@@ -9,6 +9,7 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/daemon/tiled"
+	"github.com/rotblauer/catd/geo/cleaner"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -150,14 +151,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// All non-snap tracks flow to these channels.
 	storeCh := make(chan cattrack.CatTrack)
 	//sendTiledCh := make(chan cattrack.CatTrack)
-	areaPipeCh := make(chan cattrack.CatTrack)
-	vectorPipeCh := make(chan cattrack.CatTrack)
-	stream.TeeMany(ctx, noSnaps,
-		storeCh,
-		//sendTiledCh,
-		areaPipeCh,
-		vectorPipeCh,
-	)
+	//areaPipeCh := make(chan cattrack.CatTrack)
+	//vectorPipeCh := make(chan cattrack.CatTrack)
+	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
 
 	storeErrs := c.StoreTracks(ctx, storeCh)
 
@@ -195,11 +191,18 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendSnaps)
 
+	// Clean and improve tracks for pipeline handlers.
+	betterTracks := c.ImprovedActTracks(ctx, c.CleanTracks(ctx, pipelineChan))
+	areaPipeCh, vectorPipeCh := stream.Tee(ctx, betterTracks)
+
 	// S2 indexing pipeline. Stateful/cat.
-	go c.S2IndexTracks(ctx, areaPipeCh)
+	// Filter out probably-airborne tracks.
+	// Not really interested in heat maps from space.
+	groundedArea := stream.Filter[cattrack.CatTrack](ctx, cleaner.FilterGrounded, areaPipeCh)
+	go c.S2IndexTracks(ctx, groundedArea)
 	// Laps, naps.
+	// CatActPipeline is an upgrade from `go c.TripDetectionPipeline(ctx, vectorPipeCh)`.
 	go c.CatActPipeline(ctx, vectorPipeCh)
-	//go c.TripDetectionPipeline(ctx, vectorPipeCh)
 
 	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")

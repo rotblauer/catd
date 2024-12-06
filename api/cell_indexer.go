@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/daemon/tiled"
-	"github.com/rotblauer/catd/geo/cleaner"
 	"github.com/rotblauer/catd/params"
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
@@ -69,14 +68,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2)
 	}
 
-	// Clean tracks. We only want to index the good ones.
-	// Filter out probably-airborne tracks.
-	// Not really interested in heat maps from space.
-	cleaned := c.CleanTracks(ctx, in)
-	filtered := stream.Filter[cattrack.CatTrack](ctx, cleaner.FilterGrounded, cleaned)
-
 	// Blocking.
-	if err := cellIndexer.Index(ctx, filtered); err != nil {
+	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer errored", "error", err)
 	}
 	for _, sub := range subs {

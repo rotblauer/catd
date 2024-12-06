@@ -17,9 +17,6 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	defer close(lapTracks)
 	defer close(napTracks)
 
-	cleaned := c.CleanTracks(ctx, in)
-	actdetected := c.ImprovedActTracks(ctx, cleaned)
-
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
 	// TODO Send incomplete lap on close. This will be nice to have.
@@ -119,5 +116,5 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 		} else {
 			napTracks <- ct
 		}
-	}, actdetected)
+	}, in)
 }
