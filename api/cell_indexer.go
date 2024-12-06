@@ -78,40 +78,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 					vertices = append(vertices, orb.Point{ll.Lng.Degrees(), ll.Lat.Degrees()})
 				}
 
-				//cellUnion := cell.RectBound().CellUnionBound()
-				//
-				//vertices := []orb.Point{}
-				//for i, c := range cellUnion {
-				//	ccell := s2.CellFromCellID(c)
-				//	v := ccell.Vertex(i)
-				//
-				//	ll := s2.LatLngFromPoint(v)
-				//	vertices = append(vertices, orb.Point{ll.Lng.Degrees(), ll.Lat.Degrees()})
-				//}
-
-				//rect := cell.RectBound()
-				//hi, lo := rect.Hi(), rect.Lo()
-				//tl := orb.Point{lo.Lng.Degrees(), hi.Lat.Degrees()}
-				//tr := orb.Point{hi.Lng.Degrees(), hi.Lat.Degrees()}
-				//bl := orb.Point{lo.Lng.Degrees(), lo.Lat.Degrees()}
-				//br := orb.Point{hi.Lng.Degrees(), lo.Lat.Degrees()}
-				//vertices := []orb.Point{tl, tr, br, bl, tl}
-
-				//rc := s2.NewRegionCoverer()
-				//rc.MaxLevel = int(level)
-				//rc.MinLevel = int(level)
-				////rc.MaxCells = 8
-				//
-				//region := s2.Region(cell)
-				////covering := rc.Covering(region)
-				//
-				//cellUnion := rc.FastCovering(region)
-				//cellUnion.CellUnionBound()
-				//cellUnion.RectBound()
-				//for _, c := range cellUnion {
-				//
-				//}
-
 				cp.Geometry = orb.Polygon{orb.Ring(vertices)}
 				cp.ID = rand.Int63()
 				outs = append(outs, cp)
