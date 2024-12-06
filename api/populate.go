@@ -149,12 +149,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// All non-snap tracks flow to these channels.
 	storeCh := make(chan cattrack.CatTrack)
-	sendTiledCh := make(chan cattrack.CatTrack)
+	//sendTiledCh := make(chan cattrack.CatTrack)
 	areaPipeCh := make(chan cattrack.CatTrack)
 	vectorPipeCh := make(chan cattrack.CatTrack)
 	stream.TeeMany(ctx, noSnaps,
 		storeCh,
-		sendTiledCh,
+		//sendTiledCh,
 		areaPipeCh,
 		vectorPipeCh,
 	)
@@ -165,17 +165,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
 	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
 
-	// P.S. Don't send all tracks to tiled unless development.
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "tracks",
-			LayerName:  "tracks",
-		},
-		TippeConfigName: params.TippeConfigNameTracks,
-		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	}, sendTiledCh)
+	//// P.S. Don't send all tracks to tiled unless development.
+	//sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+	//	SourceSchema: tiled.SourceSchema{
+	//		CatID:      c.CatID,
+	//		SourceName: "tracks",
+	//		LayerName:  "tracks",
+	//	},
+	//	TippeConfigName: params.TippeConfigNameTracks,
+	//	Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+	//}, sendTiledCh)
 
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter("snaps.geojson.gz", nil)

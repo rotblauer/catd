@@ -4,6 +4,8 @@ import "github.com/rotblauer/catd/common"
 
 // SlippyCellZoomLevels are pairs of cell:zoom limits for use with tippecanoe --minimum-zoom and --maximum-zoom.
 // Levels are inclusive.
+// http://s2geometry.io/resources/s2cell_statistics.html
+// https://wiki.openstreetmap.org/wiki/Zoom_levels
 var SlippyCellZoomLevels = map[CellLevel][2]common.SlippyZoomLevelT{
 	CellLevel5:  {2, 3},
 	CellLevel6:  {3, 4}, // 6 is big at z=5

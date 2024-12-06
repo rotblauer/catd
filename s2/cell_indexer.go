@@ -100,11 +100,11 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
 
 	for _, level := range levels {
-		gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
-		if err != nil {
-			return nil, err
-		}
-		flatFileMap[level] = gzf
+		//gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
+		//if err != nil {
+		//	return nil, err
+		//}
+		//flatFileMap[level] = gzf
 
 		indexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 		uniqIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
@@ -267,12 +267,14 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 	}
 	ci.uniqIndexFeeds[level].Send(uniqTracks)
 
-	enc := json.NewEncoder(ci.FlatFiles[level].Writer())
-	for _, ct := range uniqTracks {
-		if err := enc.Encode(ct); err != nil {
-			return err
-		}
-	}
+	// Optionally, write (append) the unique (first) tracks to a flat file.
+	//enc := json.NewEncoder(ci.FlatFiles[level].Writer())
+	//for _, ct := range uniqTracks {
+	//	if err := enc.Encode(ct); err != nil {
+	//		return err
+	//	}
+	//}
+
 	return nil
 }
 

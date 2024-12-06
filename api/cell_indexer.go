@@ -55,11 +55,11 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		// This pattern was used by CatTracksV1 to build point-based maps of unique cells for level 23.
 		// The problem with this is that the first track is not as useful as the last track,
 		// or as a latest-state indexed track value.
-		u1 := make(chan []cattrack.CatTrack)
-		chans = append(chans, u1)
-		u1Sub := uniqLevelFeed.Subscribe(u1)
-		subs = append(subs, u1Sub)
-		go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
+		//u1 := make(chan []cattrack.CatTrack)
+		//chans = append(chans, u1)
+		//u1Sub := uniqLevelFeed.Subscribe(u1)
+		//subs = append(subs, u1Sub)
+		//go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
 
 		// Second paradigm: send all tracks to tiled in the event of a unique cell for that level.
 		u2 := make(chan []cattrack.CatTrack)
@@ -69,9 +69,11 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2)
 	}
 
+	// Clean tracks. We only want to index the good ones.
 	// Filter out probably-airborne tracks.
 	// Not really interested in heat maps from space.
-	filtered := stream.Filter[cattrack.CatTrack](ctx, cleaner.FilterGrounded, in)
+	cleaned := c.CleanTracks(ctx, in)
+	filtered := stream.Filter[cattrack.CatTrack](ctx, cleaner.FilterGrounded, cleaned)
 
 	// Blocking.
 	if err := cellIndexer.Index(ctx, filtered); err != nil {
