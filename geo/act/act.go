@@ -277,6 +277,10 @@ func (p *Improver) activityAccelerated(act activity.Activity, mul float64) bool 
 	case activity.TrackerStateFlying:
 		referenceSpeed = common.SpeedOfCommercialFlight
 	}
+	if mul > 0 {
+		return p.Cat.WindowAccelerationCalculatedSum/p.Cat.WindowSpan.Seconds() >
+			mul*(referenceSpeed/p.Cat.WindowSpan.Seconds())
+	}
 	return p.Cat.WindowAccelerationReportedSum/p.Cat.WindowSpan.Seconds() <
 		mul*(referenceSpeed/p.Cat.WindowSpan.Seconds())
 }

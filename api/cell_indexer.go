@@ -181,15 +181,3 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		}
 	}
 }
-
-//func (c *Cat) sendToTiled(ctx context.Context, args *tiled.PushFeaturesRequestArgs, in <-chan cattrack.CatTrack) {
-//	if c.rpcClient == nil {
-//		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
-//		return
-//	}
-//	c.State.Waiting.Add(1)
-//	go func() {
-//		defer c.State.Waiting.Done()
-//		sendBatchToCatRPCClient[cattrack.CatTrack](ctx, c, args, in)
-//	}()
-//}

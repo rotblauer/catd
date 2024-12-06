@@ -1,6 +1,26 @@
 
+```sh
+mbtileserver --port 3001 --cors '*' -d /tmp/catd100_000/tiled/tiles --verbose --enable-fs-watch
+
+# Use node v16 (`$ nvm use 16`)
+cd cattracks-explorer && yarn dev # will auto choose another port if 8080 not open.
+```
+
+- areas
+nonunique s2 cells at varying levels.
+heatmaps ahoy.
 http://localhost:40223/public/?vector=http://localhost:3001/services/rye/s2_cells/level-05-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-08-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-09-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-11-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-12-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-14-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-17-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-18-polygons/tiles/{z}/{x}/{y}.pbf
 http://localhost:8080/public/?vector=http://localhost:3001/services/ia/s2_cells/level-06-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-08-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-09-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-11-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-12-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-14-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-17-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-18-polygons/tiles/{z}/{x}/{y}.pbf
+
+- vectors 
+naps and laps
+http://localhost:40223/public/?vector=http://localhost:3001/services/rye/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/ia/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/laps/laps/tiles/{z}/{x}/{y}.pbf
+
+naps and laps AND cells! 
+http://localhost:40223/public/?vector=http://localhost:3001/services/rye/s2_cells/level-05-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-08-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-09-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-11-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-12-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-14-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-17-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/s2_cells/level-18-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/rye/laps/laps/tiles/{z}/{x}/{y}.pbf
+http://localhost:8080/public/?vector=http://localhost:3001/services/ia/s2_cells/level-06-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-08-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-09-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-11-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-12-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-13-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-14-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-16-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-17-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/s2_cells/level-18-polygons/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/naps/naps/tiles/{z}/{x}/{y}.pbf,http://localhost:3001/services/ia/laps/laps/tiles/{z}/{x}/{y}.pbf
+
 ---
 
 url for levels 08, 11, 13, 16, 18, 20
