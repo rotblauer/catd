@@ -206,6 +206,8 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 	return out
 }
 
+// Sink executes the sink function (if any) for each element in the input channel.
+// It is blocking.
 func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	for element := range in {
 		el := element

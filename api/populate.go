@@ -237,6 +237,8 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 	}()
 }
 
+// sendBatchToCatRPCClient sends a batch of features to the Cat RPC client.
+// It is a non-blocking function, and registers itself with the Cat Waiting state.
 func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) {
 	if c.rpcClient == nil {
 		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")

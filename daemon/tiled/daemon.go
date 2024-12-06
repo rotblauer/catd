@@ -476,9 +476,9 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
 		},
-		Version:        args.Versions[len(args.Versions)-1], // Request tiling only for the last version.
-		TippeConfig:    args.TippeConfigName,
-		TippeConfigRaw: args.TippeConfigRaw,
+		Version:         args.Versions[len(args.Versions)-1], // Request tiling only for the last version.
+		TippeConfigName: args.TippeConfigName,
+		TippeConfigRaw:  args.TippeConfigRaw,
 	}, nil)
 
 	d.logger.Debug("PushFeatures done", "cat", args.CatID, "source",
@@ -509,8 +509,8 @@ const (
 type TilingRequestArgs struct {
 	SourceSchema
 
-	TippeConfig    params.TippeConfigName
-	TippeConfigRaw params.CLIFlagsT
+	TippeConfigName params.TippeConfigName
+	TippeConfigRaw  params.CLIFlagsT
 
 	Version TileSourceVersion
 
@@ -545,8 +545,8 @@ func (a *TilingRequestArgs) Validate() error {
 	if err := a.SourceSchema.Validate(); err != nil {
 		return err
 	}
-	if _, ok := params.LookupTippeConfig(a.TippeConfig, a.TippeConfigRaw); !ok {
-		return fmt.Errorf("unknown tippe config %q", a.TippeConfig)
+	if _, ok := params.LookupTippeConfig(a.TippeConfigName, a.TippeConfigRaw); !ok {
+		return fmt.Errorf("unknown tippe config %q", a.TippeConfigName)
 	}
 	return nil
 }
@@ -603,7 +603,7 @@ func (d *TileDaemon) RequestTiling(args *TilingRequestArgs, reply *TilingRespons
 	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 	args.requestedAt = time.Now()
 
-	d.logger.Info("RequestTiling", "args", args.id(), "config", args.TippeConfig)
+	d.logger.Info("RequestTiling", "args", args.id(), "config", args.TippeConfigName, "version", args.Version)
 
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
 	if err != nil {
@@ -707,14 +707,14 @@ func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) 
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
 		},
-		Version:     SourceVersionCanonical,
-		TippeConfig: args.TippeConfig,
+		Version:         SourceVersionCanonical,
+		TippeConfigName: args.TippeConfigName,
 	}, reply)
 }
 
 func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Info("tiling", "source", args.parsedSourcePath,
-		"args", args.id(), "config", args.TippeConfig)
+		"args", args.id(), "config", args.TippeConfigName)
 
 	// Sanity check.
 	// The source file must exist and be a file.
@@ -757,9 +757,9 @@ func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) erro
 	}
 
 	var ok bool
-	args.cliArgs, ok = params.LookupTippeConfig(args.TippeConfig, args.TippeConfigRaw)
+	args.cliArgs, ok = params.LookupTippeConfig(args.TippeConfigName, args.TippeConfigRaw)
 	if !ok {
-		return fmt.Errorf("unknown tippe config %q", args.TippeConfig)
+		return fmt.Errorf("unknown tippe config %q", args.TippeConfigName)
 	}
 	args.cliArgs.MustSetPair("--layer", args.LayerName).
 		MustSetPair("--name", args.SourceName).

@@ -57,6 +57,7 @@ import (
 	bbolt "go.etcd.io/bbolt"
 	"log/slog"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -70,6 +71,8 @@ type CellIndexer struct {
 	FlatFiles map[CellLevel]*flat.GZFileWriter
 	BatchSize int
 	IndexerFn func(old, next Indexer) Indexer
+
+	Waiting sync.WaitGroup
 
 	logger *slog.Logger
 

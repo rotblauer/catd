@@ -47,6 +47,14 @@ func (it IndexCountT) IsEmpty() bool {
 // WrappedTrack is an Indexer that wraps a CatTrack.
 type WrappedTrack cattrack.CatTrack
 
+func (wt WrappedTrack) MarshalJSON() ([]byte, error) {
+	return json.Marshal(cattrack.CatTrack(wt))
+}
+
+func (wt *WrappedTrack) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, (*cattrack.CatTrack)(wt))
+}
+
 func (wt WrappedTrack) SafeSetProperties(items map[string]any) WrappedTrack {
 	props := wt.Properties.Clone()
 	for k, v := range items {

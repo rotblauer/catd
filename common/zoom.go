@@ -60,6 +60,7 @@ var (
 	SlippyZoomLevel12 SlippyZoomLevelT = 12
 	// SlippyZoomLevel13 represents, eg. a village, or suburb
 	SlippyZoomLevel13 SlippyZoomLevelT = 13
+	// SlippyZoomLevel14 is where houses start showing up on default maps
 	SlippyZoomLevel14 SlippyZoomLevelT = 14
 	// SlippyZoomLevel15 represents, eg. a small road
 	SlippyZoomLevel15 SlippyZoomLevelT = 15
