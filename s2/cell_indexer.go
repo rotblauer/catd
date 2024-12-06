@@ -73,7 +73,8 @@ type CellIndexer struct {
 
 	logger *slog.Logger
 
-	indexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
+	indexFeeds     map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
+	uniqIndexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
 }
 
 type WrappedTrack cattrack.CatTrack
@@ -204,6 +205,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	indexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
+	uniqIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
 	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
 
 	for _, level := range levels {
@@ -214,6 +216,7 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		flatFileMap[level] = gzf
 
 		indexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
+		uniqIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
 
 	caches := make(map[CellLevel]*lru.Cache[string, Indexer], len(levels))
@@ -226,18 +229,27 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	return &CellIndexer{
-		CatID:      catID,
-		Levels:     levels,
-		Caches:     caches,
-		DB:         db,
-		FlatFiles:  flatFileMap,
-		BatchSize:  batchSize,
-		indexFeeds: indexFeeds,
-		logger:     slog.With("indexer", "s2"),
+		CatID:          catID,
+		Levels:         levels,
+		Caches:         caches,
+		DB:             db,
+		FlatFiles:      flatFileMap,
+		BatchSize:      batchSize,
+		indexFeeds:     indexFeeds,
+		uniqIndexFeeds: uniqIndexFeeds,
+		logger:         slog.With("indexer", "s2"),
 	}, nil
 }
 
 func (ci *CellIndexer) FeedOfIndexedTracksForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
+	v, ok := ci.indexFeeds[level]
+	if !ok {
+		return nil, fmt.Errorf("level %d not found", level)
+	}
+	return v, nil
+}
+
+func (ci *CellIndexer) FeedOfUniqueTracksForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
 	v, ok := ci.indexFeeds[level]
 	if !ok {
 		return nil, fmt.Errorf("level %d not found", level)
@@ -270,6 +282,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
 	mapIDNext := make(map[string]WrappedTrack)
+	mapIDUnique := make(map[string]WrappedTrack)
 
 	cache := ci.Caches[level]
 	for _, ct := range tracks {
@@ -283,6 +296,11 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 			old = v.(Indexer)
 		}
 		next = ctIdxr.Index(old, ctIdxr)
+
+		// Overwrite the unique cache with the new value.
+		// This will let us send the latest version of unique cells.
+		mapIDUnique[cellID.ToToken()] = next.(WrappedTrack)
+
 		cache.Add(cellID.ToToken(), next)
 	}
 
@@ -304,6 +322,9 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
+				// Strike this value from the unique map.
+				delete(mapIDUnique, k)
+
 				r, err := gzip.NewReader(bytes.NewBuffer(v))
 				if err != nil {
 					return err
@@ -347,14 +368,20 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 	for _, ct := range mapIDNext {
 		outTracks = append(outTracks, cattrack.CatTrack(ct))
 	}
+	ci.indexFeeds[level].Send(outTracks)
+
+	var uniqTracks []cattrack.CatTrack
+	for _, ct := range mapIDUnique {
+		uniqTracks = append(uniqTracks, cattrack.CatTrack(ct))
+	}
+	ci.uniqIndexFeeds[level].Send(uniqTracks)
 
 	enc := json.NewEncoder(ci.FlatFiles[level].Writer())
-	for _, ct := range outTracks {
+	for _, ct := range uniqTracks {
 		if err := enc.Encode(ct); err != nil {
 			return err
 		}
 	}
-	ci.indexFeeds[level].Send(outTracks)
 	return nil
 }
 

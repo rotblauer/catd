@@ -316,8 +316,8 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	return nil
 }
 
-func (d *TileDaemon) writeGZ(source string, data []byte) error {
-	gzftw, err := flat.NewFlatGZWriter(source, flat.DefaultGZFileWriterConfig())
+func (d *TileDaemon) appendGZ(source string, writeConfig *flat.GZFileWriterConfig, data []byte) error {
+	gzftw, err := flat.NewFlatGZWriter(source, writeConfig)
 	if err != nil {
 		return err
 	}
@@ -439,7 +439,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			return err
 		}
 
-		if err := d.writeGZ(source, args.JSONBytes); err != nil {
+		if err := d.appendGZ(source, flat.DefaultGZFileWriterConfig(), args.JSONBytes); err != nil {
 			return err
 		}
 		d.logger.Debug("Wrote source", "source", source,

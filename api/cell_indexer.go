@@ -39,54 +39,44 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	}()
 
 	for _, level := range cellIndexer.Levels {
-		// Running only on levels 13-16.
-		// This is a good range for most use cases.
-		// Lower levels (bigger polygons) start taking for-ev-er to tile with tippecanoe.
-		// FIXME: These are better served as GeoJSON.
-		// Tippecanoe sucks at large polygons.
-		// Better to include Cell/BBox/Whatever else in properties
-		// and have the client do the drawings.
 
 		// FIXME Shove me off to own function.
 		// Beware routines. Must wait in. Defers. Closers.
-		levelFeed, err := cellIndexer.FeedOfIndexedTracksForLevel(level)
+		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 			return
 		}
 
-		uniqsLevelX := make(chan []cattrack.CatTrack)
-		defer close(uniqsLevelX)
-		sub := levelFeed.Subscribe(uniqsLevelX)
+		uniqTracksLeveled := make(chan []cattrack.CatTrack)
+		defer close(uniqTracksLeveled)
+		sub := uniqLevelFeed.Subscribe(uniqTracksLeveled)
 		defer sub.Unsubscribe()
 
-		txed := stream.Transform(ctx, func(freshPowderTracks []cattrack.CatTrack) []cattrack.CatTrack {
-			outs := make([]cattrack.CatTrack, 0, len(freshPowderTracks))
-			for _, f := range freshPowderTracks {
-				cp := f
-				pt := cp.Point()
-				leaf := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
-				leveledCellID := catS2.CellIDWithLevel(leaf, level)
+		txed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+			cp := track
 
-				cell := s2.CellFromCellID(leveledCellID)
+			pt := cp.Point()
+			leaf := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
+			leveledCellID := catS2.CellIDWithLevel(leaf, level)
 
-				vertices := []orb.Point{}
-				for i := 0; i < 4; i++ {
-					vpt := cell.Vertex(i)
-					//pt := cell.Edge(i) // tippe halt catch fire
-					ll := s2.LatLngFromPoint(vpt)
-					vertices = append(vertices, orb.Point{ll.Lng.Degrees(), ll.Lat.Degrees()})
-				}
+			cell := s2.CellFromCellID(leveledCellID)
 
-				cp.Geometry = orb.Polygon{orb.Ring(vertices)}
-				cp.ID = rand.Int63()
-				outs = append(outs, cp)
+			vertices := []orb.Point{}
+			for i := 0; i < 4; i++ {
+				vpt := cell.Vertex(i)
+				//pt := cell.Edge(i) // tippe halt catch fire
+				ll := s2.LatLngFromPoint(vpt)
+				vertices = append(vertices, orb.Point{ll.Lng.Degrees(), ll.Lat.Degrees()})
 			}
-			return outs
-		}, uniqsLevelX)
 
-		levelZoomMin := catS2.SlippyZoomLevels[level][0]
-		levelZoomMax := catS2.SlippyZoomLevels[level][1]
+			cp.Geometry = orb.Polygon{orb.Ring(vertices)}
+			cp.ID = rand.Int63()
+			return cp
+		}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, uniqTracksLeveled))
+
+		levelZoomMin := catS2.SlippyCellZoomLevels[level][0]
+		levelZoomMax := catS2.SlippyCellZoomLevels[level][1]
 
 		levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 		levelTippeConfig = levelTippeConfig.Copy()
@@ -101,7 +91,9 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 			},
 			TippeConfig:    "",
 			TippeConfigRaw: levelTippeConfig,
-		}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, txed))
+		}, stream.Filter(ctx, func(track cattrack.CatTrack) bool {
+			return !track.IsEmpty()
+		}, txed))
 	}
 
 	// Blocking.
@@ -109,3 +101,15 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		c.logger.Error("CellIndexer errored", "error", err)
 	}
 }
+
+//func (c *Cat) sendToTiled(ctx context.Context, args *tiled.PushFeaturesRequestArgs, in <-chan cattrack.CatTrack) {
+//	if c.rpcClient == nil {
+//		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
+//		return
+//	}
+//	c.State.Waiting.Add(1)
+//	go func() {
+//		defer c.State.Waiting.Done()
+//		sendBatchToCatRPCClient[cattrack.CatTrack](ctx, c, args, in)
+//	}()
+//}
