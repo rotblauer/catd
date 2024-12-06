@@ -5,15 +5,15 @@ import "github.com/rotblauer/catd/common"
 // SlippyZoomLevels are pairs of cell:zoom limits for use with tippecanoe --minimum-zoom and --maximum-zoom.
 // Levels are inclusive.
 var SlippyZoomLevels = map[CellLevel][2]common.SlippyZoomLevelT{
-	CellLevel8:  {3, 5},
-	CellLevel9:  {5, 6},
-	CellLevel11: {6, 8},
-	CellLevel12: {8, 9},
-	CellLevel13: {9, 10},
-	CellLevel14: {10, 11},
-	CellLevel16: {11, 13},
-	CellLevel17: {13, 14},
-	CellLevel18: {14, 15},
-	CellLevel19: {15, 16},
-	CellLevel20: {16, 18},
+	CellLevel8:  {3, 6},
+	CellLevel9:  {5, 8},
+	CellLevel11: {6, 9},
+	CellLevel12: {8, 10},
+	CellLevel13: {9, 11},
+	CellLevel14: {10, 12},
+	CellLevel16: {11, 12},
+	CellLevel17: {12, 15},
+	CellLevel18: {14, 16},
+	CellLevel19: {15, 18},
+	CellLevel20: {16, 19},
 }

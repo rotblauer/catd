@@ -32,13 +32,14 @@ run() {
 #  local source_gz="local/yyyy-mm/2024*.json.gz"
 #  local source_gz="local/yyyy-mm/2024-07.json.gz"
 #  local source_gz="local/yyyy-mm/2024-09.json.gz"
-  local source_gz="local/yyyy-mm/2024-12.json.gz"
+#  local source_gz="local/yyyy-mm/2024-12.json.gz"
 #  local source_gz="local/yyyy-mm/2024-1*.json.gz"
+  local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
   go install . &&\
    for i in 100_000; do
     rm -f /tmp/catscann;
-    zcat ~/tdata/${source_gz} \
+    zcat ~/tdata/${source_gz} | grep -E '2024-1[1,2]' \
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \
