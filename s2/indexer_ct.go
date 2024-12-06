@@ -7,17 +7,18 @@ import (
 )
 
 type ICT struct {
-	Count        int
-	FirstTime    time.Time
-	LastTime     time.Time
-	Activity     activity.Activity
-	AMUnknown    int `json:"ActivityMode.Unknown"`
-	AMStationary int `json:"ActivityMode.Stationary"`
-	AMWalking    int `json:"ActivityMode.Walking"`
-	AMRunning    int `json:"ActivityMode.Running"`
-	AMBike       int `json:"ActivityMode.Bike"`
-	AMAutomotive int `json:"ActivityMode.Automotive"`
-	AMFly        int `json:"ActivityMode.Fly"`
+	Count           int
+	FirstTime       time.Time
+	LastTime        time.Time
+	TotalTimeOffset time.Duration
+	Activity        activity.Activity
+	AMUnknown       int
+	AMStationary    int
+	AMWalking       int
+	AMRunning       int
+	AMBike          int
+	AMAutomotive    int
+	AMFly           int
 }
 
 func (ict *ICT) IsEmpty() bool {
@@ -27,10 +28,21 @@ func (ict *ICT) IsEmpty() bool {
 func (ict *ICT) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.CatTrack {
 	pct := &ct
 	ix := idxr.(*ICT)
-	pct.SetPropertySafe("Count", ix.Count)
-	pct.SetPropertySafe("FirstTime", ix.FirstTime.Format(time.RFC3339))
-	pct.SetPropertySafe("LastTime", ix.LastTime.Format(time.RFC3339))
-	pct.SetPropertySafe("Activity", ix.Activity.String())
+	props := map[string]interface{}{
+		"Count":                   ix.Count,
+		"FirstTime":               ix.FirstTime.Format(time.RFC3339),
+		"LastTime":                ix.LastTime.Format(time.RFC3339),
+		"TotalTimeOffset":         ix.TotalTimeOffset.Seconds(),
+		"Activity":                ix.Activity.String(),
+		"ActivityMode.Unknown":    ix.AMUnknown,
+		"ActivityMode.Stationary": ix.AMStationary,
+		"ActivityMode.Walking":    ix.AMWalking,
+		"ActivityMode.Running":    ix.AMRunning,
+		"ActivityMode.Bike":       ix.AMBike,
+		"ActivityMode.Automotive": ix.AMAutomotive,
+		"ActivityMode.Fly":        ix.AMFly,
+	}
+	pct.SetPropertiesSafe(props)
 	return *pct
 }
 
@@ -44,51 +56,57 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 		last = ct.MustTime()
 	}
 
+	totalOffset := time.Duration(ct.Properties.MustFloat64("TotalTimeOffset", 0)) * time.Second
+	if totalOffset == 0 {
+		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
+	}
+
 	out := &ICT{
-		Count:     ct.Properties.MustInt("Count", 1),
-		FirstTime: first,
-		LastTime:  last,
-		Activity:  activity.FromString(ct.Properties.MustString("Activity", "Unknown")),
+		Count:           ct.Properties.MustInt("Count", 1),
+		FirstTime:       first,
+		LastTime:        last,
+		TotalTimeOffset: totalOffset,
+		Activity:        activity.FromString(ct.Properties.MustString("Activity", "Unknown")),
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Unknown"]; ok {
-		out.AMUnknown = v.(int)
+		out.AMUnknown = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateUnknown {
 		out.AMUnknown = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Stationary"]; ok {
-		out.AMStationary = v.(int)
+		out.AMStationary = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateStationary {
 		out.AMStationary = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Walking"]; ok {
-		out.AMWalking = v.(int)
+		out.AMWalking = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateWalking {
 		out.AMWalking = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Running"]; ok {
-		out.AMRunning = v.(int)
+		out.AMRunning = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateRunning {
 		out.AMRunning = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Bike"]; ok {
-		out.AMBike = v.(int)
+		out.AMBike = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateBike {
 		out.AMBike = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Automotive"]; ok {
-		out.AMAutomotive = v.(int)
+		out.AMAutomotive = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateAutomotive {
 		out.AMAutomotive = 1
 	}
 
 	if v, ok := ct.Properties["ActivityMode.Fly"]; ok {
-		out.AMFly = v.(int)
+		out.AMFly = int(v.(float64))
 	} else if out.Activity == activity.TrackerStateFlying {
 		out.AMFly = 1
 	}
@@ -109,14 +127,15 @@ func (*ICT) Index(old, next Indexer) Indexer {
 		LastTime:  nextCT.LastTime,
 
 		// Sums
-		Count:        oldCT.Count + nextCT.Count,
-		AMUnknown:    oldCT.AMUnknown + nextCT.AMUnknown,
-		AMStationary: oldCT.AMStationary + nextCT.AMStationary,
-		AMWalking:    oldCT.AMWalking + nextCT.AMWalking,
-		AMRunning:    oldCT.AMRunning + nextCT.AMRunning,
-		AMBike:       oldCT.AMBike + nextCT.AMBike,
-		AMAutomotive: oldCT.AMAutomotive + nextCT.AMAutomotive,
-		AMFly:        oldCT.AMFly + nextCT.AMFly,
+		Count:           oldCT.Count + nextCT.Count,
+		TotalTimeOffset: oldCT.TotalTimeOffset + nextCT.TotalTimeOffset,
+		AMUnknown:       oldCT.AMUnknown + nextCT.AMUnknown,
+		AMStationary:    oldCT.AMStationary + nextCT.AMStationary,
+		AMWalking:       oldCT.AMWalking + nextCT.AMWalking,
+		AMRunning:       oldCT.AMRunning + nextCT.AMRunning,
+		AMBike:          oldCT.AMBike + nextCT.AMBike,
+		AMAutomotive:    oldCT.AMAutomotive + nextCT.AMAutomotive,
+		AMFly:           oldCT.AMFly + nextCT.AMFly,
 	}
 
 	// Correct incorrect defaults, maybe.

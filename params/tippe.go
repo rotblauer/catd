@@ -247,6 +247,7 @@ var (
 		"--include", "Count",
 		"--include", "FirstTime",
 		"--include", "LastTime",
+		"--include", "TotalTimeOffset",
 		"--include", "ActivityMode.Unknown",
 		"--include", "ActivityMode.Stationary",
 		"--include", "ActivityMode.Walking",

@@ -28,6 +28,14 @@ func (ct *CatTrack) SetPropertySafe(key string, val any) {
 	ct.Properties = p
 }
 
+func (ct *CatTrack) SetPropertiesSafe(props map[string]interface{}) {
+	p := ct.Properties.Clone()
+	for k, v := range props {
+		p[k] = v
+	}
+	ct.Properties = p
+}
+
 func (ct *CatTrack) DeletePropertySafe(key string) {
 	p := ct.Properties.Clone()
 	delete(p, key)

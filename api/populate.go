@@ -192,7 +192,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}, sendSnaps)
 
 	// Clean and improve tracks for pipeline handlers.
-	betterTracks := c.ImprovedActTracks(ctx, c.CleanTracks(ctx, pipelineChan))
+	betterTracks := TracksWithOffset(ctx, c.ImprovedActTracks(ctx, c.CleanTracks(ctx, pipelineChan)))
 	areaPipeCh, vectorPipeCh := stream.Tee(ctx, betterTracks)
 
 	// S2 indexing pipeline. Stateful/cat.
