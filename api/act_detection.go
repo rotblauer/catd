@@ -65,7 +65,9 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 			SourceName: "laps",
 			LayerName:  "laps",
 		},
-		TippeConfig: params.TippeConfigNameLaps,
+		TippeConfigName: params.TippeConfigNameLaps,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendLaps)
 	go stream.Sink(ctx, func(ct cattrack.CatLap) {
 		c.completedLaps.Send(ct)
@@ -93,7 +95,9 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 			SourceName: "naps",
 			LayerName:  "naps",
 		},
-		TippeConfig: params.TippeConfigNameNaps,
+		TippeConfigName: params.TippeConfigNameNaps,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendNaps)
 
 	c.logger.Info("Act detection pipeline blocking")

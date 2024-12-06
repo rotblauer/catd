@@ -62,7 +62,9 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 			SourceName: "laps",
 			LayerName:  "laps",
 		},
-		TippeConfig: params.TippeConfigNameLaps,
+		TippeConfigName: params.TippeConfigNameLaps,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendLaps)
 
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
@@ -87,7 +89,9 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 			SourceName: "naps",
 			LayerName:  "naps",
 		},
-		TippeConfig: params.TippeConfigNameNaps,
+		TippeConfigName: params.TippeConfigNameNaps,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendNaps)
 
 	tripDetectedFork, tripDetectedPass := stream.Tee(ctx, tripdetected)
@@ -105,7 +109,9 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 			SourceName: "tripdetected",
 			LayerName:  "tripdetected",
 		},
-		TippeConfig: params.TippeConfigNameTripDetected,
+		TippeConfigName: params.TippeConfigNameTripDetected,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, tripDetectedSend)
 
 	// Block on tripdetect.

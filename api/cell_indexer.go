@@ -89,8 +89,10 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 				SourceName: "s2_cells",
 				LayerName:  fmt.Sprintf("level-%02d-polygons", level),
 			},
-			TippeConfig:    "",
-			TippeConfigRaw: levelTippeConfig,
+			TippeConfigName: "",
+			TippeConfigRaw:  levelTippeConfig,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 		}, stream.Filter(ctx, func(track cattrack.CatTrack) bool {
 			return !track.IsEmpty()
 		}, txed))

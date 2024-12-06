@@ -172,7 +172,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			SourceName: "tracks",
 			LayerName:  "tracks",
 		},
-		TippeConfig: params.TippeConfigNameTracks,
+		TippeConfigName: params.TippeConfigNameTracks,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendTiledCh)
 
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
@@ -188,7 +190,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			SourceName: "snaps",
 			LayerName:  "snaps",
 		},
-		TippeConfig: params.TippeConfigNameSnaps,
+		TippeConfigName: params.TippeConfigNameSnaps,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendSnaps)
 
 	// S2 indexing pipeline. Stateful/cat.

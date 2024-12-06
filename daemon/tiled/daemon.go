@@ -272,14 +272,21 @@ func (d *TileDaemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVer
 	return full, nil
 }
 
+type SourceMode string
+
+const (
+	SourceModeAppend SourceMode = "append"
+	SourceModeTrunc  SourceMode = "trunc"
+)
+
 type PushFeaturesRequestArgs struct {
 	SourceSchema
 
-	// TippeConfig refers to a named default (or otherwise available?) tippecanoe configuration.
+	// TippeConfigName refers to a named default (or otherwise available?) tippecanoe configuration.
 	// Should be like 'laps', 'naps',...
 	// These might be generalized to linestrings, points, etc.,
 	// but either way its arbitrary.
-	TippeConfig params.TippeConfigName
+	TippeConfigName params.TippeConfigName
 
 	TippeConfigRaw params.CLIFlagsT
 
@@ -287,6 +294,9 @@ type PushFeaturesRequestArgs struct {
 	// It will be written to a .geojson.gz file.
 	// It must be JSON, obviously.
 	JSONBytes []byte
+
+	Versions    []TileSourceVersion
+	SourceModes []SourceMode
 }
 
 type PushFeaturesResponse struct {
@@ -307,16 +317,25 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	if a.LayerName == "" {
 		return fmt.Errorf("missing layer name")
 	}
-	if a.TippeConfig == "" && a.TippeConfigRaw == nil {
+	if a.TippeConfigName == "" && a.TippeConfigRaw == nil {
 		return fmt.Errorf("missing tippe config")
 	}
 	if len(a.JSONBytes) == 0 {
 		return fmt.Errorf("missing features")
 	}
+	if len(a.Versions) == 0 {
+		return fmt.Errorf("missing versions")
+	}
+	if len(a.SourceModes) == 0 {
+		return fmt.Errorf("missing source modes")
+	}
+	if len(a.Versions) != len(a.SourceModes) {
+		return fmt.Errorf("mismatched versions and source modes")
+	}
 	return nil
 }
 
-func (d *TileDaemon) appendGZ(source string, writeConfig *flat.GZFileWriterConfig, data []byte) error {
+func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig, data []byte) error {
 	gzftw, err := flat.NewFlatGZWriter(source, writeConfig)
 	if err != nil {
 		return err
@@ -413,15 +432,13 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 
 	args.requestID = atomic.AddInt32(&d.requestIDCursor, 1)
 
-	versions := []TileSourceVersion{
-		SourceVersionCanonical,
-		SourceVersionEdge,
-	}
-	if d.Config.SkipEdge {
-		versions = versions[:1]
+	// Assume canonical,edge ordering... FIXME.
+	if d.Config.SkipEdge && len(args.Versions) > 1 {
+		args.Versions = args.Versions[:1]
+		args.SourceModes = args.SourceModes[:1]
 	}
 
-	for _, version := range versions {
+	for vi, version := range args.Versions {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
 		if err != nil {
 			return fmt.Errorf("failed to get source path: %w", err)
@@ -439,7 +456,11 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			return err
 		}
 
-		if err := d.appendGZ(source, flat.DefaultGZFileWriterConfig(), args.JSONBytes); err != nil {
+		writeConf := flat.DefaultGZFileWriterConfig()
+		if args.SourceModes[vi] == SourceModeTrunc {
+			writeConf.Flag = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
+		}
+		if err := d.writeGZ(source, writeConf, args.JSONBytes); err != nil {
 			return err
 		}
 		d.logger.Debug("Wrote source", "source", source,
@@ -455,8 +476,8 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
 		},
-		Version:        versions[len(versions)-1],
-		TippeConfig:    args.TippeConfig,
+		Version:        args.Versions[len(args.Versions)-1], // Request tiling only for the last version.
+		TippeConfig:    args.TippeConfigName,
 		TippeConfigRaw: args.TippeConfigRaw,
 	}, nil)
 
