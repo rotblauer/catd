@@ -6,9 +6,14 @@ import "github.com/rotblauer/catd/common"
 // Levels are inclusive.
 var SlippyZoomLevels = map[CellLevel][2]common.SlippyZoomLevelT{
 	CellLevel8:  {3, 5},
+	CellLevel9:  {5, 6},
 	CellLevel11: {6, 8},
+	CellLevel12: {8, 9},
 	CellLevel13: {9, 10},
+	CellLevel14: {10, 11},
 	CellLevel16: {11, 13},
+	CellLevel17: {13, 14},
 	CellLevel18: {14, 15},
+	CellLevel19: {15, 16},
 	CellLevel20: {16, 18},
 }
