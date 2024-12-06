@@ -55,6 +55,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
+	"log"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -180,18 +181,22 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 
 		v, exists := cache.Get(cellID.ToToken())
 		if exists {
-			old = v.(Indexer)
+			old = v
 		}
 
 		// FIXME Converting and asserting the Indexer type makes this non-generic.
 		// Use reflect or tags or something to
 		// be able to handle any Indexer interface implementation.
-		ict := CatTrackToICT(ct)
-		next = (&ICT{}).Index(old, ict)
+		fixme := &ICT{}
+		ict := fixme.FromCatTrack(ct)
+		next = ict.Index(old, ict)
 
 		cache.Add(cellID.ToToken(), next)
 
-		nextTrack := CatTrackWithCT(ct, next.(*ICT))
+		if next == nil {
+			log.Fatalln("next is nil", ict.IsEmpty())
+		}
+		nextTrack := fixme.ApplyToCattrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
@@ -233,14 +238,17 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 				}
 				_ = r.Close()
 
-				old, err = UnmarshalIndexer(ungzipped.Bytes())
+				ct := cattrack.CatTrack{}
+				err = json.Unmarshal(ungzipped.Bytes(), &ct)
 				if err != nil {
 					return err
 				}
+
+				old = (&ICT{}).FromCatTrack(ct)
 			}
 
 			next := (&ICT{}).Index(old, nextIdxr)
-			nextTrack := CatTrackWithCT(track, next.(*ICT))
+			nextTrack := next.ApplyToCattrack(next, track)
 			outTracks = append(outTracks, nextTrack)
 
 			encoded, err := json.Marshal(nextTrack)
@@ -320,11 +328,11 @@ func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan 
 					return err
 				}
 				_ = r.Close()
-				wt := WrappedTrack{}
-				if err := json.Unmarshal(ungzipped.Bytes(), &wt); err != nil {
+				ct := cattrack.CatTrack{}
+				if err := json.Unmarshal(ungzipped.Bytes(), &ct); err != nil {
 					return err
 				}
-				out <- cattrack.CatTrack(wt)
+				out <- ct
 				return nil
 			})
 		})

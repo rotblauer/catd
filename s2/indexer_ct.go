@@ -7,7 +7,7 @@ import (
 )
 
 type ICT struct {
-	Indexer
+	//Indexer
 	Count        int
 	FirstTime    time.Time
 	LastTime     time.Time
@@ -21,20 +21,21 @@ type ICT struct {
 	AMFly        int `json:"ActivityMode.Fly"`
 }
 
-func (ct *ICT) IsEmpty() bool {
-	return ct.Count == 0
+func (ict *ICT) IsEmpty() bool {
+	return ict.Count == 0
 }
 
-func CatTrackWithCT(ct cattrack.CatTrack, ctIndex *ICT) cattrack.CatTrack {
-	ctp := ct.Copy()
-	ctp.SetPropertySafe("Count", ctIndex.Count)
-	ctp.SetPropertySafe("FirstTime", ctIndex.FirstTime.Format(time.RFC3339))
-	ctp.SetPropertySafe("LastTime", ctIndex.LastTime.Format(time.RFC3339))
-	ctp.SetPropertySafe("Activity", ctIndex.Activity.String())
-	return *ctp
+func (ict *ICT) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.CatTrack {
+	pct := &ct
+	ix := idxr.(*ICT)
+	pct.SetPropertySafe("Count", ix.Count)
+	pct.SetPropertySafe("FirstTime", ix.FirstTime.Format(time.RFC3339))
+	pct.SetPropertySafe("LastTime", ix.LastTime.Format(time.RFC3339))
+	pct.SetPropertySafe("Activity", ix.Activity.String())
+	return *pct
 }
 
-func CatTrackToICT(ct cattrack.CatTrack) *ICT {
+func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	first, err := time.Parse(time.RFC3339, ct.Properties.MustString("FirstTime", ""))
 	if err != nil {
 		first = ct.MustTime()
@@ -43,6 +44,7 @@ func CatTrackToICT(ct cattrack.CatTrack) *ICT {
 	if err != nil {
 		last = ct.MustTime()
 	}
+
 	out := &ICT{
 		Count:     ct.Properties.MustInt("Count", 1),
 		FirstTime: first,
@@ -97,9 +99,7 @@ func CatTrackToICT(ct cattrack.CatTrack) *ICT {
 
 func (*ICT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		out := &ICT{}
-		*out = *next.(*ICT)
-		return out
+		return next.(*ICT)
 	}
 
 	oldCT, nextCT := old.(*ICT), next.(*ICT)
