@@ -175,7 +175,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 	cache := ci.Caches[level]
 	for _, ct := range tracks {
 		ctIdxr := WrappedTrack(ct)
-		cellID := getTrackCellID(ct, level)
+		cellID := CellIDForTrackLevel(ct, level)
 
 		var old, next Indexer
 
@@ -285,23 +285,56 @@ func (ci *CellIndexer) Close() error {
 	return nil
 }
 
+func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan error) {
+	out := make(chan cattrack.CatTrack)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(out)
+		defer close(errs)
+
+		err := ci.DB.View(func(tx *bbolt.Tx) error {
+			bucket := dbBucket(level)
+			b := tx.Bucket(bucket)
+			if b == nil {
+				return fmt.Errorf("bucket not found")
+			}
+			return b.ForEach(func(k, v []byte) error {
+				r, err := gzip.NewReader(bytes.NewBuffer(v))
+				if err != nil {
+					return err
+				}
+				ungzipped := bytes.NewBuffer([]byte{})
+				if _, err := ungzipped.ReadFrom(r); err != nil {
+					return err
+				}
+				_ = r.Close()
+				wt := WrappedTrack{}
+				if err := json.Unmarshal(ungzipped.Bytes(), &wt); err != nil {
+					return err
+				}
+				out <- cattrack.CatTrack(wt)
+				return nil
+			})
+		})
+		if err != nil {
+			errs <- err
+			return
+		}
+	}()
+
+	return out, errs
+}
+
 // CellIDWithLevel returns the cellID truncated to the given level.
+// https://docs.s2cell.aliddell.com/en/stable/s2_concepts.html#truncation
 func CellIDWithLevel(cellID s2.CellID, level CellLevel) s2.CellID {
-	// https://docs.s2cell.aliddell.com/en/stable/s2_concepts.html#truncation
 	var lsb uint64 = 1 << (2 * (30 - level))
 	truncatedCellID := (uint64(cellID) & -lsb) | lsb
 	return s2.CellID(truncatedCellID)
 }
 
-// getTrackCellID returns the cellID for the given track line, which is a raw string of a JSON-encoded geojson cat track.
-// It applies the global cellLevel to the returned cellID.
-func getTrackCellID(ct cattrack.CatTrack, level CellLevel) s2.CellID {
-	//var coords []float64
-	//// Use GJSON to avoid slow unmarshalling of the entire line.
-	//gjson.Get(line, "geometry.coordinates").ForEach(func(key, value gjson.Result) bool {
-	//	coords = append(coords, value.Float())
-	//	return true
-	//})
+// CellIDForTrackLevel returns the cellID at some level for the given track.
+func CellIDForTrackLevel(ct cattrack.CatTrack, level CellLevel) s2.CellID {
 	coords := ct.Geometry.(orb.Point)
 	return CellIDWithLevel(s2.CellIDFromLatLng(s2.LatLngFromDegrees(coords[1], coords[0])), level)
 }
