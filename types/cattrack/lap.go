@@ -157,7 +157,7 @@ func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
 	} else if mean < 4.87274 /* 10.9 mph == 5.5 min / mile */ {
 		return activity.TrackerStateRunning
 	} else if mean < 8.04672 /* 18 mph */ {
-		return activity.TrackerStateCycling
+		return activity.TrackerStateBike
 	}
-	return activity.TrackerStateDriving
+	return activity.TrackerStateAutomotive
 }

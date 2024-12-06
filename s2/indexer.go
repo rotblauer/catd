@@ -3,6 +3,7 @@ package s2
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rotblauer/catd/types/cattrack"
 )
 
 type Indexer interface {
@@ -18,6 +19,10 @@ func UnmarshalIndexer(v []byte) (Indexer, error) {
 	var targetWrappedTrack WrappedTrack
 	if err := json.Unmarshal(v, &targetWrappedTrack); err == nil {
 		return targetWrappedTrack, nil
+	}
+	var ct cattrack.CatTrack
+	if err := json.Unmarshal(v, &ct); err == nil {
+		return CatTrackToICT(ct), nil
 	}
 	// TODO: add other possible types
 	return nil, fmt.Errorf("unknown type")

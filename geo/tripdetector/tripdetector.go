@@ -523,7 +523,7 @@ func (d *TripDetector) DetectStopReportedActivities(f *cattrack.CatTrack) (resul
 	switch activity.FromString(activityStr) {
 	case activity.TrackerStateStationary:
 		return detectedStop
-	case activity.TrackerStateWalking, activity.TrackerStateRunning, activity.TrackerStateCycling, activity.TrackerStateDriving:
+	case activity.TrackerStateWalking, activity.TrackerStateRunning, activity.TrackerStateBike, activity.TrackerStateAutomotive:
 		return detectedTrip
 	case activity.TrackerStateUnknown:
 		return detectedNeutral

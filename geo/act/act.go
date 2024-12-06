@@ -12,11 +12,6 @@ import (
 
 const TrackerStateActivityUndetermined = activity.TrackerStateUnknown - 1
 
-type ActivityMode struct {
-	Activity  activity.Activity
-	Magnitude float64
-}
-
 type WrappedTrack struct {
 	cattrack.CatTrack
 	TimeOffset time.Duration
@@ -61,13 +56,13 @@ type Cat struct {
 	ActivityAlternateState      activity.Activity
 	ActivityAlternateStateStart time.Time
 
-	Unknown    ActivityMode
-	Stationary ActivityMode
-	Walking    ActivityMode
-	Running    ActivityMode
-	Cycling    ActivityMode
-	Driving    ActivityMode
-	Flying     ActivityMode
+	Unknown    activity.Mode
+	Stationary activity.Mode
+	Walking    activity.Mode
+	Running    activity.Mode
+	Cycling    activity.Mode
+	Driving    activity.Mode
+	Flying     activity.Mode
 }
 
 func NewCat() *Cat {
@@ -81,12 +76,12 @@ func NewCat() *Cat {
 		ActivityAlternateState:      TrackerStateActivityUndetermined,
 		ActivityAlternateStateStart: time.Time{},
 
-		Stationary: ActivityMode{Activity: activity.TrackerStateStationary},
-		Walking:    ActivityMode{Activity: activity.TrackerStateWalking},
-		Running:    ActivityMode{Activity: activity.TrackerStateRunning},
-		Cycling:    ActivityMode{Activity: activity.TrackerStateCycling},
-		Driving:    ActivityMode{Activity: activity.TrackerStateDriving},
-		Flying:     ActivityMode{Activity: activity.TrackerStateFlying},
+		Stationary: activity.Mode{Activity: activity.TrackerStateStationary},
+		Walking:    activity.Mode{Activity: activity.TrackerStateWalking},
+		Running:    activity.Mode{Activity: activity.TrackerStateRunning},
+		Cycling:    activity.Mode{Activity: activity.TrackerStateBike},
+		Driving:    activity.Mode{Activity: activity.TrackerStateAutomotive},
+		Flying:     activity.Mode{Activity: activity.TrackerStateFlying},
 	}
 }
 
@@ -103,14 +98,14 @@ func (c *Cat) IsWindowEmpty() bool {
 	return len(c.IntervalPoints) == 0
 }
 
-func (c *Cat) SortedActsKnown() []ActivityMode {
-	modes := []ActivityMode{
+func (c *Cat) SortedActsKnown() []activity.Mode {
+	modes := []activity.Mode{
 		c.Stationary, c.Walking, c.Running, c.Cycling, c.Driving, c.Flying,
 	}
-	slices.SortFunc(modes, func(a, b ActivityMode) int {
-		if a.Magnitude > b.Magnitude {
+	slices.SortFunc(modes, func(a, b activity.Mode) int {
+		if a.Scalar > b.Scalar {
 			return -1
-		} else if a.Magnitude < b.Magnitude {
+		} else if a.Scalar < b.Scalar {
 			return 1
 		} else {
 			return 0
@@ -119,14 +114,14 @@ func (c *Cat) SortedActsKnown() []ActivityMode {
 	return modes
 }
 
-func (c *Cat) SortedActsAll() []ActivityMode {
-	modes := []ActivityMode{
+func (c *Cat) SortedActsAll() []activity.Mode {
+	modes := []activity.Mode{
 		c.Unknown, c.Stationary, c.Walking, c.Running, c.Cycling, c.Driving, c.Flying,
 	}
-	slices.SortFunc(modes, func(a, b ActivityMode) int {
-		if a.Magnitude > b.Magnitude {
+	slices.SortFunc(modes, func(a, b activity.Mode) int {
+		if a.Scalar > b.Scalar {
 			return -1
-		} else if a.Magnitude < b.Magnitude {
+		} else if a.Scalar < b.Scalar {
 			return 1
 		} else {
 			return 0
@@ -164,19 +159,19 @@ func (c *Cat) pushActivityMode(ct WrappedTrack) {
 	weight := ct.TimeOffset.Seconds()
 	switch activity.FromAny(ct.Properties["Activity"]) {
 	case activity.TrackerStateUnknown:
-		c.Unknown.Magnitude += weight
+		c.Unknown.Scalar += weight
 	case activity.TrackerStateStationary:
-		c.Stationary.Magnitude += weight
+		c.Stationary.Scalar += weight
 	case activity.TrackerStateWalking:
-		c.Walking.Magnitude += weight
+		c.Walking.Scalar += weight
 	case activity.TrackerStateRunning:
-		c.Running.Magnitude += weight
-	case activity.TrackerStateCycling:
-		c.Cycling.Magnitude += weight
-	case activity.TrackerStateDriving:
-		c.Driving.Magnitude += weight
+		c.Running.Scalar += weight
+	case activity.TrackerStateBike:
+		c.Cycling.Scalar += weight
+	case activity.TrackerStateAutomotive:
+		c.Driving.Scalar += weight
 	case activity.TrackerStateFlying:
-		c.Flying.Magnitude += weight
+		c.Flying.Scalar += weight
 	default:
 		panic("unhandled default case")
 	}
@@ -186,26 +181,26 @@ func (c *Cat) dropActivityMode(ct WrappedTrack) {
 	weight := ct.TimeOffset.Seconds()
 	switch activity.FromAny(ct.Properties["Activity"]) {
 	case activity.TrackerStateUnknown:
-		c.Unknown.Magnitude -= weight
-		c.Unknown.Magnitude = math.Max(c.Unknown.Magnitude, 0)
+		c.Unknown.Scalar -= weight
+		c.Unknown.Scalar = math.Max(c.Unknown.Scalar, 0)
 	case activity.TrackerStateStationary:
-		c.Stationary.Magnitude -= weight
-		c.Stationary.Magnitude = math.Max(c.Stationary.Magnitude, 0)
+		c.Stationary.Scalar -= weight
+		c.Stationary.Scalar = math.Max(c.Stationary.Scalar, 0)
 	case activity.TrackerStateWalking:
-		c.Walking.Magnitude -= weight
-		c.Walking.Magnitude = math.Max(c.Walking.Magnitude, 0)
+		c.Walking.Scalar -= weight
+		c.Walking.Scalar = math.Max(c.Walking.Scalar, 0)
 	case activity.TrackerStateRunning:
-		c.Running.Magnitude -= weight
-		c.Running.Magnitude = math.Max(c.Running.Magnitude, 0)
-	case activity.TrackerStateCycling:
-		c.Cycling.Magnitude -= weight
-		c.Cycling.Magnitude = math.Max(c.Cycling.Magnitude, 0)
-	case activity.TrackerStateDriving:
-		c.Driving.Magnitude -= weight
-		c.Driving.Magnitude = math.Max(c.Driving.Magnitude, 0)
+		c.Running.Scalar -= weight
+		c.Running.Scalar = math.Max(c.Running.Scalar, 0)
+	case activity.TrackerStateBike:
+		c.Cycling.Scalar -= weight
+		c.Cycling.Scalar = math.Max(c.Cycling.Scalar, 0)
+	case activity.TrackerStateAutomotive:
+		c.Driving.Scalar -= weight
+		c.Driving.Scalar = math.Max(c.Driving.Scalar, 0)
 	case activity.TrackerStateFlying:
-		c.Flying.Magnitude -= weight
-		c.Flying.Magnitude = math.Max(c.Flying.Magnitude, 0)
+		c.Flying.Scalar -= weight
+		c.Flying.Scalar = math.Max(c.Flying.Scalar, 0)
 	default:
 		panic("unhandled default case")
 	}
@@ -270,9 +265,9 @@ func (p *Improver) activityAccelerated(act activity.Activity, mul float64) bool 
 		referenceSpeed = common.SpeedOfWalkingMin
 	case activity.TrackerStateRunning:
 		referenceSpeed = common.SpeedOfRunningMin
-	case activity.TrackerStateCycling:
+	case activity.TrackerStateBike:
 		referenceSpeed = common.SpeedOfCyclingMin
-	case activity.TrackerStateDriving:
+	case activity.TrackerStateAutomotive:
 		referenceSpeed = common.SpeedOfDrivingMin
 	case activity.TrackerStateFlying:
 		referenceSpeed = common.SpeedOfCommercialFlight
@@ -401,7 +396,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		if act == activity.TrackerStateUnknown {
 			act = activity.TrackerStateStationary
 		}
-		p.Cat.setActivityState(ActivityMode{Activity: act}, ctTime)
+		p.Cat.setActivityState(activity.Mode{Activity: act}, ctTime)
 	}
 
 	// Do the maths.
@@ -413,7 +408,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		// Nap -> Lap
 		if !IsActivityActive(p.Cat.ActivityState) {
 			for _, act := range sortedActsKnown {
-				if act.Activity.IsActive() && act.Magnitude > 0 {
+				if act.Activity.IsActive() && act.Scalar > 0 {
 					p.Cat.setActivityState(act, ctTime)
 					return nil
 				}
@@ -437,7 +432,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	p.Cat.ActivityStateLastCheck = ctTime
 
 	for i, act := range sortedActsAll {
-		if act.Magnitude <= 0 {
+		if act.Scalar <= 0 {
 			continue
 		}
 
@@ -491,7 +486,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	return nil
 }
 
-func (c *Cat) setActivityState(act ActivityMode, t time.Time) {
+func (c *Cat) setActivityState(act activity.Mode, t time.Time) {
 	if act.Activity == c.ActivityState {
 		// do something
 		return
@@ -500,7 +495,7 @@ func (c *Cat) setActivityState(act ActivityMode, t time.Time) {
 	c.ActivityState = act.Activity
 }
 
-func (c *Cat) setActivityAlternateState(act ActivityMode, t time.Time) {
+func (c *Cat) setActivityAlternateState(act activity.Mode, t time.Time) {
 	if act.Activity == c.ActivityAlternateState {
 		// do something
 		return

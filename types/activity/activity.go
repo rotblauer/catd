@@ -11,8 +11,8 @@ const (
 	TrackerStateStationary
 	TrackerStateWalking
 	TrackerStateRunning
-	TrackerStateCycling
-	TrackerStateDriving
+	TrackerStateBike
+	TrackerStateAutomotive
 	TrackerStateFlying
 )
 
@@ -21,8 +21,8 @@ var AllActivityNames = []string{
 	TrackerStateStationary.String(),
 	TrackerStateWalking.String(),
 	TrackerStateRunning.String(),
-	TrackerStateCycling.String(),
-	TrackerStateDriving.String(),
+	TrackerStateBike.String(),
+	TrackerStateAutomotive.String(),
 	TrackerStateFlying.String(),
 }
 
@@ -53,9 +53,9 @@ func (a Activity) String() string {
 		return "Walking"
 	case TrackerStateRunning:
 		return "Running"
-	case TrackerStateCycling:
+	case TrackerStateBike:
 		return "Bike"
-	case TrackerStateDriving:
+	case TrackerStateAutomotive:
 		return "Automotive"
 	case TrackerStateFlying:
 		return "Fly"
@@ -97,11 +97,16 @@ func FromString(str string) Activity {
 	case activityRunning.MatchString(str):
 		return TrackerStateRunning
 	case activityCycling.MatchString(str):
-		return TrackerStateCycling
+		return TrackerStateBike
 	case activityDriving.MatchString(str):
-		return TrackerStateDriving
+		return TrackerStateAutomotive
 	case activityFly.MatchString(str):
 		return TrackerStateFlying
 	}
 	return TrackerStateUnknown
+}
+
+type Mode struct {
+	Activity Activity
+	Scalar   float64
 }

@@ -165,15 +165,12 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	return nil
 }
 
-func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
+func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error {
 	start := time.Now()
 	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
-		"level", level, "size", len(batch), "elapsed", time.Since(start).Round(time.Millisecond))
+		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
-	tracks := batch
-
-	mapIDNext := make(map[string]WrappedTrack)
-	mapIDUnique := make(map[string]WrappedTrack)
+	mapIDUnique := make(map[string]cattrack.CatTrack)
 
 	cache := ci.Caches[level]
 	for _, ct := range tracks {
@@ -189,14 +186,19 @@ func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 		// FIXME Converting and asserting the Indexer type makes this non-generic.
 		// Use reflect or tags or something to
 		// be able to handle any Indexer interface implementation.
-		next = (WrappedTrack{}).Index(old, WrappedTrack(ct))
+		ict := CatTrackToICT(ct)
+		next = (&ICT{}).Index(old, ict)
+
+		cache.Add(cellID.ToToken(), next)
+
+		nextTrack := CatTrackWithCT(ct, next.(*ICT))
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
-		mapIDUnique[cellID.ToToken()] = next.(WrappedTrack)
-
-		cache.Add(cellID.ToToken(), next)
+		mapIDUnique[cellID.ToToken()] = nextTrack
 	}
+
+	var outTracks []cattrack.CatTrack
 
 	err := ci.DB.Update(func(tx *bbolt.Tx) error {
 		bucket := dbBucket(level)
@@ -205,17 +207,19 @@ func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 			return err
 		}
 		for _, k := range cache.Keys() {
-			nextVal, ok := cache.Peek(k)
+			nextIdxr, ok := cache.Peek(k)
 			if !ok {
 				panic("cache key not found")
 			}
 
-			var old Indexer
+			track := mapIDUnique[k]
 
+			var old Indexer
 			v := b.Get([]byte(k))
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
+
 				// Strike this value from the unique map.
 				delete(mapIDUnique, k)
 
@@ -228,15 +232,18 @@ func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 					return err
 				}
 				_ = r.Close()
+
 				old, err = UnmarshalIndexer(ungzipped.Bytes())
 				if err != nil {
 					return err
 				}
 			}
 
-			next := (WrappedTrack{}).Index(old, nextVal)
+			next := (&ICT{}).Index(old, nextIdxr)
+			nextTrack := CatTrackWithCT(track, next.(*ICT))
+			outTracks = append(outTracks, nextTrack)
 
-			encoded, err := json.Marshal(next)
+			encoded, err := json.Marshal(nextTrack)
 			if err != nil {
 				return err
 			}
@@ -252,7 +259,6 @@ func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 			if err := b.Put([]byte(k), buf.Bytes()); err != nil {
 				return err
 			}
-			mapIDNext[k] = next.(WrappedTrack)
 		}
 		return nil
 	})
@@ -260,15 +266,11 @@ func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 		return err
 	}
 
-	var outTracks []cattrack.CatTrack
-	for _, ct := range mapIDNext {
-		outTracks = append(outTracks, cattrack.CatTrack(ct))
-	}
 	ci.indexFeeds[level].Send(outTracks)
 
 	var uniqTracks []cattrack.CatTrack
 	for _, ct := range mapIDUnique {
-		uniqTracks = append(uniqTracks, cattrack.CatTrack(ct))
+		uniqTracks = append(uniqTracks, ct)
 	}
 	ci.uniqIndexFeeds[level].Send(uniqTracks)
 
