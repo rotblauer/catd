@@ -42,8 +42,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	chans := []chan []cattrack.CatTrack{}
 	for _, level := range cellIndexer.Levels {
 
-		// FIXME Shove me off to own function.
-		// Beware routines. Must wait in. Defers. Closers.
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
@@ -62,12 +60,12 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		subs = append(subs, u1Sub)
 		go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
 
+		// Second paradigm: send all tracks to tiled in the event of a unique cell for that level.
 		u2 := make(chan []cattrack.CatTrack)
 		chans = append(chans, u2)
 		u2Sub := uniqLevelFeed.Subscribe(u2)
 		subs = append(subs, u2Sub)
-
-		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2, u2Sub.Err())
+		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2)
 	}
 
 	// Blocking.
@@ -82,7 +80,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	}
 }
 
-func (c *Cat) dumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
+func (c *Cat) dumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
 	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()
 	cellIndexer.Waiting.Add(1)

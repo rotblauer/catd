@@ -63,6 +63,8 @@ const (
 	// CellLevel16 is approximately throwing distance.
 	CellLevel16 CellLevel = 16
 	CellLevel17 CellLevel = 17
+
+	// CellLevel18 is about 100ft on a side
 	CellLevel18 CellLevel = 18
 	CellLevel19 CellLevel = 19
 	CellLevel20 CellLevel = 20
