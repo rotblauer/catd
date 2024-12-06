@@ -3,8 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/golang/geo/s2"
-	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	catS2 "github.com/rotblauer/catd/s2"
@@ -48,59 +46,63 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 			return
 		}
 
-		uniqTracksLeveled := make(chan []cattrack.CatTrack)
-		defer close(uniqTracksLeveled)
-		sub := uniqLevelFeed.Subscribe(uniqTracksLeveled)
-		defer sub.Unsubscribe()
+		// First paradigm: send unique tracks to tiled, with source mode appending.
+		// This builds maps with unique tracks, but where each track is the FIRST "track" seen
+		// (this FIRST track can be a "small" Indexed track, though, if multiples were cached).
+		// This pattern was used by CatTracksV1 to build point-based maps of unique cells for level 23.
+		// The problem with this is that the first track is not as useful as the last track,
+		// or as a latest-state indexed track value.
+		u1 := make(chan []cattrack.CatTrack)
+		defer close(u1)
+		u1Sub := uniqLevelFeed.Subscribe(u1)
+		defer u1Sub.Unsubscribe()
+		go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
 
-		txed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-			cp := track
-
-			pt := cp.Point()
-			leaf := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
-			leveledCellID := catS2.CellIDWithLevel(leaf, level)
-
-			cell := s2.CellFromCellID(leveledCellID)
-
-			vertices := []orb.Point{}
-			for i := 0; i < 4; i++ {
-				vpt := cell.Vertex(i)
-				//pt := cell.Edge(i) // tippe halt catch fire
-				ll := s2.LatLngFromPoint(vpt)
-				vertices = append(vertices, orb.Point{ll.Lng.Degrees(), ll.Lat.Degrees()})
-			}
-
-			cp.Geometry = orb.Polygon{orb.Ring(vertices)}
-			cp.ID = rand.Int63()
-			return cp
-		}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, uniqTracksLeveled))
-
-		levelZoomMin := catS2.SlippyCellZoomLevels[level][0]
-		levelZoomMax := catS2.SlippyCellZoomLevels[level][1]
-
-		levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
-		levelTippeConfig = levelTippeConfig.Copy()
-		levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
-		levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
-
-		sendBatchToCatRPCClient[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
-			SourceSchema: tiled.SourceSchema{
-				CatID:      c.CatID,
-				SourceName: "s2_cells",
-				LayerName:  fmt.Sprintf("level-%02d-polygons", level),
-			},
-			TippeConfigName: "",
-			TippeConfigRaw:  levelTippeConfig,
-			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-		}, stream.Filter(ctx, func(track cattrack.CatTrack) bool {
-			return !track.IsEmpty()
-		}, txed))
 	}
 
 	// Blocking.
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer errored", "error", err)
+	}
+}
+
+func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
+	txed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+		cp := track
+
+		// FIXME Use a real ID
+		cp.ID = rand.Int63()
+		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
+
+		return cp
+	}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
+
+	levelZoomMin := catS2.SlippyCellZoomLevels[level][0]
+	levelZoomMax := catS2.SlippyCellZoomLevels[level][1]
+
+	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
+	levelTippeConfig = levelTippeConfig.Copy()
+	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
+	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
+
+	sendBatchToCatRPCClient[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "s2_cells",
+			LayerName:  fmt.Sprintf("level-%02d-polygons", level),
+		},
+		TippeConfigName: "",
+		TippeConfigRaw:  levelTippeConfig,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+	}, stream.Filter(ctx, func(track cattrack.CatTrack) bool {
+		return !track.IsEmpty()
+	}, txed))
+
+	for err := range awaitErr {
+		if err != nil {
+			c.logger.Error("Failed to send unique tracks level", "error", err)
+		}
 	}
 }
 

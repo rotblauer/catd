@@ -13,7 +13,7 @@ var S2DefaultCellLevels = []s2.CellLevel{
 	s2.CellLevel16, // Throwing distance
 	s2.CellLevel17, // TODO
 	s2.CellLevel18, // TODO
-	s2.CellLevel19, // TODO
-	s2.CellLevel20, // TODO
+	//s2.CellLevel19, // TODO
+	//s2.CellLevel20, // TODO
 	//s2.CellLevel23, // Human body
 }
