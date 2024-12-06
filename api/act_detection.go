@@ -33,6 +33,14 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 		if dist < 100 {
 			return false
 		}
+		// Sanity check for speed.
+		// This is a workaround for a spurious pseudo-flight (ia 202411/12) that got
+		// logged as a lap.
+		speedReportedMean := ct.Properties.MustFloat64("Speed_Reported_Mean", 0)
+		speedCalculatedMean := ct.Properties.MustFloat64("Speed_Calculated_Mean", 0)
+		if speedCalculatedMean > speedReportedMean*10 {
+			return false
+		}
 		return true
 	}, completedLaps)
 

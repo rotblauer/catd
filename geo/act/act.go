@@ -453,7 +453,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
 		if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
 			meanSpeed := p.Cat.WindowSpeedCalculatedSum / p.Cat.WindowSpan.Seconds()
-			if meanSpeed > common.SpeedOfHighwayDriving*2 {
+			if meanSpeed > common.SpeedOfDrivingHighwayMin*2 {
 				p.Cat.setActivityState(p.Cat.Flying, ctTime)
 				return nil
 			} else if meanSpeed > common.SpeedOfDrivingMin {

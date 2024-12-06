@@ -43,12 +43,15 @@ level 	min area 	max area 	average area 	units 	  	Random cell 1 (UK) min edge l
 type CellLevel int
 
 const (
-	CellLevel0  CellLevel = 0
-	CellLevel1  CellLevel = 1
-	CellLevel2  CellLevel = 2
-	CellLevel3  CellLevel = 3
-	CellLevel4  CellLevel = 4
-	CellLevel5  CellLevel = 5
+	CellLevel0 CellLevel = 0
+	CellLevel1 CellLevel = 1
+	CellLevel2 CellLevel = 2
+	CellLevel3 CellLevel = 3
+	CellLevel4 CellLevel = 4
+	CellLevel5 CellLevel = 5
+
+	// CellLevel6 is wider than the Idaho panhandle.
+	// Around size of Massachusetts.
 	CellLevel6  CellLevel = 6
 	CellLevel7  CellLevel = 7
 	CellLevel8  CellLevel = 8
