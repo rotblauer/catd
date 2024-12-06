@@ -32,7 +32,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		return
 	}
 	defer func() {
-		cellIndexer.Waiting.Wait()
 		if err := cellIndexer.Close(); err != nil {
 			c.logger.Error("Failed to close indexer", "error", err)
 		}
@@ -65,6 +64,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		chans = append(chans, u2)
 		u2Sub := uniqLevelFeed.Subscribe(u2)
 		subs = append(subs, u2Sub)
+		cellIndexer.Waiting.Add(1)
 		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2)
 	}
 
@@ -78,12 +78,10 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	for _, ch := range chans {
 		close(ch)
 	}
+	cellIndexer.Waiting.Wait()
 }
 
 func (c *Cat) dumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
-	c.State.Waiting.Add(1)
-	defer c.State.Waiting.Done()
-	cellIndexer.Waiting.Add(1)
 	defer cellIndexer.Waiting.Done()
 
 	unsliced := stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)

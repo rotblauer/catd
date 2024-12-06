@@ -16,6 +16,16 @@ const (
 	TrackerStateFlying
 )
 
+var AllActivityNames = []string{
+	TrackerStateUnknown.String(),
+	TrackerStateStationary.String(),
+	TrackerStateWalking.String(),
+	TrackerStateRunning.String(),
+	TrackerStateCycling.String(),
+	TrackerStateDriving.String(),
+	TrackerStateFlying.String(),
+}
+
 var (
 	activityStationary = regexp.MustCompile(`(?i)stationary|still`)
 	activityWalking    = regexp.MustCompile(`(?i)walk`)
@@ -90,6 +100,8 @@ func FromString(str string) Activity {
 		return TrackerStateCycling
 	case activityDriving.MatchString(str):
 		return TrackerStateDriving
+	case activityFly.MatchString(str):
+		return TrackerStateFlying
 	}
 	return TrackerStateUnknown
 }

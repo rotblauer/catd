@@ -110,19 +110,10 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		uniqIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
 
-	caches := make(map[CellLevel]*lru.Cache[string, Indexer], len(levels))
-	for _, level := range levels {
-		c, err := lru.New[string, Indexer](batchSize)
-		if err != nil {
-			return nil, err
-		}
-		caches[level] = c
-	}
-
 	return &CellIndexer{
 		CatID:          catID,
 		Levels:         levels,
-		Caches:         caches,
+		Caches:         make(map[CellLevel]*lru.Cache[string, Indexer], len(levels)),
 		DB:             db,
 		FlatFiles:      flatFileMap,
 		BatchSize:      batchSize,
@@ -158,7 +149,14 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 			return len(tracks) == ci.BatchSize
 		}, in)
 	for batch := range batches {
+		batch := batch
 		for _, level := range ci.Levels {
+			// Reinit the level's cache.
+			c, err := lru.New[string, Indexer](ci.BatchSize)
+			if err != nil {
+				return err
+			}
+			ci.Caches[level] = c
 			if err := ci.index(level, batch); err != nil {
 				return err
 			}
@@ -167,17 +165,18 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	return nil
 }
 
-func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error {
+func (ci *CellIndexer) index(level CellLevel, batch []cattrack.CatTrack) error {
 	start := time.Now()
 	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
-		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
+		"level", level, "size", len(batch), "elapsed", time.Since(start).Round(time.Millisecond))
+
+	tracks := batch
 
 	mapIDNext := make(map[string]WrappedTrack)
 	mapIDUnique := make(map[string]WrappedTrack)
 
 	cache := ci.Caches[level]
 	for _, ct := range tracks {
-		ctIdxr := WrappedTrack(ct)
 		cellID := CellIDForTrackLevel(ct, level)
 
 		var old, next Indexer
@@ -186,7 +185,11 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		if exists {
 			old = v.(Indexer)
 		}
-		next = ctIdxr.Index(old, ctIdxr)
+
+		// FIXME Converting and asserting the Indexer type makes this non-generic.
+		// Use reflect or tags or something to
+		// be able to handle any Indexer interface implementation.
+		next = (WrappedTrack{}).Index(old, WrappedTrack(ct))
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
@@ -202,7 +205,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 			return err
 		}
 		for _, k := range cache.Keys() {
-			cVal, ok := cache.Peek(k)
+			nextVal, ok := cache.Peek(k)
 			if !ok {
 				panic("cache key not found")
 			}
@@ -230,7 +233,9 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 					return err
 				}
 			}
-			next := cVal.Index(old, cVal)
+
+			next := (WrappedTrack{}).Index(old, nextVal)
+
 			encoded, err := json.Marshal(next)
 			if err != nil {
 				return err
