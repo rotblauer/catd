@@ -281,6 +281,8 @@ type PushFeaturesRequestArgs struct {
 	// but either way its arbitrary.
 	TippeConfig params.TippeConfigName
 
+	TippeConfigRaw params.CLIFlagsT
+
 	// JSONBytes is data to be written to the source file.
 	// It will be written to a .geojson.gz file.
 	// It must be JSON, obviously.
@@ -305,7 +307,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	if a.LayerName == "" {
 		return fmt.Errorf("missing layer name")
 	}
-	if a.TippeConfig == "" {
+	if a.TippeConfig == "" && a.TippeConfigRaw == nil {
 		return fmt.Errorf("missing tippe config")
 	}
 	if len(a.JSONBytes) == 0 {
@@ -453,8 +455,9 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			SourceName: args.SourceName,
 			LayerName:  args.LayerName,
 		},
-		Version:     versions[len(versions)-1],
-		TippeConfig: args.TippeConfig,
+		Version:        versions[len(versions)-1],
+		TippeConfig:    args.TippeConfig,
+		TippeConfigRaw: args.TippeConfigRaw,
 	}, nil)
 
 	d.logger.Debug("PushFeatures done", "cat", args.CatID, "source",
@@ -485,7 +488,8 @@ const (
 type TilingRequestArgs struct {
 	SourceSchema
 
-	TippeConfig params.TippeConfigName
+	TippeConfig    params.TippeConfigName
+	TippeConfigRaw params.CLIFlagsT
 
 	Version TileSourceVersion
 
@@ -520,7 +524,7 @@ func (a *TilingRequestArgs) Validate() error {
 	if err := a.SourceSchema.Validate(); err != nil {
 		return err
 	}
-	if _, ok := params.LookupTippeConfig(a.TippeConfig); !ok {
+	if _, ok := params.LookupTippeConfig(a.TippeConfig, a.TippeConfigRaw); !ok {
 		return fmt.Errorf("unknown tippe config %q", a.TippeConfig)
 	}
 	return nil
@@ -732,7 +736,7 @@ func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) erro
 	}
 
 	var ok bool
-	args.cliArgs, ok = params.LookupTippeConfig(args.TippeConfig)
+	args.cliArgs, ok = params.LookupTippeConfig(args.TippeConfig, args.TippeConfigRaw)
 	if !ok {
 		return fmt.Errorf("unknown tippe config %q", args.TippeConfig)
 	}

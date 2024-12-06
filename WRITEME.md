@@ -5,7 +5,7 @@ http://localhost:40223/public/?geojson=http://localhost:8010/level-13.json,http:
 ```
 
 ```
-http://localhost:40223/public/?geojson=http://localhost:8010/out.json
+http://localhost:40223/puablic/?geojson=http://localhost:8010/out.json
 ```
 
 ```

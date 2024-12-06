@@ -13,7 +13,7 @@ const (
 	TippeConfigNameCells        TippeConfigName = "cells"
 )
 
-func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
+func LookupTippeConfig(name TippeConfigName, raw CLIFlagsT) (config CLIFlagsT, ok bool) {
 	switch name {
 	case TippeConfigNameTracks:
 		return DefaultTippeConfigs.Tracks(), true
@@ -27,6 +27,9 @@ func LookupTippeConfig(name TippeConfigName) (config CLIFlagsT, ok bool) {
 		return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	case TippeConfigNameCells:
 		return DefaultTippeConfigs.Cells(), true
+	}
+	if raw != nil {
+		return raw, true
 	}
 	return nil, false
 }
@@ -203,13 +206,17 @@ var (
 		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
 
 		// -zg: Automatically choose a maxzoom that should be sufficient to clearly distinguish the features and the detail within each feature
-		"--maximum-zoom", "g", // guess
-		//"--minimum-zoom", "3",
-		//"--maximum-zoom", "18",
+		//"--maximum-zoom", "g", // guess
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "18",
 
 		// --coalesce-densest-as-needed: If the tiles are too big at low or medium zoom levels,
 		// merge as many features together as are necessary to allow tiles to be created with those features that are still distinguished
 		"--coalesce-densest-as-needed",
+
+		// --drop-rate: Drop a fixed fraction of features at each zoom level.
+		// This is useful if you have more detail than can be shown at low zoom levels.
+		"--drop-rate", "1",
 
 		//--extend-zooms-if-still-dropping: If even the tiles at high zoom levels are too big,
 		// keep adding zoom levels until one is reached that can represent all the features.
@@ -236,7 +243,18 @@ var (
 		"--include", "Elevation",
 		"--include", "Speed",
 		"--include", "Accuracy",
+
 		"--include", "Count",
+		"--include", "FirstTime",
+		"--include", "LastTime",
+		"--include", "ActivityMode.Unknown",
+		"--include", "ActivityMode.Stationary",
+		"--include", "ActivityMode.Walking",
+		"--include", "ActivityMode.Running",
+		"--include", "ActivityMode.Bike",
+		"--include", "ActivityMode.Automotive",
+		"--include", "ActivityMode.Fly",
+
 		// "--include", "Heading",
 		"--include", "UnixTime",
 		"--single-precision",

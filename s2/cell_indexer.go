@@ -96,9 +96,11 @@ func UnmarshalIndexer(v []byte) (Indexer, error) {
 	return nil, fmt.Errorf("unknown type")
 }
 
-func (wt WrappedTrack) SafeSetProperty(k string, v interface{}) WrappedTrack {
+func (wt WrappedTrack) SafeSetProperties(items map[string]any) WrappedTrack {
 	props := wt.Properties.Clone()
-	props[k] = v
+	for k, v := range items {
+		props[k] = v
+	}
 	wt.Properties = props
 	return wt
 }
@@ -108,16 +110,60 @@ func (wt WrappedTrack) SafeSetProperty(k string, v interface{}) WrappedTrack {
 // Or maybe just "merge" the index structure to the wrapped track somehow.
 func (wt WrappedTrack) Index(old, next Indexer) Indexer {
 	cp := wt
-	nextCount := next.(WrappedTrack).Properties.MustInt("Count", 1)
+	nextWrapped := next.(WrappedTrack)
+	nextCount := nextWrapped.Properties.MustInt("Count", 1)
+	nextActivity := nextWrapped.Properties.MustString("Activity", "Unknown")
+	nextTime, err := time.Parse(time.RFC3339, nextWrapped.Properties.MustString("Time", ""))
+	if err != nil {
+		panic(err)
+	}
 	if old == nil || old.IsEmpty() {
-		cp = cp.SafeSetProperty("Count", nextCount)
+		props := map[string]any{
+			"Count":                   nextCount,
+			"Activity":                nextActivity,
+			"FirstTime":               nextTime,
+			"ActivityMode.Unknown":    nextWrapped.Properties.MustInt("ActivityMode.Unknown", 0),
+			"ActivityMode.Stationary": nextWrapped.Properties.MustInt("ActivityMode.Stationary", 0),
+			"ActivityMode.Walking":    nextWrapped.Properties.MustInt("ActivityMode.Walking", 0),
+			"ActivityMode.Running":    nextWrapped.Properties.MustInt("ActivityMode.Running", 0),
+			"ActivityMode.Bike":       nextWrapped.Properties.MustInt("ActivityMode.Bike", 0),
+			"ActivityMode.Automotive": nextWrapped.Properties.MustInt("ActivityMode.Automotive", 0),
+			"ActivityMode.Fly":        nextWrapped.Properties.MustInt("ActivityMode.Fly", 0),
+		}
+		props["ActivityMode."+nextActivity] = nextCount // eg. "Walking": 1, "Running": 1, etc.
+		cp = cp.SafeSetProperties(props)
 		return cp
 	}
+
 	oldWrapped := old.(WrappedTrack)
+	updates := map[string]any{}
+
 	oldCount := oldWrapped.Properties.MustInt("Count", 1)
-	nextCount = oldCount + nextCount
-	oldWrapped = oldWrapped.SafeSetProperty("Count", nextCount)
-	return oldWrapped
+	updates["Count"] = oldCount + nextCount
+
+	for _, act := range []string{"Unknown", "Stationary", "Walking", "Running", "Bike", "Automotive", "Fly"} {
+		oldActivityScore := oldWrapped.Properties.MustInt("ActivityMode."+act, 0)
+		nextActivityScore := nextWrapped.Properties.MustInt("ActivityMode."+act, 0)
+		updates["ActivityMode."+act] = oldActivityScore + nextActivityScore
+	}
+
+	oldActivityScore := oldWrapped.Properties.MustInt("ActivityMode."+nextActivity, 1)
+	updates["ActivityMode."+nextActivity] = oldActivityScore + nextCount
+
+	// Get the ActivityMode with the greatest value, and assign the activity name to the Activity prop.
+	greatest := 0
+	name := "Unknown"
+	for _, act := range []string{"Unknown", "Stationary", "Walking", "Running", "Bike", "Automotive", "Fly"} {
+		if updates["ActivityMode."+act].(int) > greatest {
+			greatest = updates["ActivityMode."+act].(int)
+			name = act
+		}
+	}
+	updates["Activity"] = name
+
+	updates["LastTime"] = nextTime
+
+	return oldWrapped.SafeSetProperties(updates)
 }
 
 func (wt WrappedTrack) IsEmpty() bool {

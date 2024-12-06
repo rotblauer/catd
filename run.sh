@@ -33,6 +33,7 @@ run() {
 #  local source_gz="local/yyyy-mm/2024-07.json.gz"
 #  local source_gz="local/yyyy-mm/2024-09.json.gz"
   local source_gz="local/yyyy-mm/2024-12.json.gz"
+#  local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
   go install . &&\
    for i in 100_000; do
