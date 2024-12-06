@@ -196,7 +196,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		if next == nil {
 			log.Fatalln("next is nil", ict.IsEmpty())
 		}
-		nextTrack := fixme.ApplyToCattrack(next, ct)
+		nextTrack := next.ApplyToCatTrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
@@ -244,11 +244,12 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 					return err
 				}
 
-				old = (&ICT{}).FromCatTrack(ct)
+				fixme := &ICT{}
+				old = fixme.FromCatTrack(ct)
 			}
 
 			next := (&ICT{}).Index(old, nextIdxr)
-			nextTrack := next.ApplyToCattrack(next, track)
+			nextTrack := next.ApplyToCatTrack(next, track)
 			outTracks = append(outTracks, nextTrack)
 
 			encoded, err := json.Marshal(nextTrack)

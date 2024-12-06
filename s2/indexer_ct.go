@@ -7,7 +7,6 @@ import (
 )
 
 type ICT struct {
-	//Indexer
 	Count        int
 	FirstTime    time.Time
 	LastTime     time.Time

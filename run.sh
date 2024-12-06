@@ -37,8 +37,8 @@ run() {
   local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
   filter() {
-    cat
-#    grep -E '2024-1[1,2]'
+#    cat
+    grep -E '2024-1[1,2]'
   }
 
   go install . &&\
