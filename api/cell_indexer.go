@@ -135,8 +135,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 		cp := track
 
-		// FIXME Use a real ID
-		cp.ID = rand.Int63()
+		cp.ID = track.MustTime().Unix()
 		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
 
 		return cp

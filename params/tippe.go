@@ -5,12 +5,12 @@ var TippecanoeCommand = "/usr/local/bin/tippecanoe"
 type TippeConfigName string
 
 const (
-	TippeConfigNameTracks       TippeConfigName = "tracks"
-	TippeConfigNameSnaps        TippeConfigName = "snaps"
-	TippeConfigNameLaps         TippeConfigName = "laps"
-	TippeConfigNameNaps         TippeConfigName = "naps"
-	TippeConfigNameTripDetected TippeConfigName = "tripdetected"
-	TippeConfigNameCells        TippeConfigName = "cells"
+	TippeConfigNameTracks TippeConfigName = "tracks"
+	TippeConfigNameSnaps  TippeConfigName = "snaps"
+	TippeConfigNameLaps   TippeConfigName = "laps"
+	TippeConfigNameNaps   TippeConfigName = "naps"
+	TippeConfigNameCells  TippeConfigName = "cells"
+	//TippeConfigNameTripDetected TippeConfigName = "tripdetected"
 )
 
 func LookupTippeConfig(name TippeConfigName, raw CLIFlagsT) (config CLIFlagsT, ok bool) {
@@ -23,10 +23,11 @@ func LookupTippeConfig(name TippeConfigName, raw CLIFlagsT) (config CLIFlagsT, o
 		return DefaultTippeConfigs.Laps(), true
 	case TippeConfigNameNaps:
 		return DefaultTippeConfigs.Naps(), true
-	case TippeConfigNameTripDetected:
-		return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	case TippeConfigNameCells:
 		return DefaultTippeConfigs.Cells(), true
+
+		//case TippeConfigNameTripDetected:
+		//	return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	}
 	if raw != nil {
 		return raw, true
@@ -44,24 +45,29 @@ var DefaultTippeConfigs = &struct {
 	Cells  func() CLIFlagsT
 }{
 	Tracks: func() CLIFlagsT {
-		return TippeTracksArgs.Copy()
+		return append(TippeTracksArgs, TippeCommonArgs...)
 	},
 	Snaps: func() CLIFlagsT {
-		return TippeSnapsArgs.Copy()
+		return append(TippeSnapsArgs, TippeCommonArgs...)
 	},
 	Laps: func() CLIFlagsT {
-		return TippeLapsArgs.Copy()
+		return append(TippeLapsArgs, TippeCommonArgs...)
 	},
 	Naps: func() CLIFlagsT {
-		return TippeNapsArgs.Copy()
+		return append(TippeNapsArgs, TippeCommonArgs...)
 	},
-	Cells: func() CLIFlagsT { return TippeCellsArgs.Copy() },
+	Cells: func() CLIFlagsT {
+		return append(TippeCellsArgs, TippeCommonArgs...)
+	},
 }
 
 var (
-	commonArgs = CLIFlagsT{
+	TippeCommonArgs = CLIFlagsT{
 		"--single-precision",
+
+		// FIXME Doesn't generate ids...?
 		"--generate-ids",
+
 		"--read-parallel",
 		"--json-progress",
 		"--progress-interval", "5",
@@ -76,6 +82,7 @@ var (
 		"--drop-smallest-as-needed",
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
+
 		"--include", "Name",
 		"--include", "UUID",
 		"--include", "Activity",
@@ -97,16 +104,6 @@ var (
 		"--include", "Elevation_Loss",
 
 		"--order-by", "Time_Start_Unix",
-		"--single-precision",
-		"--generate-ids",
-		"--read-parallel",
-		"--json-progress",
-		"--progress-interval", "5",
-		"--temporary-directory", "/tmp",
-		"--layer", "${LAYER_NAME}",
-		"--name", "${TILESET_NAME}",
-		"--output", "${OUTPUT_FILE}",
-		"--force",
 	}
 	TippeNapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "5000000",
@@ -126,23 +123,16 @@ var (
 		"--include", "Area",
 		"--include", "RawPointCount",
 		"-ERawPointCount:sum",
-		"--single-precision",
-		"--generate-ids",
-		"--temporary-directory", "/tmp",
-		"--read-parallel",
-		"--json-progress",
-		"--progress-interval", "5",
-		"--layer", "${LAYER_NAME}",
-		"--name", "${TILESET_NAME}",
-		"--output", "${OUTPUT_FILE}",
-		"--force",
 	}
 	// TippeTracksArgs taken from V1 CatTracks procedge, procmaster.
 	TippeTracksArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "18",
 		"--cluster-densest-as-needed",
-		"--cluster-distance=1",
 		"--calculate-feature-density",
+		"--cluster-distance", "1",
+		"--drop-rate", "1", // == --drop-rate
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
@@ -156,24 +146,15 @@ var (
 		"-EElevation:max",
 		"-ESpeed:max", // mean",
 		"-EAccuracy:mean",
-		"--single-precision",
-		"--drop-rate", "1", // == --drop-rate
-		"--minimum-zoom", "3",
-		"--maximum-zoom", "18",
-		"--json-progress", "--progress-interval", "30",
-		"--read-parallel",
-		"--json-progress",
-		"--progress-interval", "5",
-		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
-		"--name", "${TILESET_NAME}",
-		"--output", "${OUTPUT_FILE}",
-		"--force",
 	}
 	TippeSnapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "330000", // num bytes/tile,default: 500kb=500000
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "18",
 		"--cluster-densest-as-needed",
-		"--cluster-distance=1",
 		"--calculate-feature-density",
+		"--cluster-distance", "1",
+		"--drop-rate", "1",
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
@@ -182,24 +163,12 @@ var (
 		"--include", "Speed",
 		"--include", "Accuracy",
 		"--include", "S3URL",
-		// "--include", "Heading",
+		"--include", "Heading",
 		"--include", "UnixTime",
 		"-EUnixTime:max",
 		"-EElevation:max",
 		"-ESpeed:max", // mean",
 		"-EAccuracy:mean",
-		"--single-precision",
-		"--drop-rate", "1", // == --drop-rate
-		"--minimum-zoom", "3",
-		"--maximum-zoom", "18",
-		"--json-progress", "--progress-interval", "5",
-		"--read-parallel",
-		"--json-progress",
-		"--progress-interval", "5",
-		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
-		"--name", "${TILESET_NAME}",
-		"--output", "${OUTPUT_FILE}",
-		"--force",
 	}
 	// TippeCellsArgs are for S2 cell polygons.
 	TippeCellsArgs = CLIFlagsT{
@@ -234,8 +203,6 @@ var (
 		// You can probably go up to about 10 without too much visible difference.
 		"--simplification", "10",
 
-		"--generate-ids",
-
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
@@ -243,6 +210,7 @@ var (
 		"--include", "Elevation",
 		"--include", "Speed",
 		"--include", "Accuracy",
+		"--include", "Time",
 
 		"--include", "Count",
 		"--include", "VisitCount",
@@ -256,20 +224,6 @@ var (
 		"--include", "ActivityMode.Bike",
 		"--include", "ActivityMode.Automotive",
 		"--include", "ActivityMode.Fly",
-
-		// "--include", "Heading",
-		"--include", "UnixTime",
-		"--single-precision",
-		//"--minimum-zoom", "3",
-		//"--maximum-zoom", "18",
-		"--json-progress", "--progress-interval", "5",
-		"--read-parallel",
-		"--json-progress",
-		"--progress-interval", "5",
-		"--layer", "${LAYER_NAME}", // TODO: what's difference layer vs name?
-		"--name", "${TILESET_NAME}",
-		"--output", "${OUTPUT_FILE}",
-		"--force",
 	}
 )
 
