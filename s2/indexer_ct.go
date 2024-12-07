@@ -28,14 +28,14 @@ type TrackStackerV1 struct {
 	// Activity is the primary activity mode of the cat while in the cell.
 	Activity activity.Activity
 
-	// AMx are the activity tallies.
-	AMUnknown    int
-	AMStationary int
-	AMWalking    int
-	AMRunning    int
-	AMBike       int
-	AMAutomotive int
-	AMFly        int
+	// AMx are the activity tallies measured in cumulative time offset seconds.
+	AMUnknown    float64
+	AMStationary float64
+	AMWalking    float64
+	AMRunning    float64
+	AMBike       float64
+	AMAutomotive float64
+	AMFly        float64
 }
 
 func (ix *TrackStackerV1) IsEmpty() bool {
@@ -88,46 +88,46 @@ func (*TrackStackerV1) FromCatTrack(ct cattrack.CatTrack) Indexer {
 		Activity:        activity.FromString(ct.Properties.MustString("Activity", "Unknown")),
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Unknown"]; ok {
-		out.AMUnknown = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Unknown", -1); v > 0 {
+		out.AMUnknown = v
 	} else if out.Activity == activity.TrackerStateUnknown {
-		out.AMUnknown = 1
+		out.AMUnknown = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Stationary"]; ok {
-		out.AMStationary = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Stationary", -1); v > 0 {
+		out.AMStationary = v
 	} else if out.Activity == activity.TrackerStateStationary {
-		out.AMStationary = 1
+		out.AMStationary = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Walking"]; ok {
-		out.AMWalking = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Walking", -1); v > 0 {
+		out.AMWalking = v
 	} else if out.Activity == activity.TrackerStateWalking {
-		out.AMWalking = 1
+		out.AMWalking = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Running"]; ok {
-		out.AMRunning = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Running", -1); v > 0 {
+		out.AMRunning = v
 	} else if out.Activity == activity.TrackerStateRunning {
-		out.AMRunning = 1
+		out.AMRunning = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Bike"]; ok {
-		out.AMBike = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Bike", -1); v > 0 {
+		out.AMBike = v
 	} else if out.Activity == activity.TrackerStateBike {
-		out.AMBike = 1
+		out.AMBike = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Automotive"]; ok {
-		out.AMAutomotive = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Automotive", -1); v > 0 {
+		out.AMAutomotive = v
 	} else if out.Activity == activity.TrackerStateAutomotive {
-		out.AMAutomotive = 1
+		out.AMAutomotive = totalOffset.Round(time.Second).Seconds()
 	}
 
-	if v, ok := ct.Properties["ActivityMode.Fly"]; ok {
-		out.AMFly = int(v.(float64))
+	if v := ct.Properties.MustFloat64("ActivityMode.Fly", -1); v > 0 {
+		out.AMFly = v
 	} else if out.Activity == activity.TrackerStateFlying {
-		out.AMFly = 1
+		out.AMFly = totalOffset.Round(time.Second).Seconds()
 	}
 
 	return out
@@ -186,7 +186,7 @@ func (ix *TrackStackerV1) Index(old, next Indexer) Indexer {
 
 	// Find highest-magnitude AMx.
 	amMode := activity.TrackerStateUnknown
-	amMax := 0
+	amMax := 0.0
 	if out.AMUnknown > amMax {
 		amMax = out.AMUnknown
 		amMode = activity.TrackerStateUnknown
