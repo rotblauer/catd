@@ -1,3 +1,7 @@
+/*
+Package act improves reported activities by cats.
+*/
+
 package act
 
 import (

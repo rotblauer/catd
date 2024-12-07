@@ -9,7 +9,7 @@ import (
 	"github.com/rotblauer/catd/catdb/cache"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/daemon/tiled"
-	"github.com/rotblauer/catd/geo/cleaner"
+	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -198,7 +198,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// S2 indexing pipeline. Stateful/cat.
 	// Filter out probably-airborne tracks.
 	// Not really interested in heat maps from space.
-	groundedArea := stream.Filter[cattrack.CatTrack](ctx, cleaner.FilterGrounded, areaPipeCh)
+	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
 	go c.S2IndexTracks(ctx, groundedArea)
 	// Laps, naps.
 	// CatActPipeline is an upgrade from `go c.TripDetectionPipeline(ctx, vectorPipeCh)`.

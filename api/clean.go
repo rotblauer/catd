@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	"github.com/rotblauer/catd/geo/cleaner"
+	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 )
@@ -15,14 +15,14 @@ func (c *Cat) CleanTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-ch
 	go func() {
 		defer close(out)
 		//wang := new(cleaner.WangUrbanCanyonFilter)
-		teleportation := new(cleaner.TeleportationFilter)
+		teleportation := new(clean.TeleportationFilter)
 		defer func() {
 			c.logger.Info("CleanTracks filters done", "teleportation", teleportation.Filtered)
 		}()
 
-		accurate := stream.Filter(ctx, cleaner.FilterPoorAccuracy, in)
-		slow := stream.Filter(ctx, cleaner.FilterUltraHighSpeed, accurate)
-		low := stream.Filter(ctx, cleaner.FilterWildElevation, slow)
+		accurate := stream.Filter(ctx, clean.FilterPoorAccuracy, in)
+		slow := stream.Filter(ctx, clean.FilterUltraHighSpeed, accurate)
+		low := stream.Filter(ctx, clean.FilterWildElevation, slow)
 
 		//uncanyoned := wang.Filter(ctx, low)
 		unteleported := teleportation.Filter(ctx, low)

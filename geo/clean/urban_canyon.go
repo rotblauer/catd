@@ -14,7 +14,7 @@ And it looks a lot like the teleportation filter.
 walks down the street for an ultimate test.
 */
 
-package cleaner
+package clean
 
 import (
 	"context"

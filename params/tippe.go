@@ -25,9 +25,6 @@ func LookupTippeConfig(name TippeConfigName, raw CLIFlagsT) (config CLIFlagsT, o
 		return DefaultTippeConfigs.Naps(), true
 	case TippeConfigNameCells:
 		return DefaultTippeConfigs.Cells(), true
-
-		//case TippeConfigNameTripDetected:
-		//	return DefaultTippeConfigs.Tracks().Add("--include", "IsTrip"), true
 	}
 	if raw != nil {
 		return raw, true

@@ -5,7 +5,7 @@ import (
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/geo/act"
-	"github.com/rotblauer/catd/geo/cleaner"
+	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/activity"
@@ -23,7 +23,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	// and restored on cat restart.
 	// Act-detection logic below will flush the last lap if the cat is sufficiently napping.
 	ls, completedLaps := c.TrackLaps(ctx, lapTracks)
-	filterLaps := stream.Filter(ctx, cleaner.FilterLaps, completedLaps)
+	filterLaps := stream.Filter(ctx, clean.FilterLaps, completedLaps)
 
 	// Simplify the lap geometry.
 	simplifier := simplify.DouglasPeucker(params.DefaultLineStringSimplificationConfig.DouglasPeuckerThreshold)
@@ -64,7 +64,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
 	completedNaps := c.TrackNaps(ctx, napTracks)
-	filteredNaps := stream.Filter(ctx, cleaner.FilterNaps, completedNaps)
+	filteredNaps := stream.Filter(ctx, clean.FilterNaps, completedNaps)
 
 	// End of the line for all cat naps...
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
