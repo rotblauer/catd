@@ -9,26 +9,28 @@ package lap
 
 import (
 	"context"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"time"
 )
 
 type State struct {
-	Interval        time.Duration
-	Tracks          []*cattrack.CatTrack // the points represented by the linestring
-	TimeLast        time.Time
-	SplitActivities bool
-	ch              chan cattrack.CatLap
+	Config   *params.LapConfig
+	Tracks   []*cattrack.CatTrack // the points represented by the linestring
+	TimeLast time.Time
+	ch       chan cattrack.CatLap
 }
 
-func NewState(interval time.Duration, splitActivities bool) *State {
+func NewState(config *params.LapConfig) *State {
+	if config == nil {
+		config = params.DefaultLapConfig
+	}
 	return &State{
-		Interval:        interval,
-		Tracks:          make([]*cattrack.CatTrack, 0),
-		TimeLast:        time.Time{},
-		SplitActivities: splitActivities,
-		ch:              make(chan cattrack.CatLap),
+		Config:   config,
+		Tracks:   make([]*cattrack.CatTrack, 0),
+		TimeLast: time.Time{},
+		ch:       make(chan cattrack.CatLap),
 	}
 }
 
@@ -51,11 +53,10 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return false
 	}
 	span := current.Sub(s.TimeLast)
-	if span > s.Interval || span < -1*time.Second {
+	if span > s.Config.DwellInterval || span < -1*time.Second {
 		return true
 	}
-	//return false
-	if !s.SplitActivities {
+	if !s.Config.SplitActivities {
 		return false
 	}
 	currentAct := activity.FromString(ct.Properties.MustString("Activity"))

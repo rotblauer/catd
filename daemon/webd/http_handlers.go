@@ -39,6 +39,22 @@ func handleGetCatSnaps(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleGetCatState is a debug tool.
+func handleGetCatState(w http.ResponseWriter, r *http.Request) {
+	catID := r.URL.Query().Get("cat")
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	stateData := map[string]any{}
+	ls, err := cat.GetLapState()
+	if err != nil {
+		slog.Warn("Failed to get lap state", "error", err)
+	} else {
+		stateData["lap"] = ls
+	}
+	if err := json.NewEncoder(w).Encode(stateData); err != nil {
+		slog.Warn("Failed to write response", "error", err)
+	}
+}
+
 // handlePopulate is a handler for the /populate endpoint.
 // It is where Cat Tracks get posted and persisted for-ev-er.
 // Due to legacy support requirements it supports a variety of

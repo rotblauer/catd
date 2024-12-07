@@ -10,7 +10,7 @@ import (
 )
 
 func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatNap {
-	c.getOrInitState()
+	c.getOrInitState(false)
 
 	out := make(chan cattrack.CatNap)
 	ns := nap.NewState(nil)

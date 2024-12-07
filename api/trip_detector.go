@@ -13,10 +13,10 @@ import (
 
 // TripDetectTracks detects trips in incoming CatTracks.
 func (c *Cat) TripDetectTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
-	c.getOrInitState()
+	c.getOrInitState(false)
 
 	out := make(chan cattrack.CatTrack)
-	td := tripdetector.NewTripDetector(params.DefaultTripDetectorConfig)
+	td := tripdetector.NewTripDetector(params.DefaultActDiscretionConfig)
 
 	// If possible, read persisted cat tripdetector-state.
 	if err := c.restoreTripDetector(td); err != nil {

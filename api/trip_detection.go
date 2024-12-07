@@ -24,7 +24,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
 	// TODO Send incomplete lap on close. This will be nice to have.
-	completedLaps := c.TrackLaps(ctx, lapTracks)
+	_, completedLaps := c.TrackLaps(ctx, lapTracks)
 	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
 		duration := ct.Properties["Duration"].(float64)
 		if duration < 120 {
@@ -38,7 +38,7 @@ func (c *Cat) TripDetectionPipeline(ctx context.Context, in <-chan cattrack.CatT
 	}, completedLaps)
 
 	// Simplify the lap geometry.
-	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
+	simplifier := simplify.DouglasPeucker(params.DefaultLineStringSimplificationConfig.DouglasPeuckerThreshold)
 	simplified := stream.Transform(ctx, func(ct cattrack.CatLap) cattrack.CatLap {
 		cp := new(cattrack.CatLap)
 		*cp = ct

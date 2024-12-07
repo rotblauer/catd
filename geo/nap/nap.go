@@ -11,12 +11,11 @@ import (
 )
 
 type State struct {
-	DwellInterval time.Duration
-	DwellDistance float64
-	Tracks        []*cattrack.CatTrack // the points represented by the nap
-	Centroid      orb.Point
-	TimeLast      time.Time
-	ch            chan cattrack.CatNap
+	Config   *params.NapConfig
+	Tracks   []*cattrack.CatTrack // the points represented by the nap
+	Centroid orb.Point
+	TimeLast time.Time
+	ch       chan cattrack.CatNap
 }
 
 func NewState(config *params.NapConfig) *State {
@@ -24,10 +23,9 @@ func NewState(config *params.NapConfig) *State {
 		config = params.DefaultNapConfig
 	}
 	return &State{
-		DwellInterval: config.DwellInterval,
-		DwellDistance: config.DwellDistance,
-		Tracks:        make([]*cattrack.CatTrack, 0),
-		ch:            make(chan cattrack.CatNap),
+		Config: config,
+		Tracks: make([]*cattrack.CatTrack, 0),
+		ch:     make(chan cattrack.CatNap),
 	}
 }
 
@@ -56,7 +54,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	span := currentTime.Sub(s.TimeLast)
 	s.TimeLast = currentTime
 
-	discontinuous := span < -1*time.Second || span > s.DwellInterval
+	discontinuous := span < -1*time.Second || span > s.Config.DwellInterval
 	if discontinuous {
 		return discontinuous
 	}
@@ -64,7 +62,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	// Space
 	dist := geo.Distance(s.Centroid, ct.Point())
 
-	return dist > s.DwellDistance
+	return dist > s.Config.DwellDistance
 }
 
 func (s *State) Flush() {

@@ -52,9 +52,9 @@ func timespan(pts []*cattrack.CatTrack) time.Duration {
 	return pts[len(pts)-1].MustTime().Sub(pts[0].MustTime())
 }
 
-func NewTripDetector(config *params.TripDetectorConfig) *TripDetector {
+func NewTripDetector(config *params.ActDiscretionConfig) *TripDetector {
 	if config == nil {
-		config = params.DefaultTripDetectorConfig
+		config = params.DefaultActDiscretionConfig
 	}
 	return &TripDetector{
 		DwellTime:      config.DwellInterval,

@@ -9,7 +9,7 @@ import (
 )
 
 func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
-	c.getOrInitState()
+	c.getOrInitState(false)
 	out := make(chan cattrack.CatTrack)
 
 	im := &act.Improver{}

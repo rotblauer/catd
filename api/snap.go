@@ -35,7 +35,7 @@ import (
 // If upload fails, the original track is forwarded to the output channel unmodified.
 // If the cat handler finds that the snap already exists in the cat state, it is not uploaded again, nor transformed.
 func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out chan cattrack.CatTrack, errs chan error) {
-	c.getOrInitState()
+	c.getOrInitState(false)
 
 	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()

@@ -7,6 +7,10 @@
 - [ ] ct.Time should be assuredly 1-second granularity
   use `UnixTime`!?
 
+- [ ] track processor timer wrapper streamer -
+  how long does it take to process a track for each/any of these streamers?
+  where are the bottlenecks?
+
 ---
 
 ```sh

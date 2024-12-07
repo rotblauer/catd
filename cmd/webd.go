@@ -35,6 +35,7 @@ var webdCmd = &cobra.Command{
 		setDefaultSlog(cmd, args)
 
 		server := webd.NewWebDaemon(&params.WebDaemonConfig{
+			// FIXME Configure tiled for webd clients. Global CLI flags?
 			TileDaemonConfig: params.DefaultTileDaemonConfig(),
 			NetPort:          optHTTPPort,
 			NetAddr:          optHTTPAddr,

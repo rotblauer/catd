@@ -2,12 +2,6 @@ package params
 
 import "time"
 
-type Config struct {
-	TrackCleaningConfig
-	TripDetectorConfig
-	SimplificationConfig
-}
-
 type TrackCleaningConfig struct {
 	// AccuracyThreshold is the threshold to determine if a point is accurate.
 	// If the accuracy is greater than this value, it's considered inaccurate.
@@ -47,37 +41,4 @@ var DefaultCleanConfig = &TrackCleaningConfig{
 	TeleportSpeedFactor:                 10.0,
 	TeleportWindow:                      60 * time.Second,
 	TeleportMinDistance:                 25.0,
-}
-
-type TripDetectorConfig struct {
-	DwellInterval  time.Duration
-	DwellDistance  float64
-	SpeedThreshold float64
-}
-
-var DefaultTripDetectorConfig = &TripDetectorConfig{
-	DwellInterval:  2 * time.Minute, // TODO Separate into lap threshold vs. td window.
-	DwellDistance:  50,
-	SpeedThreshold: 0.5,
-}
-
-type SimplificationConfig struct {
-	DouglasPeuckerThreshold float64
-}
-
-var DefaultSimplifierConfig = &SimplificationConfig{
-	DouglasPeuckerThreshold: 0.00008,
-}
-
-type NapConfig struct {
-	DwellInterval time.Duration
-	DwellDistance float64
-}
-
-var DefaultNapConfig = &NapConfig{
-	// DwellInterval separates naps by time.
-	DwellInterval: 24 * time.Hour,
-
-	// DwellDistance separates naps by distance.
-	DwellDistance: 100,
 }

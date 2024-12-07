@@ -301,7 +301,7 @@ Missoula, Montana
 
 		slog.Info("Canceling context")
 		ctxCanceler()
-		slog.Info("Au revoir!")
+		slog.Info("Populate graceful dismount")
 	},
 }
 

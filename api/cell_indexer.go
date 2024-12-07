@@ -15,7 +15,7 @@ import (
 
 // S2IndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
-	c.getOrInitState()
+	c.getOrInitState(false)
 
 	c.State.Waiting.Add(1)
 	defer c.State.Waiting.Done()

@@ -27,20 +27,21 @@ run() {
   set -e
 
 #  local source_gz="edge.20241008.json.gz"
-#  local source_gz="edge.json.gz"
+  local source_gz="edge.json.gz"
 #  local source_gz="master.json.gz"
 #  local source_gz="local/yyyy-mm/2024*.json.gz"
 #  local source_gz="local/yyyy-mm/2024-07.json.gz"
 #  local source_gz="local/yyyy-mm/2024-09.json.gz"
 #  local source_gz="local/yyyy-mm/2024-12.json.gz"
 #  local source_gz="local/yyyy-mm/2024-1*.json.gz"
-  local source_gz="local/yyyy-mm/2024-1*.json.gz"
+#  local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
   tracksource() {
 #    zcat ~/tdata/${source_gz}
 #    cat
 #    grep -E '2024-1[1,2]'
-    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
+     zcat "${HOME}/tdata/edge.json.gz"
   }
 
   go install . &&\
@@ -55,10 +56,12 @@ run() {
       --tiled.skip-edge
     done
 
+#  catd webd --datadir "/tmp/catd100_000" --http.port 3003 --verbosity 0
+
 #      --tiled.off
 #    |& tee run.out; done
       # --skip 1_000_000 \
-  review
+#  review
 }
 run
 

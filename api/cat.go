@@ -54,9 +54,9 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	return c.State, nil
 }
 
-func (c *Cat) getOrInitState() {
+func (c *Cat) getOrInitState(readOnly bool) {
 	if c.State == nil {
-		_, err := c.WithState(false)
+		_, err := c.WithState(readOnly)
 		if err != nil {
 			c.logger.Error("Failed to create cat state", "error", err)
 			return

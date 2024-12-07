@@ -37,3 +37,29 @@ func FilterGrounded(ct cattrack.CatTrack) bool {
 	speed := ct.Properties.MustFloat64("Speed", -1)
 	return speed < common.SpeedOfDrivingAutobahn
 }
+
+func FilterLaps(ct cattrack.CatLap) bool {
+	duration := ct.Properties.MustFloat64("Duration", 0)
+	if duration < 120 {
+		return false
+	}
+	dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
+	if dist < 100 {
+		return false
+	}
+
+	// Sanity check for speed.
+	// This is a hacky workaround for a spurious pseudo-flight (ia 202411/12) that got
+	// logged as a lap.
+	speedReportedMean := ct.Properties.MustFloat64("Speed_Reported_Mean", 0)
+	speedCalculatedMean := ct.Properties.MustFloat64("Speed_Calculated_Mean", 0)
+	if speedCalculatedMean > 10*speedReportedMean {
+		return false
+	}
+	return true
+}
+
+func FilterNaps(ct cattrack.CatNap) bool {
+	duration := ct.Properties.MustFloat64("Duration", 0)
+	return duration > 120
+}

@@ -5,10 +5,12 @@ import (
 	"github.com/paulmach/orb/simplify"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/geo/act"
+	"github.com/rotblauer/catd/geo/cleaner"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
-	activity2 "github.com/rotblauer/catd/types/activity"
+	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
+	"time"
 )
 
 func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
@@ -19,30 +21,12 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
-	// TODO Send incomplete lap on close. This will be nice to have.
-	completedLaps := c.TrackLaps(ctx, lapTracks)
-	filterLaps := stream.Filter(ctx, func(ct cattrack.CatLap) bool {
-		duration := ct.Properties["Duration"].(float64)
-		if duration < 120 {
-			return false
-		}
-		dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
-		if dist < 100 {
-			return false
-		}
-		// Sanity check for speed.
-		// This is a workaround for a spurious pseudo-flight (ia 202411/12) that got
-		// logged as a lap.
-		speedReportedMean := ct.Properties.MustFloat64("Speed_Reported_Mean", 0)
-		speedCalculatedMean := ct.Properties.MustFloat64("Speed_Calculated_Mean", 0)
-		if speedCalculatedMean > speedReportedMean*10 {
-			return false
-		}
-		return true
-	}, completedLaps)
+	// Act-detection logic below will flush the last lap if the cat is sufficiently napping.
+	ls, completedLaps := c.TrackLaps(ctx, lapTracks)
+	filterLaps := stream.Filter(ctx, cleaner.FilterLaps, completedLaps)
 
 	// Simplify the lap geometry.
-	simplifier := simplify.DouglasPeucker(params.DefaultSimplifierConfig.DouglasPeuckerThreshold)
+	simplifier := simplify.DouglasPeucker(params.DefaultLineStringSimplificationConfig.DouglasPeuckerThreshold)
 	simplified := stream.Transform(ctx, func(ct cattrack.CatLap) cattrack.CatLap {
 		cp := new(cattrack.CatLap)
 		*cp = ct
@@ -52,7 +36,6 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	}, filterLaps)
 
 	// End of the line for all cat laps...
-	//sinkLaps, sendLaps := stream.Tee(ctx, simplified)
 	sinkLaps := make(chan cattrack.CatLap)
 	sendLaps := make(chan cattrack.CatLap)
 	notifyLaps := make(chan cattrack.CatLap)
@@ -81,9 +64,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
 	completedNaps := c.TrackNaps(ctx, napTracks)
-	filteredNaps := stream.Filter(ctx, func(ct cattrack.CatNap) bool {
-		return ct.Properties.MustFloat64("Duration", 0) > 120
-	}, completedNaps)
+	filteredNaps := stream.Filter(ctx, cleaner.FilterNaps, completedNaps)
 
 	// End of the line for all cat naps...
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
@@ -109,11 +90,26 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	defer func() {
 		c.logger.Info("Act detection pipeline unblocked")
 	}()
+
+	lastActiveTime := time.Time{}
+
+	// Blocking.
 	stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
-		activity := activity2.FromString(ct.Properties.MustString("Activity", ""))
-		if act.IsActivityActive(activity) {
+		a := activity.FromString(ct.Properties.MustString("Activity", ""))
+		if act.IsActivityActive(a) {
+
+			lastActiveTime = ct.MustTime()
 			lapTracks <- ct
+
 		} else {
+
+			// Flush last lap if cat is sufficiently napping.
+			if !lastActiveTime.IsZero() &&
+				ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.DwellInterval {
+				ls.Flush()
+				lastActiveTime = time.Time{}
+			}
+
 			napTracks <- ct
 		}
 	}, in)

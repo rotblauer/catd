@@ -9,22 +9,31 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatLap {
-	c.getOrInitState()
+func (c *Cat) GetLapState() (*lap.State, error) {
+	c.getOrInitState(true)
 
-	out := make(chan cattrack.CatLap)
-	ls := lap.NewState(params.DefaultTripDetectorConfig.DwellInterval, false)
+	ls := lap.NewState(params.DefaultLapConfig)
 
 	// Attempt to restore lap-builder state.
 	if data, err := c.State.ReadKV(state.CatStateBucket, []byte("lapstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ls); err != nil {
-			c.logger.Error("Failed to unmarshal lap state (new cat?)", "error", err)
-		} else {
-			if len(ls.Tracks) > 0 {
-				ls.TimeLast = ls.Tracks[len(ls.Tracks)-1].MustTime()
-			}
-			c.logger.Info("Restored lap state", "len", len(ls.Tracks), "last", ls.TimeLast)
+			return nil, err
 		}
+	}
+	return ls, nil
+}
+
+func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) (*lap.State, <-chan cattrack.CatLap) {
+	c.getOrInitState(false)
+
+	out := make(chan cattrack.CatLap)
+
+	ls, err := c.GetLapState()
+	if err != nil {
+		c.logger.Warn("Failed to read lap state (new cat?)", "error", err)
+		ls = lap.NewState(params.DefaultLapConfig)
+	} else {
+		c.logger.Info("Restored lap-builder state", "tracks", len(ls.Tracks), "last", ls.TimeLast)
 	}
 
 	c.State.Waiting.Add(1)
@@ -50,5 +59,5 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan
 		}
 	}()
 
-	return out
+	return ls, out
 }

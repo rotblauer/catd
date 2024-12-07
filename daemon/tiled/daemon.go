@@ -175,7 +175,7 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 			time.Sleep(time.Second)
 			_, ok = d.tilingRunningM.Load(req.id())
 		}
-		d.logger.Info("Spawning pending tiling request", "args", req.id())
+		d.logger.Debug("Spawning pending tiling request", "args", req.id())
 		go func() {
 			err := d.callTiling(req, nil)
 			results <- result{req, err}
