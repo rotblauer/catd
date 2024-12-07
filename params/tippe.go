@@ -245,6 +245,7 @@ var (
 		"--include", "Accuracy",
 
 		"--include", "Count",
+		"--include", "VisitCount",
 		"--include", "FirstTime",
 		"--include", "LastTime",
 		"--include", "TotalTimeOffset",

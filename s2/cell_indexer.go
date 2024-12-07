@@ -123,7 +123,9 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 		BatchSize: batchSize,
 
 		// TODO? Expose this in signature.
-		IndexerT:       &ICT{},
+		IndexerT: &ICT{
+			visitThreshold: time.Hour,
+		},
 		indexFeeds:     indexFeeds,
 		uniqIndexFeeds: uniqIndexFeeds,
 		logger:         slog.With("indexer", "s2"),
@@ -194,14 +196,14 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		// Use reflect or tags or something to
 		// be able to handle any Indexer interface implementation.
 		ict := ci.IndexerT.FromCatTrack(ct)
-		next = ict.Index(old, ict)
+		next = ci.IndexerT.Index(old, ict)
 
 		cache.Add(cellID.ToToken(), next)
 
 		if next == nil {
 			log.Fatalln("next is nil", ict.IsEmpty())
 		}
-		nextTrack := next.ApplyToCatTrack(next, ct)
+		nextTrack := ci.IndexerT.ApplyToCatTrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
@@ -253,7 +255,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 			}
 
 			next := ci.IndexerT.Index(old, nextIdxr)
-			nextTrack := next.ApplyToCatTrack(next, track)
+			nextTrack := ci.IndexerT.ApplyToCatTrack(next, track)
 			outTracks = append(outTracks, nextTrack)
 
 			encoded, err := json.Marshal(nextTrack)

@@ -7,7 +7,14 @@ import (
 )
 
 type ICT struct {
-	Count           int
+	Count int
+
+	// VisitCount is the number of times the cat has entered and left this cell.
+	// It is bounded by a time threshold which the cat needs to exceed
+	// in order to be considered as "having left".
+	VisitCount     int
+	visitThreshold time.Duration
+
 	FirstTime       time.Time
 	LastTime        time.Time
 	TotalTimeOffset time.Duration
@@ -30,6 +37,7 @@ func (ict *ICT) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.Cat
 	ix := idxr.(*ICT)
 	props := map[string]interface{}{
 		"Count":                   ix.Count,
+		"VisitCount":              ix.VisitCount,
 		"FirstTime":               ix.FirstTime.Format(time.RFC3339),
 		"LastTime":                ix.LastTime.Format(time.RFC3339),
 		"TotalTimeOffset":         ix.TotalTimeOffset.Seconds(),
@@ -63,6 +71,7 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 
 	out := &ICT{
 		Count:           ct.Properties.MustInt("Count", 1),
+		VisitCount:      ct.Properties.MustInt("VisitCount", 0),
 		FirstTime:       first,
 		LastTime:        last,
 		TotalTimeOffset: totalOffset,
@@ -114,36 +123,53 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	return out
 }
 
-func (*ICT) Index(old, next Indexer) Indexer {
+func (ict *ICT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		return next.(*ICT)
+		out := next.(*ICT)
+		out.VisitCount++
+		return out
 	}
 
-	oldCT, nextCT := old.(*ICT), next.(*ICT)
+	oldT, nextT := old.(*ICT), next.(*ICT)
 
 	out := &ICT{
 		// Relatively sane defaults only for concision.
-		FirstTime: oldCT.FirstTime,
-		LastTime:  nextCT.LastTime,
+		FirstTime: oldT.FirstTime,
+		LastTime:  nextT.LastTime,
 
-		// Sums
-		Count:           oldCT.Count + nextCT.Count,
-		TotalTimeOffset: oldCT.TotalTimeOffset + nextCT.TotalTimeOffset,
-		AMUnknown:       oldCT.AMUnknown + nextCT.AMUnknown,
-		AMStationary:    oldCT.AMStationary + nextCT.AMStationary,
-		AMWalking:       oldCT.AMWalking + nextCT.AMWalking,
-		AMRunning:       oldCT.AMRunning + nextCT.AMRunning,
-		AMBike:          oldCT.AMBike + nextCT.AMBike,
-		AMAutomotive:    oldCT.AMAutomotive + nextCT.AMAutomotive,
-		AMFly:           oldCT.AMFly + nextCT.AMFly,
+		VisitCount: oldT.VisitCount,
+
+		Count:           oldT.Count + nextT.Count,
+		TotalTimeOffset: oldT.TotalTimeOffset + nextT.TotalTimeOffset,
+		AMUnknown:       oldT.AMUnknown + nextT.AMUnknown,
+		AMStationary:    oldT.AMStationary + nextT.AMStationary,
+		AMWalking:       oldT.AMWalking + nextT.AMWalking,
+		AMRunning:       oldT.AMRunning + nextT.AMRunning,
+		AMBike:          oldT.AMBike + nextT.AMBike,
+		AMAutomotive:    oldT.AMAutomotive + nextT.AMAutomotive,
+		AMFly:           oldT.AMFly + nextT.AMFly,
+	}
+
+	if nextT.FirstTime.Sub(oldT.LastTime) > ict.visitThreshold {
+		if nextT.VisitCount > 0 {
+			out.VisitCount += nextT.VisitCount
+		} else {
+			out.VisitCount++
+		}
+	} else if oldT.FirstTime.Sub(nextT.LastTime) > ict.visitThreshold {
+		if oldT.VisitCount > 0 {
+			out.VisitCount += oldT.VisitCount
+		} else {
+			out.VisitCount++
+		}
 	}
 
 	// Correct incorrect defaults, maybe.
-	if nextCT.FirstTime.Before(oldCT.FirstTime) {
-		out.FirstTime = nextCT.FirstTime
+	if nextT.FirstTime.Before(oldT.FirstTime) {
+		out.FirstTime = nextT.FirstTime
 	}
-	if oldCT.LastTime.After(nextCT.LastTime) {
-		out.LastTime = oldCT.LastTime
+	if oldT.LastTime.After(nextT.LastTime) {
+		out.LastTime = oldT.LastTime
 	}
 
 	// Find highest-magnitude AMx.
