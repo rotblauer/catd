@@ -12,6 +12,17 @@ import (
 	"time"
 )
 
+func (c *Cat) getDefaultCellIndexer() (*catS2.CellIndexer, error) {
+	return catS2.NewCellIndexer(&catS2.CellIndexerConfig{
+		CatID:           c.CatID,
+		Flat:            c.State.Flat,
+		Levels:          params.S2DefaultCellLevels,
+		BatchSize:       params.DefaultBatchSize,
+		DefaultIndexerT: params.S2DefaultIndexerT,
+		LevelIndexerT:   nil,
+	})
+}
+
 // S2IndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	c.getOrInitState(false)
@@ -25,14 +36,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		c.logger.Info("S2 Indexing complete", "elapsed", time.Since(start).Round(time.Second))
 	}()
 
-	cellIndexer, err := catS2.NewCellIndexer(&catS2.CellIndexerConfig{
-		CatID:           c.CatID,
-		Flat:            c.State.Flat,
-		Levels:          params.S2DefaultCellLevels,
-		BatchSize:       params.DefaultBatchSize,
-		DefaultIndexerT: params.S2DefaultIndexerT,
-		LevelIndexerT:   nil,
-	})
+	cellIndexer, err := c.getDefaultCellIndexer()
 	if err != nil {
 		c.logger.Error("Failed to initialize indexer", "error", err)
 		return
@@ -114,7 +118,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
 	defer cellIndexer.Waiting.Done()
 
-	unsliced := stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
+	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
 	// Block, waiting to see if any unique tracks are sent.
 	uniqs := 0
@@ -175,7 +179,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
 
 		return cp
-	}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
+	}, stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
 
 	levelZoomMin := params.S2TilingDefaultCellZoomLevels[level][0]
 	levelZoomMax := params.S2TilingDefaultCellZoomLevels[level][1]
@@ -204,4 +208,22 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 			c.logger.Error("Failed to send unique tracks level", "error", err)
 		}
 	}
+}
+
+// GetS2IndexDumpLevel returns all indexed tracks for a given S2 cell level.
+func (c *Cat) GetS2IndexDumpLevel(ctx context.Context, level catS2.CellLevel) ([]cattrack.CatTrack, error) {
+	c.getOrInitState(true)
+
+	cellIndexer, err := c.getDefaultCellIndexer()
+	if err != nil {
+		return nil, err
+	}
+	defer cellIndexer.Close()
+
+	dump, errs := cellIndexer.DumpLevel(level)
+	es := stream.Collect(ctx, errs)
+	if len(es) > 0 {
+		return nil, es[0]
+	}
+	return stream.Collect(ctx, dump), nil
 }

@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const S2DBName = "s2.db"
+
 var S2DefaultVisitThreshold = time.Hour
 
 var S2DefaultIndexerT = &s2.TrackStackerV1{

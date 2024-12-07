@@ -52,6 +52,7 @@ import (
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
@@ -62,16 +63,11 @@ import (
 	"time"
 )
 
-const s2DBName = "s2.db"
-
 type CellIndexer struct {
 	Config *CellIndexerConfig
 
 	Caches map[CellLevel]*lru.Cache[string, Indexer]
 	DB     *bbolt.DB
-
-	// FIXME: Keep?
-	FlatFiles map[CellLevel]*flat.GZFileWriter
 
 	Waiting sync.WaitGroup
 
@@ -100,14 +96,14 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	}
 	if config.DefaultIndexerT == nil {
 		config.DefaultIndexerT = &TrackStackerV1{
-			VisitThreshold: time.Hour,
+			VisitThreshold: params.S2DefaultVisitThreshold,
 		}
 	}
 
 	if err := config.Flat.MkdirAll(); err != nil {
 		return nil, err
 	}
-	dbPath := filepath.Join(config.Flat.Path(), s2DBName)
+	dbPath := filepath.Join(config.Flat.Path(), params.S2DBName)
 	db, err := bbolt.Open(dbPath, 0660, nil)
 	if err != nil {
 		return nil, err
@@ -115,7 +111,6 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 	indexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
 	uniqIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
-	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(config.Levels))
 
 	for _, level := range config.Levels {
 		//gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
@@ -129,10 +124,9 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	}
 
 	return &CellIndexer{
-		Config:    config,
-		Caches:    make(map[CellLevel]*lru.Cache[string, Indexer], len(config.Levels)),
-		DB:        db,
-		FlatFiles: flatFileMap,
+		Config: config,
+		Caches: make(map[CellLevel]*lru.Cache[string, Indexer], len(config.Levels)),
+		DB:     db,
 
 		indexFeeds:     indexFeeds,
 		uniqIndexFeeds: uniqIndexFeeds,
@@ -323,14 +317,12 @@ func (ci *CellIndexer) Close() error {
 	if err := ci.DB.Close(); err != nil {
 		return err
 	}
-	for _, gzf := range ci.FlatFiles {
-		if err := gzf.Close(); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
+// DumpLevel dumps all unique CatTracks for the given level.
+// It returns a channel of CatTracks and a channel of errors.
+// Only non-nil errors are sent.
 func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan error) {
 	out := make(chan cattrack.CatTrack)
 	errs := make(chan error, 1)
