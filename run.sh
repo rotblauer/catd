@@ -36,15 +36,17 @@ run() {
 #  local source_gz="local/yyyy-mm/2024-1*.json.gz"
   local source_gz="local/yyyy-mm/2024-1*.json.gz"
 
-  filter() {
+  tracksource() {
+#    zcat ~/tdata/${source_gz}
 #    cat
-    grep -E '2024-1[1,2]'
+#    grep -E '2024-1[1,2]'
+    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
   }
 
   go install . &&\
    for i in 100_000; do
     rm -f /tmp/catscann;
-    zcat ~/tdata/${source_gz} | filter \
+    tracksource \
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \

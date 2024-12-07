@@ -126,7 +126,9 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 func (ict *ICT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
 		out := next.(*ICT)
-		out.VisitCount++
+		if out.VisitCount == 0 {
+			out.VisitCount++
+		}
 		return out
 	}
 
