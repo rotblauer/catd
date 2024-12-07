@@ -14,7 +14,7 @@ func (c *Cat) CleanTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-ch
 
 	go func() {
 		defer close(out)
-		//wang := new(cleaner.WangUrbanCanyonFilter)
+		//wang := new(clean.WangUrbanCanyonFilter)
 		teleportation := new(clean.TeleportationFilter)
 		defer func() {
 			c.logger.Info("CleanTracks filters done", "teleportation", teleportation.Filtered)

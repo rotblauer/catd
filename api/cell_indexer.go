@@ -9,7 +9,6 @@ import (
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
-	"math/rand"
 	"time"
 )
 
@@ -64,14 +63,33 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		// (this FIRST track can be a "small" Indexed track, though, if multiples were cached).
 		// This pattern was used by CatTracksV1 to build point-based maps of unique cells for level 23.
 		// The problem with this is that the first track is not as useful as the last track,
-		// or as a latest-state indexed track value.
+		// nor as useful a latest-state index value.
 		//u1 := make(chan []cattrack.CatTrack)
 		//chans = append(chans, u1)
 		//u1Sub := uniqLevelFeed.Subscribe(u1)
 		//subs = append(subs, u1Sub)
 		//go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
 
-		// Second paradigm: send all tracks to tiled in the event of a unique cell for that level.
+		// Second paradigm: in the event of a (any) unique cell for the level,
+		// send ALL indexed tracks/index-values from that level to tiled, mode truncate.
+		//
+		// This might be crazy because when a cat goes wandering in fresh powder,
+		// every time they push (a batch of unique tracks) there'll be a lot of redundant data
+		// being constantly (or, with each batch) sent to tiled.
+		// Big asymmetry between some fresh powder and the avalanche.
+		// This is less a concern for low cell levels (e.g. 6) than high ones (e.g. 18).
+		//
+		// One way to improve this might be to...
+		// - give tiled an indexing database option (opposed to only flat gz files),
+		//   and then establish a convention for pushing indexed data (i.e. index on this level's cell id).
+		//   Tiled would also need to be able to dump all indexed data for some tiled-request config.
+		//   This would fix the amount of data going "over the wire" to tiled,
+		//   but that's not really the major concern since, for now at least,
+		//   since I expect the services to be co-located.
+		// ...
+		//
+		// The major constraint here is that in order to produce an updated tileset (.mbtiles),
+		// tippecanoe needs to read ALL the data for that tileset; it doesn't do "updates".
 		u2 := make(chan []cattrack.CatTrack)
 		chans = append(chans, u2)
 		u2Sub := uniqLevelFeed.Subscribe(u2)
@@ -153,8 +171,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 	txed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 		cp := track
 
-		// FIXME Use a real ID
-		cp.ID = rand.Int63()
+		cp.ID = track.MustTime().Unix()
 		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
 
 		return cp
