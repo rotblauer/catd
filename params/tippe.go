@@ -152,6 +152,7 @@ var (
 		"--calculate-feature-density",
 		"--cluster-distance", "1",
 		"--drop-rate", "1",
+
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
@@ -162,6 +163,8 @@ var (
 		"--include", "S3URL",
 		"--include", "Heading",
 		"--include", "UnixTime",
+		"--include", "imgS3",
+
 		"-EUnixTime:max",
 		"-EElevation:max",
 		"-ESpeed:max", // mean",

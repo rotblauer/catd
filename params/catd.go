@@ -1,17 +1,39 @@
 package params
 
 import (
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"time"
 )
 
+const (
+	CatsDir        = "cats"
+	CatSnapsSubdir = "snaps"
+
+	MasterTracksGZFileName = "master.geojson.gz"
+	TracksGZFileName       = "tracks.geojson.gz"
+	TracksLastGZFileName   = "last_tracks.geojson.gz"
+	SnapsGZFileName        = "snaps.geojson.gz"
+	LapsGZFileName         = "laps.geojson.gz"
+	NapsGZFileName         = "naps.geojson.gz"
+)
+
 var DatadirRoot = func() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
 	return filepath.Join(home, ".catd")
 }()
 
+var CatStateDBName = "state.db"
+var CatStateBucket = []byte("state")
+var CatSnapBucket = []byte("snaps")
+
 var DefaultBatchSize = 100_000
+
+var DefaultGZipCompressionLevel = gzip.BestCompression
 
 // AWS_BUCKETNAME is the fallbak AWS_BUCKETNAME value for cat snaps
 // for the purpose of running catd _without_ an S3 config.

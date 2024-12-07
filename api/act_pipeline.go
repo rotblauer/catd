@@ -41,7 +41,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	notifyLaps := make(chan cattrack.CatLap)
 	stream.TeeMany(ctx, simplified, sinkLaps, sendLaps, notifyLaps)
 
-	wr, err := c.State.Flat.NamedGZWriter("laps.geojson.gz", nil)
+	wr, err := c.State.Flat.NamedGZWriter(params.LapsGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return
@@ -69,7 +69,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	// End of the line for all cat naps...
 	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
 
-	wr, err = c.State.Flat.NamedGZWriter("naps.geojson.gz", nil)
+	wr, err = c.State.Flat.NamedGZWriter(params.NapsGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return

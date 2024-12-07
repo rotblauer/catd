@@ -174,7 +174,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//}, sendTiledCh)
 
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
-	gzftwSnaps, err := c.State.Flat.NamedGZWriter("snaps.geojson.gz", nil)
+	gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return err

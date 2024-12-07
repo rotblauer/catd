@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rotblauer/catd/geo/act"
-	"github.com/rotblauer/catd/state"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -58,11 +58,11 @@ func (c *Cat) storeActImprover(im *act.Improver) error {
 	if err != nil {
 		return err
 	}
-	return c.State.StoreKV(state.CatStateBucket, []byte("act-improver"), b)
+	return c.State.StoreKV(params.CatStateBucket, []byte("act-improver"), b)
 }
 
 func (c *Cat) restoreActImprover(im *act.Improver) error {
-	b, err := c.State.ReadKV(state.CatStateBucket, []byte("act-improver"))
+	b, err := c.State.ReadKV(params.CatStateBucket, []byte("act-improver"))
 	if err != nil {
 		return err
 	}

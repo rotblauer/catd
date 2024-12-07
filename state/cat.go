@@ -10,12 +10,6 @@ import (
 	"path/filepath"
 )
 
-const catDBName = "state.db"
-
-var CatStateBucket = []byte("state")
-var CatSnapSubdir = "snaps"
-var CatSnapBucket = []byte(CatSnapSubdir)
-
 type Cat struct {
 	CatID conceptual.CatID
 	State *CatState
@@ -30,7 +24,7 @@ type CatState struct {
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
-	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Joins(flat.CatsDir, c.CatID.String())
+	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Joins(params.CatsDir, c.CatID.String())
 
 	if !readOnly {
 		if err := flatCat.MkdirAll(); err != nil {
@@ -40,7 +34,7 @@ func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
 
 	// Opening a writable DB conn will block all other cat writers and readers
 	// with essentially a file lock/flock.
-	db, err := bbolt.Open(filepath.Join(flatCat.Path(), catDBName),
+	db, err := bbolt.Open(filepath.Join(flatCat.Path(), params.CatStateDBName),
 		0600, &bbolt.Options{
 			ReadOnly: readOnly,
 		})

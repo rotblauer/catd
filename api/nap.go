@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/geo/nap"
-	"github.com/rotblauer/catd/state"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -16,7 +16,7 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan
 	ns := nap.NewState(nil)
 
 	// Attempt to restore lap-builder state.
-	if data, err := c.State.ReadKV(state.CatStateBucket, []byte("napstate")); err == nil && data != nil {
+	if data, err := c.State.ReadKV(params.CatStateBucket, []byte("napstate")); err == nil && data != nil {
 		if err := json.Unmarshal(data, ns); err != nil {
 			c.logger.Error("Failed to unmarshal nap state", "error", err)
 		} else {
@@ -40,7 +40,7 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan
 				c.logger.Error("Failed to marshal nap state", "error", err)
 				return
 			}
-			if err := c.State.StoreKV(state.CatStateBucket, []byte("napstate"), data); err != nil {
+			if err := c.State.StoreKV(params.CatStateBucket, []byte("napstate"), data); err != nil {
 				c.logger.Error("Failed to write nap state", "error", err)
 			}
 		}()

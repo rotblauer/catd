@@ -2,17 +2,10 @@ package flat
 
 import (
 	"compress/gzip"
+	"github.com/rotblauer/catd/params"
 	"os"
 	"path/filepath"
 	"syscall"
-)
-
-const (
-	CatsDir        = "cats"
-	TracksFileName = "tracks.geojson.gz"
-	SnapsFileName  = "snaps.geojson.gz"
-	LapsFileName   = "laps.geojson.gz"
-	NapsFileName   = "naps.geojson.gz"
 )
 
 type Flat struct {
@@ -77,7 +70,7 @@ type GZFileWriterConfig struct {
 
 func DefaultGZFileWriterConfig() *GZFileWriterConfig {
 	return &GZFileWriterConfig{
-		CompressionLevel: gzip.BestCompression,
+		CompressionLevel: params.DefaultGZipCompressionLevel,
 		Flag:             os.O_WRONLY | os.O_APPEND | os.O_CREATE,
 		FilePerm:         0660,
 		DirPerm:          0770,

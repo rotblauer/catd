@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 	"os"
 	"path/filepath"
@@ -19,8 +20,11 @@ import (
 
 func (s *CatState) snapFolderHolderPath(ct cattrack.CatTrack) string {
 	t := ct.MustTime()
-	return filepath.Join(s.Flat.Path(), "snaps",
-		fmt.Sprintf("%d", t.Year()), fmt.Sprintf("%02d", t.Month()))
+	return filepath.Join(
+		s.Flat.Path(),
+		params.CatSnapsSubdir,
+		fmt.Sprintf("%d", t.Year()),
+		fmt.Sprintf("%02d", t.Month()))
 }
 
 func (s *CatState) SnapPathImage(ct cattrack.CatTrack) string {
@@ -94,5 +98,5 @@ func (s *CatState) StoreSnapKV(ct cattrack.CatTrack) error {
 	if err != nil {
 		return err
 	}
-	return s.storeKV(CatSnapBucket, []byte(ct.MustS3Key()), j)
+	return s.storeKV(params.CatSnapBucket, []byte(ct.MustS3Key()), j)
 }

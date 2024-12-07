@@ -276,7 +276,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 				return err
 			}
 			buf := bytes.NewBuffer([]byte{})
-			w, err := gzip.NewWriterLevel(buf, gzip.BestCompression)
+			w, err := gzip.NewWriterLevel(buf, params.DefaultGZipCompressionLevel)
 			if err != nil {
 				return err
 			}

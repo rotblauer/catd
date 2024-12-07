@@ -32,7 +32,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		// Cat/thread safe because gz file locks.
 		// Cat pushes will be stored in cat push/populate-batches.
 		gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
-			NamedGZWriter("master.geojson.gz", nil)
+			NamedGZWriter(params.MasterTracksGZFileName, nil)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
 			select {
@@ -49,7 +49,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		defer c.State.Waiting.Done()
 		truncate := flat.DefaultGZFileWriterConfig()
 		truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		gzftwLast, err := c.State.Flat.NamedGZWriter("last_tracks.geojson.gz", truncate)
+		gzftwLast, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
 			select {
@@ -63,7 +63,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
-		wr, err := c.State.NamedGZWriter(flat.TracksFileName)
+		wr, err := c.State.NamedGZWriter(params.TracksGZFileName)
 		if err != nil {
 			c.logger.Error("Failed to create track writer", "error", err)
 			select {
