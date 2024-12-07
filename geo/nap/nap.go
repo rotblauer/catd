@@ -11,14 +11,14 @@ import (
 )
 
 type State struct {
-	Config   *params.NapConfig
+	Config   *params.ActDiscretionConfig
 	Tracks   []*cattrack.CatTrack // the points represented by the nap
 	Centroid orb.Point
 	TimeLast time.Time
 	ch       chan cattrack.CatNap
 }
 
-func NewState(config *params.NapConfig) *State {
+func NewState(config *params.ActDiscretionConfig) *State {
 	if config == nil {
 		config = params.DefaultNapConfig
 	}
@@ -54,7 +54,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	span := currentTime.Sub(s.TimeLast)
 	s.TimeLast = currentTime
 
-	discontinuous := span < -1*time.Second || span > s.Config.DwellInterval
+	discontinuous := span < -1*time.Second || span > s.Config.Interval
 	if discontinuous {
 		return discontinuous
 	}
@@ -62,7 +62,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	// Space
 	dist := geo.Distance(s.Centroid, ct.Point())
 
-	return dist > s.Config.DwellDistance
+	return dist > s.Config.Distance
 }
 
 func (s *State) Flush() {

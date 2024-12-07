@@ -105,7 +105,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 
 			// Flush last lap if cat is sufficiently napping.
 			if !lastActiveTime.IsZero() &&
-				ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.DwellInterval {
+				ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.Interval {
 				ls.Flush()
 				lastActiveTime = time.Time{}
 			}

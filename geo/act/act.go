@@ -7,6 +7,7 @@ package act
 import (
 	"github.com/paulmach/orb/geo"
 	"github.com/rotblauer/catd/common"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"math"
@@ -211,16 +212,14 @@ func (c *Cat) dropActivityMode(ct WrappedTrack) {
 }
 
 type Improver struct {
-	TransitionWindow         time.Duration
-	StationarySpeedThreshold float64
-	Cat                      *Cat
+	Config *params.ActDiscretionConfig
+	Cat    *Cat
 }
 
 func NewImprover() *Improver {
 	return &Improver{
-		TransitionWindow:         20 * time.Second,
-		StationarySpeedThreshold: common.SpeedOfWalkingMin,
-		Cat:                      NewCat(),
+		Config: params.DefaultActImproverConfig,
+		Cat:    NewCat(),
 	}
 }
 
@@ -232,7 +231,7 @@ func (p *Improver) dropExpiredTracks(ct WrappedTrack) error {
 	outputI := -1
 	for i, track := range p.Cat.IntervalPoints {
 		span := ct.MustTime().Sub(track.MustTime())
-		if span > p.TransitionWindow {
+		if span > p.Config.Interval {
 			p.Cat.drop(track)
 			continue
 		}
@@ -256,7 +255,7 @@ func (p *Improver) activityAccelerated(act activity.Activity, mul float64) bool 
 	if mul == 0 {
 		mul = 1
 	}
-	var referenceSpeed float64 = p.StationarySpeedThreshold
+	var referenceSpeed float64 = p.Config.SpeedThreshold
 	/*
 		0.42 / 20 = 0.021
 		1.4 / 20 = 0.07
@@ -297,8 +296,8 @@ func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
 		if p.activityAccelerated(p.Cat.ActivityState, -1) {
 			tx++
 		}
-		if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold &&
-			p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() < p.StationarySpeedThreshold {
+		if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() < p.Config.SpeedThreshold &&
+			p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() < p.Config.SpeedThreshold {
 			tx++
 		}
 		if act := sortedActsAll[0]; act.Activity.IsKnown() && !act.Activity.IsActive() {
@@ -325,8 +324,8 @@ func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
 	if p.activityAccelerated(p.Cat.ActivityState, 1) {
 		tx++
 	}
-	if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold &&
-		p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() > p.StationarySpeedThreshold {
+	if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() > p.Config.SpeedThreshold &&
+		p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() > p.Config.SpeedThreshold {
 		tx++
 	}
 	if p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() > common.SpeedOfWalkingMean {
@@ -360,8 +359,8 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	} else {
 		timeOffset = ctTime.Sub(p.Cat.Last.MustTime())
 	}
-	if timeOffset > p.TransitionWindow {
-		timeOffset = p.TransitionWindow
+	if timeOffset > p.Config.Interval {
+		timeOffset = p.Config.Interval
 	}
 
 	var calculatedSpeed float64
@@ -429,7 +428,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 
 	// No transition: but is cat is acting as cat was acting...?
 	// Maybe revise the activity state.
-	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateLastCheck) > p.TransitionWindow
+	activityStateExpired := ctTime.Sub(p.Cat.ActivityStateLastCheck) > p.Config.Interval
 	if !activityStateExpired {
 		return nil
 	}
@@ -512,7 +511,7 @@ func (p *Improver) Improve(ct cattrack.CatTrack) error {
 	// Check non-chrneological tracks and reset if out of order.
 	if !p.Cat.IsUninitialized() {
 		span := ct.MustTime().Sub(p.Cat.Last.MustTime())
-		if span < -1*time.Second || span > p.TransitionWindow*2 {
+		if span < -1*time.Second || span > p.Config.ResetInterval {
 			p.Cat.Reset()
 		}
 		if span <= time.Second {

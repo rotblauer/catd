@@ -16,13 +16,13 @@ import (
 )
 
 type State struct {
-	Config   *params.LapConfig
+	Config   *params.ActDiscretionConfig
 	Tracks   []*cattrack.CatTrack // the points represented by the linestring
 	TimeLast time.Time
 	ch       chan cattrack.CatLap
 }
 
-func NewState(config *params.LapConfig) *State {
+func NewState(config *params.ActDiscretionConfig) *State {
 	if config == nil {
 		config = params.DefaultLapConfig
 	}
@@ -53,7 +53,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return false
 	}
 	span := current.Sub(s.TimeLast)
-	if span > s.Config.DwellInterval || span < -1*time.Second {
+	if span > s.Config.Interval || span < -1*time.Second {
 		return true
 	}
 	if !s.Config.SplitActivities {

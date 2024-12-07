@@ -1,41 +1,45 @@
 package params
 
-import "time"
+import (
+	"github.com/rotblauer/catd/common"
+	"time"
+)
 
+// ActDiscretionConfig is a generic type for configuring
+// the discretion of cat acts.
 type ActDiscretionConfig struct {
-	// DwellInterval separates acts by time.
-	DwellInterval time.Duration
-	// DwellDistance separates acts by distance.
-	DwellDistance float64
+	// Interval separates acts by time.
+	Interval time.Duration
+
+	// ResetInterval is the time to reset the act inference machine.
+	ResetInterval time.Duration
+
+	// Distance separates acts by distance.
+	Distance float64
+
 	// SpeedThreshold separates acts by speed.
+	// Generally, speeds lower than this are Stationary, and higher are Moving.
 	SpeedThreshold float64
-}
 
-var DefaultActDiscretionConfig = &ActDiscretionConfig{
-	DwellInterval:  2 * time.Minute, // TODO Separate into lap threshold vs. td window.
-	DwellDistance:  50,
-	SpeedThreshold: 0.5,
-}
-
-type LapConfig struct {
-	ActDiscretionConfig
+	// SplitActivities is a flag to split acts on activities.
 	SplitActivities bool
 }
 
-var DefaultLapConfig = &LapConfig{
-	ActDiscretionConfig: ActDiscretionConfig{
-		DwellInterval:  2 * time.Minute,
-		DwellDistance:  50.0,
-		SpeedThreshold: 0.5,
-	},
-	SplitActivities: false,
+var DefaultActImproverConfig = &ActDiscretionConfig{
+	Interval:       20 * time.Second,
+	ResetInterval:  time.Minute,
+	SpeedThreshold: common.SpeedOfWalkingMin,
 }
 
-type NapConfig ActDiscretionConfig
+var DefaultLapConfig = &ActDiscretionConfig{
+	Interval:       2 * time.Minute,
+	Distance:       50.0,
+	SpeedThreshold: common.SpeedOfWalkingSlow,
+}
 
-var DefaultNapConfig = &NapConfig{
-	DwellInterval: 24 * time.Hour,
-	DwellDistance: 100,
+var DefaultNapConfig = &ActDiscretionConfig{
+	Interval: 24 * time.Hour,
+	Distance: 100,
 }
 
 type LineStringSimplificationConfig struct {
@@ -44,4 +48,11 @@ type LineStringSimplificationConfig struct {
 
 var DefaultLineStringSimplificationConfig = &LineStringSimplificationConfig{
 	DouglasPeuckerThreshold: 0.00008,
+}
+
+// DefaultActDiscretionConfigTripDetector is DEPRECATED.
+var DefaultActDiscretionConfigTripDetector = &ActDiscretionConfig{
+	Interval:       2 * time.Minute,
+	Distance:       50,
+	SpeedThreshold: 0.5,
 }
