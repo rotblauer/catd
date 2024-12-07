@@ -16,9 +16,9 @@ func (c *Cat) getDefaultCellIndexer() (*catS2.CellIndexer, error) {
 	return catS2.NewCellIndexer(&catS2.CellIndexerConfig{
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
-		Levels:          params.S2DefaultCellLevels,
+		Levels:          catS2.DefaultCellLevels,
 		BatchSize:       params.DefaultBatchSize,
-		DefaultIndexerT: params.S2DefaultIndexerT,
+		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 	})
 }
@@ -51,8 +51,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	chans := []chan []cattrack.CatTrack{}
 	for _, level := range cellIndexer.Config.Levels {
 
-		if level < params.S2CellLevelTilingMinimum ||
-			level > params.S2CellLevelTilingMaximum {
+		if level < catS2.CellLevelTilingMinimum ||
+			level > catS2.CellLevelTilingMaximum {
 			continue
 		}
 
@@ -136,8 +136,8 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	// This will replace the existing map/level with the newest version of unique tracks.
 	dump, errs := cellIndexer.DumpLevel(level)
 
-	levelZoomMin := params.S2TilingDefaultCellZoomLevels[level][0]
-	levelZoomMax := params.S2TilingDefaultCellZoomLevels[level][1]
+	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
+	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
 
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
@@ -181,8 +181,8 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		return cp
 	}, stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
 
-	levelZoomMin := params.S2TilingDefaultCellZoomLevels[level][0]
-	levelZoomMax := params.S2TilingDefaultCellZoomLevels[level][1]
+	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
+	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
 
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()

@@ -95,15 +95,13 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		return nil, fmt.Errorf("no levels provided")
 	}
 	if config.DefaultIndexerT == nil {
-		config.DefaultIndexerT = &TrackStackerV1{
-			VisitThreshold: params.S2DefaultVisitThreshold,
-		}
+		config.DefaultIndexerT = DefaultIndexerT
 	}
 
 	if err := config.Flat.MkdirAll(); err != nil {
 		return nil, err
 	}
-	dbPath := filepath.Join(config.Flat.Path(), params.S2DBName)
+	dbPath := filepath.Join(config.Flat.Path(), DBName)
 	db, err := bbolt.Open(dbPath, 0660, nil)
 	if err != nil {
 		return nil, err
