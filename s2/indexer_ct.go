@@ -6,55 +6,65 @@ import (
 	"time"
 )
 
-type ICT struct {
+// TrackStackerV1 is an Indexer implementation that tracks the number of times
+// a cat has entered and left a cell, as well as the total time spent in the cell.
+// It also tracks the activity mode of the cat while in the cell,
+// and the first and last times the cat was in the cell.
+type TrackStackerV1 struct {
 	Count int
 
 	// VisitCount is the number of times the cat has entered and left this cell.
 	// It is bounded by a time threshold which the cat needs to exceed
 	// in order to be considered as "having left".
 	VisitCount     int
-	visitThreshold time.Duration
+	VisitThreshold time.Duration
 
-	FirstTime       time.Time
-	LastTime        time.Time
+	FirstTime time.Time
+	LastTime  time.Time
+
+	// TotalTimeOffset is the sum of the time (track offsets) spent in the cell.
 	TotalTimeOffset time.Duration
-	Activity        activity.Activity
-	AMUnknown       int
-	AMStationary    int
-	AMWalking       int
-	AMRunning       int
-	AMBike          int
-	AMAutomotive    int
-	AMFly           int
+
+	// Activity is the primary activity mode of the cat while in the cell.
+	Activity activity.Activity
+
+	// AMx are the activity tallies.
+	AMUnknown    int
+	AMStationary int
+	AMWalking    int
+	AMRunning    int
+	AMBike       int
+	AMAutomotive int
+	AMFly        int
 }
 
-func (ict *ICT) IsEmpty() bool {
-	return ict.Count == 0
+func (ix *TrackStackerV1) IsEmpty() bool {
+	return ix.Count == 0
 }
 
-func (ict *ICT) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.CatTrack {
+func (*TrackStackerV1) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.CatTrack {
 	pct := &ct
-	ix := idxr.(*ICT)
+	ixr := idxr.(*TrackStackerV1)
 	props := map[string]interface{}{
-		"Count":                   ix.Count,
-		"VisitCount":              ix.VisitCount,
-		"FirstTime":               ix.FirstTime.Format(time.RFC3339),
-		"LastTime":                ix.LastTime.Format(time.RFC3339),
-		"TotalTimeOffset":         ix.TotalTimeOffset.Seconds(),
-		"Activity":                ix.Activity.String(),
-		"ActivityMode.Unknown":    ix.AMUnknown,
-		"ActivityMode.Stationary": ix.AMStationary,
-		"ActivityMode.Walking":    ix.AMWalking,
-		"ActivityMode.Running":    ix.AMRunning,
-		"ActivityMode.Bike":       ix.AMBike,
-		"ActivityMode.Automotive": ix.AMAutomotive,
-		"ActivityMode.Fly":        ix.AMFly,
+		"Count":                   ixr.Count,
+		"VisitCount":              ixr.VisitCount,
+		"FirstTime":               ixr.FirstTime.Format(time.RFC3339),
+		"LastTime":                ixr.LastTime.Format(time.RFC3339),
+		"TotalTimeOffset":         ixr.TotalTimeOffset.Seconds(),
+		"Activity":                ixr.Activity.String(),
+		"ActivityMode.Unknown":    ixr.AMUnknown,
+		"ActivityMode.Stationary": ixr.AMStationary,
+		"ActivityMode.Walking":    ixr.AMWalking,
+		"ActivityMode.Running":    ixr.AMRunning,
+		"ActivityMode.Bike":       ixr.AMBike,
+		"ActivityMode.Automotive": ixr.AMAutomotive,
+		"ActivityMode.Fly":        ixr.AMFly,
 	}
 	pct.SetPropertiesSafe(props)
 	return *pct
 }
 
-func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
+func (*TrackStackerV1) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	first, err := time.Parse(time.RFC3339, ct.Properties.MustString("FirstTime", ""))
 	if err != nil {
 		first = ct.MustTime()
@@ -69,7 +79,7 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
 	}
 
-	out := &ICT{
+	out := &TrackStackerV1{
 		Count:           ct.Properties.MustInt("Count", 1),
 		VisitCount:      ct.Properties.MustInt("VisitCount", 0),
 		FirstTime:       first,
@@ -123,18 +133,18 @@ func (*ICT) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	return out
 }
 
-func (ict *ICT) Index(old, next Indexer) Indexer {
+func (ix *TrackStackerV1) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		out := next.(*ICT)
+		out := next.(*TrackStackerV1)
 		if out.VisitCount == 0 {
 			out.VisitCount++
 		}
 		return out
 	}
 
-	oldT, nextT := old.(*ICT), next.(*ICT)
+	oldT, nextT := old.(*TrackStackerV1), next.(*TrackStackerV1)
 
-	out := &ICT{
+	out := &TrackStackerV1{
 		// Relatively sane defaults only for concision.
 		FirstTime: oldT.FirstTime,
 		LastTime:  nextT.LastTime,
@@ -152,13 +162,13 @@ func (ict *ICT) Index(old, next Indexer) Indexer {
 		AMFly:           oldT.AMFly + nextT.AMFly,
 	}
 
-	if nextT.FirstTime.Sub(oldT.LastTime) > ict.visitThreshold {
+	if nextT.FirstTime.Sub(oldT.LastTime) > ix.VisitThreshold {
 		if nextT.VisitCount > 0 {
 			out.VisitCount += nextT.VisitCount
 		} else {
 			out.VisitCount++
 		}
-	} else if oldT.FirstTime.Sub(nextT.LastTime) > ict.visitThreshold {
+	} else if oldT.FirstTime.Sub(nextT.LastTime) > ix.VisitThreshold {
 		if oldT.VisitCount > 0 {
 			out.VisitCount += oldT.VisitCount
 		} else {

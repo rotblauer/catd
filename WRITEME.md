@@ -1,4 +1,14 @@
 
+- [ ] move params to params
+- s2indexer tippe `maxzoom` `minzoom` for all levels
+- more s2indexer for low levels without tiling
+- s2indexer should use elapsed/offsets for activity weighting/moding
+
+- [ ] ct.Time should be assuredly 1-second granularity
+  use `UnixTime`!?
+
+---
+
 ```sh
 mbtileserver --port 3001 --cors '*' -d /tmp/catd100_000/tiled/tiles --verbose --enable-fs-watch
 

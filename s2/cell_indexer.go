@@ -65,45 +65,59 @@ import (
 const s2DBName = "s2.db"
 
 type CellIndexer struct {
-	CatID     conceptual.CatID
-	Caches    map[CellLevel]*lru.Cache[string, Indexer]
-	Levels    []CellLevel
-	DB        *bbolt.DB
-	FlatFiles map[CellLevel]*flat.GZFileWriter
-	BatchSize int
+	Config *CellIndexerConfig
 
-	// IndexerT is (a value of) the type of the Indexer implementation.
-	// The Indexer defines logic about how merge non-unique cat tracks.
-	IndexerT Indexer
+	Caches map[CellLevel]*lru.Cache[string, Indexer]
+	DB     *bbolt.DB
+
+	// FIXME: Keep?
+	FlatFiles map[CellLevel]*flat.GZFileWriter
 
 	Waiting sync.WaitGroup
 
-	logger *slog.Logger
-
+	logger         *slog.Logger
 	indexFeeds     map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
 	uniqIndexFeeds map[CellLevel]*event.FeedOf[[]cattrack.CatTrack]
 }
 
-func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, batchSize int) (*CellIndexer, error) {
-	if len(levels) == 0 {
+type CellIndexerConfig struct {
+	CatID     conceptual.CatID
+	Flat      *flat.Flat
+	Levels    []CellLevel
+	BatchSize int
+
+	// DefaultIndexerT is (a value of) the type of the Indexer implementation.
+	// The Indexer defines logic about how merge non-unique cat tracks.
+	// The default is used if no level-specific Indexer is provided.
+	DefaultIndexerT Indexer
+	LevelIndexerT   map[CellLevel]Indexer
+}
+
+func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
+
+	if len(config.Levels) == 0 {
 		return nil, fmt.Errorf("no levels provided")
 	}
+	if config.DefaultIndexerT == nil {
+		config.DefaultIndexerT = &TrackStackerV1{
+			VisitThreshold: time.Hour,
+		}
+	}
 
-	f := flat.NewFlatWithRoot(root).Joins(flat.CatsDir, catID.String())
-	if err := f.MkdirAll(); err != nil {
+	if err := config.Flat.MkdirAll(); err != nil {
 		return nil, err
 	}
-	dbPath := filepath.Join(f.Path(), s2DBName)
+	dbPath := filepath.Join(config.Flat.Path(), s2DBName)
 	db, err := bbolt.Open(dbPath, 0660, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	indexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
-	uniqIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(levels))
-	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(levels))
+	indexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
+	uniqIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
+	flatFileMap := make(map[CellLevel]*flat.GZFileWriter, len(config.Levels))
 
-	for _, level := range levels {
+	for _, level := range config.Levels {
 		//gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
 		//if err != nil {
 		//	return nil, err
@@ -115,21 +129,24 @@ func NewCellIndexer(catID conceptual.CatID, root string, levels []CellLevel, bat
 	}
 
 	return &CellIndexer{
-		CatID:     catID,
-		Levels:    levels,
-		Caches:    make(map[CellLevel]*lru.Cache[string, Indexer], len(levels)),
+		Config:    config,
+		Caches:    make(map[CellLevel]*lru.Cache[string, Indexer], len(config.Levels)),
 		DB:        db,
 		FlatFiles: flatFileMap,
-		BatchSize: batchSize,
 
-		// TODO? Expose this in signature.
-		IndexerT: &ICT{
-			visitThreshold: time.Hour,
-		},
 		indexFeeds:     indexFeeds,
 		uniqIndexFeeds: uniqIndexFeeds,
 		logger:         slog.With("indexer", "s2"),
 	}, nil
+}
+
+func (ci *CellIndexer) indexerTForLevel(level CellLevel) Indexer {
+	if ci.Config.LevelIndexerT != nil {
+		if v, ok := ci.Config.LevelIndexerT[level]; ok {
+			return v
+		}
+	}
+	return ci.Config.DefaultIndexerT
 }
 
 func (ci *CellIndexer) FeedOfIndexedTracksForLevel(level CellLevel) (*event.FeedOf[[]cattrack.CatTrack], error) {
@@ -155,17 +172,11 @@ func (ci *CellIndexer) FeedOfUniqueTracksForLevel(level CellLevel) (*event.FeedO
 func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) error {
 	batches := stream.Batch(ctx, nil,
 		func(tracks []cattrack.CatTrack) bool {
-			return len(tracks) == ci.BatchSize
+			return len(tracks) == ci.Config.BatchSize
 		}, in)
 	for batch := range batches {
 		batch := batch
-		for _, level := range ci.Levels {
-			// Reinit the level's cache.
-			c, err := lru.New[string, Indexer](ci.BatchSize)
-			if err != nil {
-				return err
-			}
-			ci.Caches[level] = c
+		for _, level := range ci.Config.Levels {
 			if err := ci.index(level, batch); err != nil {
 				return err
 			}
@@ -176,12 +187,20 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 
 func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error {
 	start := time.Now()
-	defer slog.Debug("CellIndexer batch", "cat", ci.CatID,
+	defer slog.Debug("CellIndexer batch", "cat", ci.Config.CatID,
 		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
+
+	// Reinit the level's cache.
+	cache, err := lru.New[string, Indexer](ci.Config.BatchSize)
+	if err != nil {
+		return err
+	}
+	ci.Caches[level] = cache
+
+	indexT := ci.indexerTForLevel(level)
 
 	mapIDUnique := make(map[string]cattrack.CatTrack)
 
-	cache := ci.Caches[level]
 	for _, ct := range tracks {
 		cellID := CellIDForTrackLevel(ct, level)
 
@@ -195,15 +214,15 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		// FIXME Converting and asserting the Indexer type makes this non-generic.
 		// Use reflect or tags or something to
 		// be able to handle any Indexer interface implementation.
-		ict := ci.IndexerT.FromCatTrack(ct)
-		next = ci.IndexerT.Index(old, ict)
+		ict := indexT.FromCatTrack(ct)
+		next = indexT.Index(old, ict)
 
 		cache.Add(cellID.ToToken(), next)
 
 		if next == nil {
 			log.Fatalln("next is nil", ict.IsEmpty())
 		}
-		nextTrack := ci.IndexerT.ApplyToCatTrack(next, ct)
+		nextTrack := indexT.ApplyToCatTrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
 		// This will let us send the latest version of unique cells.
@@ -212,7 +231,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 
 	var outTracks []cattrack.CatTrack
 
-	err := ci.DB.Update(func(tx *bbolt.Tx) error {
+	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		bucket := dbBucket(level)
 		b, err := tx.CreateBucketIfNotExists(bucket)
 		if err != nil {
@@ -251,11 +270,11 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 					return err
 				}
 
-				old = ci.IndexerT.FromCatTrack(ct)
+				old = indexT.FromCatTrack(ct)
 			}
 
-			next := ci.IndexerT.Index(old, nextIdxr)
-			nextTrack := ci.IndexerT.ApplyToCatTrack(next, track)
+			next := indexT.Index(old, nextIdxr)
+			nextTrack := indexT.ApplyToCatTrack(next, track)
 			outTracks = append(outTracks, nextTrack)
 
 			encoded, err := json.Marshal(nextTrack)

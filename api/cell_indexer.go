@@ -26,7 +26,14 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		c.logger.Info("S2 Indexing complete", "elapsed", time.Since(start).Round(time.Second))
 	}()
 
-	cellIndexer, err := catS2.NewCellIndexer(c.CatID, params.DatadirRoot, params.S2DefaultCellLevels, params.DefaultBatchSize)
+	cellIndexer, err := catS2.NewCellIndexer(&catS2.CellIndexerConfig{
+		CatID:           c.CatID,
+		Flat:            c.State.Flat,
+		Levels:          params.S2DefaultCellLevels,
+		BatchSize:       params.DefaultBatchSize,
+		DefaultIndexerT: params.S2DefaultIndexerT,
+		LevelIndexerT:   nil,
+	})
 	if err != nil {
 		c.logger.Error("Failed to initialize indexer", "error", err)
 		return
@@ -39,7 +46,12 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
-	for _, level := range cellIndexer.Levels {
+	for _, level := range cellIndexer.Config.Levels {
+
+		if level < params.S2CellLevelTilingMinimum ||
+			level > params.S2CellLevelTilingMaximum {
+			continue
+		}
 
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
@@ -65,7 +77,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		u2Sub := uniqLevelFeed.Subscribe(u2)
 		subs = append(subs, u2Sub)
 		cellIndexer.Waiting.Add(1)
-		go c.dumpLevelIfUnique(ctx, cellIndexer, level, u2)
+		go c.tiledDumpLevelIfUnique(ctx, cellIndexer, level, u2)
 	}
 
 	// Blocking.
@@ -81,7 +93,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	cellIndexer.Waiting.Wait()
 }
 
-func (c *Cat) dumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
+func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
 	defer cellIndexer.Waiting.Done()
 
 	unsliced := stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
@@ -102,8 +114,8 @@ func (c *Cat) dumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellInde
 	// This will replace the existing map/level with the newest version of unique tracks.
 	dump, errs := cellIndexer.DumpLevel(level)
 
-	levelZoomMin := catS2.SlippyCellZoomLevels[level][0]
-	levelZoomMax := catS2.SlippyCellZoomLevels[level][1]
+	levelZoomMin := params.S2TilingDefaultCellZoomLevels[level][0]
+	levelZoomMax := params.S2TilingDefaultCellZoomLevels[level][1]
 
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
@@ -149,8 +161,8 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		return cp
 	}, stream.Unslice[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
 
-	levelZoomMin := catS2.SlippyCellZoomLevels[level][0]
-	levelZoomMax := catS2.SlippyCellZoomLevels[level][1]
+	levelZoomMin := params.S2TilingDefaultCellZoomLevels[level][0]
+	levelZoomMax := params.S2TilingDefaultCellZoomLevels[level][1]
 
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
