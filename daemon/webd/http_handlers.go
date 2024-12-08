@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -12,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strconv"
 )
 
 func pingPong(w http.ResponseWriter, r *http.Request) {
@@ -39,18 +41,56 @@ func handleGetCatSnaps(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGetCatState is a debug tool.
-func handleGetCatState(w http.ResponseWriter, r *http.Request) {
+// handleS2DumpLevel is a debug tool.
+func handleS2DumpLevel(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	// https://github.com/ipfs/kubo/issues/3737
+	// https://stackoverflow.com/questions/57301886/what-is-the-suitable-http-content-type-for-consuming-an-asynchronous-stream-of-d
+	// w.Header().Set("Content-Type", "application/stream+json")
+
 	catID := r.URL.Query().Get("cat")
-	cat := &api.Cat{CatID: conceptual.CatID(catID)}
-	stateData := map[string]any{}
-	ls, err := cat.GetLapState()
-	if err != nil {
-		slog.Warn("Failed to get lap state", "error", err)
-	} else {
-		stateData["lap"] = ls
+	if catID == "" {
+		http.Error(w, "Missing cat", http.StatusBadRequest)
+		return
 	}
-	if err := json.NewEncoder(w).Encode(stateData); err != nil {
+	level := r.URL.Query().Get("level")
+	l, err := strconv.ParseInt(level, 10, 64)
+	if err != nil {
+		slog.Warn("Failed to parse level", "error", err)
+		http.Error(w, "Failed to parse level", http.StatusBadRequest)
+		return
+	}
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	err = cat.S2DumpLevel(w, s2.CellLevel(l))
+	if err != nil {
+		slog.Warn("Failed to write S2 index dump", "error", err)
+		http.Error(w, "Failed to write S2 index dump", http.StatusInternalServerError)
+		return
+	}
+}
+
+// handleS2CollectLevel is a debug tool.
+func handleS2CollectLevel(w http.ResponseWriter, r *http.Request) {
+	catID := r.URL.Query().Get("cat")
+	if catID == "" {
+		http.Error(w, "Missing cat", http.StatusBadRequest)
+		return
+	}
+	level := r.URL.Query().Get("level")
+	l, err := strconv.ParseInt(level, 10, 64)
+	if err != nil {
+		slog.Warn("Failed to parse level", "error", err)
+		http.Error(w, "Failed to parse level", http.StatusBadRequest)
+		return
+	}
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	indexedTracks, err := cat.S2CollectLevel(context.Background(), s2.CellLevel(l))
+	if err != nil {
+		slog.Warn("Failed to get S2 index dump", "error", err)
+		http.Error(w, "Failed to get S2 index dump", http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(indexedTracks); err != nil {
 		slog.Warn("Failed to write response", "error", err)
 	}
 }

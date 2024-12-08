@@ -63,6 +63,8 @@ var (
 		"--single-precision",
 
 		// FIXME Doesn't generate ids...?
+		// Or generates dupe features with different ids?
+		// ... Or I'm sending dupes?
 		"--generate-ids",
 
 		"--read-parallel",

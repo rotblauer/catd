@@ -56,6 +56,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
+	"io"
 	"log"
 	"log/slog"
 	"path/filepath"
@@ -334,23 +335,31 @@ func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan 
 			if b == nil {
 				return fmt.Errorf("bucket not found")
 			}
-			return b.ForEach(func(k, v []byte) error {
+
+			if err := b.ForEach(func(k, v []byte) error {
+
+				ungzipped := bytes.NewBuffer([]byte{})
 				r, err := gzip.NewReader(bytes.NewBuffer(v))
 				if err != nil {
 					return err
 				}
-				ungzipped := bytes.NewBuffer([]byte{})
 				if _, err := ungzipped.ReadFrom(r); err != nil {
-					return err
+					if err != io.EOF {
+						return err
+					}
 				}
 				_ = r.Close()
+
 				ct := cattrack.CatTrack{}
 				if err := json.Unmarshal(ungzipped.Bytes(), &ct); err != nil {
 					return err
 				}
 				out <- ct
 				return nil
-			})
+			}); err != nil {
+				return err
+			}
+			return nil
 		})
 		if err != nil {
 			errs <- err

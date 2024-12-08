@@ -32,8 +32,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"net/http"
-	_ "net/http/pprof"
+	//_ "net/http/pprof"
 	"os"
 	"runtime"
 	"sync"
@@ -112,16 +111,8 @@ Missoula, Montana
 
 		//defer profile.Start(profile.MemProfile).Stop()
 
-		go func() {
-			log.Println(http.ListenAndServe("localhost:6060", nil))
-		}()
-
 		ctx, ctxCanceler := context.WithCancel(context.Background())
 		interrupt := common.Interrupted()
-
-		defer func() {
-			slog.Info("Import done")
-		}()
 
 		var d *tiled.TileDaemon
 		if !optTilingOff {
@@ -150,11 +141,12 @@ Missoula, Montana
 		// will only block if it is the same cat as the previous package.
 		//var workingWorkN int32 = 0
 
+		catJobs := [][][]byte{}
+		jobLock := sync.Mutex{}
+		catJobIndexMap := map[string]int{}
+
 		workerFn := func(workerI int, w workT) {
 			defer workersWG.Done()
-			if len(w.lines) == 0 {
-				return
-			}
 
 			var tiledConfig *params.TileDaemonConfig
 			if d != nil {
@@ -180,16 +172,14 @@ Missoula, Montana
 				"cat", cat.CatID, "lines", len(w.lines))
 
 			pipe := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
-
 				feat, err := geojson.UnmarshalFeature(data)
 				if err != nil {
 					slog.Error("cmd/populate : Failed to unmarshal track", "error", err)
 					slog.Error(string(data))
 					return cattrack.CatTrack{}
 				}
-
 				return cattrack.CatTrack(*feat)
-			}, stream.Slice(ctx, w.lines))
+			}, stream.Slice(ctx, catJobs[w.indexedAt]))
 
 			// Ensure ordered cat tracks per cat.
 			o := sync.Once{}
@@ -205,6 +195,14 @@ Missoula, Montana
 				slog.Error("Failed to populate CatTracks", "error", err)
 			} else {
 				slog.Info("Populator worker done", "cat", cat.CatID)
+			}
+			if len(catJobs[w.indexedAt]) > 1 {
+				catJobs[w.indexedAt] = catJobs[w.indexedAt][1:]
+			} else {
+				catJobs[w.indexedAt] = nil
+				jobLock.Lock()
+				delete(catJobIndexMap, w.name)
+				jobLock.Unlock()
 			}
 		}
 
@@ -231,12 +229,23 @@ Missoula, Montana
 				return
 			}
 			cat := names.AliasOrSanitizedName(gjson.GetBytes(lines[0], "properties.Name").String())
+
+			jobLock.Lock()
+			if i, ok := catJobIndexMap[cat]; ok {
+				catJobs[i] = append(catJobs[i], lines...)
+			} else {
+				catJobIndexMap[cat] = len(catJobs)
+				catJobs = append(catJobs, lines)
+			}
+			jobLock.Unlock()
+
 			workersWG.Add(1)
 			receivedWorkN.Add(1)
 			workCh <- workT{
-				n:     receivedWorkN.Load(),
-				name:  cat,
-				lines: lines,
+				n:         receivedWorkN.Load(),
+				name:      cat,
+				indexedAt: catJobIndexMap[cat],
+				//lines: lines,
 			}
 		}
 
@@ -353,7 +362,8 @@ where long-deferred edge tiling could amass large amounts of edge data needlessl
 // workT is passed to concurrent workers.
 // It represents a batch of cat tracks for some (one) cat.
 type workT struct {
-	name  string
-	n     int32
-	lines [][]byte
+	name      string
+	n         int32
+	indexedAt int
+	lines     [][]byte
 }

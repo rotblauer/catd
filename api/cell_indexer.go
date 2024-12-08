@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/daemon/tiled"
@@ -9,10 +10,11 @@ import (
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"time"
 )
 
-func (c *Cat) getDefaultCellIndexer() (*catS2.CellIndexer, error) {
+func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 	return catS2.NewCellIndexer(&catS2.CellIndexerConfig{
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
@@ -36,7 +38,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		c.logger.Info("S2 Indexing complete", "elapsed", time.Since(start).Round(time.Second))
 	}()
 
-	cellIndexer, err := c.getDefaultCellIndexer()
+	cellIndexer, err := c.GetDefaultCellIndexer()
 	if err != nil {
 		c.logger.Error("Failed to initialize indexer", "error", err)
 		return
@@ -210,20 +212,44 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 	}
 }
 
-// GetS2IndexDumpLevel returns all indexed tracks for a given S2 cell level.
-func (c *Cat) GetS2IndexDumpLevel(ctx context.Context, level catS2.CellLevel) ([]cattrack.CatTrack, error) {
+// S2CollectLevel returns all indexed tracks for a given S2 cell level.
+func (c *Cat) S2CollectLevel(ctx context.Context, level catS2.CellLevel) ([]cattrack.CatTrack, error) {
 	c.getOrInitState(true)
 
-	cellIndexer, err := c.getDefaultCellIndexer()
+	cellIndexer, err := c.GetDefaultCellIndexer()
 	if err != nil {
 		return nil, err
 	}
 	defer cellIndexer.Close()
 
+	out := []cattrack.CatTrack{}
 	dump, errs := cellIndexer.DumpLevel(level)
-	es := stream.Collect(ctx, errs)
-	if len(es) > 0 {
-		return nil, es[0]
+	out = stream.Collect(ctx, dump)
+	return out, <-errs
+}
+
+// S2CollectLevel returns all indexed tracks for a given S2 cell level.
+func (c *Cat) S2DumpLevel(wr io.Writer, level catS2.CellLevel) error {
+	c.getOrInitState(true)
+
+	cellIndexer, err := c.GetDefaultCellIndexer()
+	if err != nil {
+		return err
 	}
-	return stream.Collect(ctx, dump), nil
+	defer cellIndexer.Close()
+
+	enc := json.NewEncoder(wr)
+	dump, errs := cellIndexer.DumpLevel(level)
+	go func() {
+		for track := range dump {
+			if err := enc.Encode(track); err != nil {
+				select {
+				case errs <- err:
+					return
+				default:
+				}
+			}
+		}
+	}()
+	return <-errs
 }

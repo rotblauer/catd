@@ -130,15 +130,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 		return true
 	}, in)
-
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
-
-	// Sorting is blocking.
 	pipedLast := sanitized
 	if sort {
-		// Catch is the new batch.
-		sorted := stream.BatchSort(ctx, params.DefaultBatchSize,
-			cattrack.SortFunc, sanitized)
+		// Sorting is blocking.
+		sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
 		pipedLast = sorted
 	}
 
@@ -148,31 +144,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return ct.IsSnap()
 	}, pipedLast)
 
-	// All non-snap tracks flow to these channels.
-	storeCh := make(chan cattrack.CatTrack)
-	//sendTiledCh := make(chan cattrack.CatTrack)
-	//areaPipeCh := make(chan cattrack.CatTrack)
-	//vectorPipeCh := make(chan cattrack.CatTrack)
-	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
-
-	storeErrs := c.StoreTracks(ctx, storeCh)
-
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
-	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
-
-	//// P.S. Don't send all tracks to tiled unless development.
-	//sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-	//	SourceSchema: tiled.SourceSchema{
-	//		CatID:      c.CatID,
-	//		SourceName: "tracks",
-	//		LayerName:  "tracks",
-	//	},
-	//	TippeConfigName: params.TippeConfigNameTracks,
-	//	Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//}, sendTiledCh)
-
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
 	if err != nil {
@@ -191,13 +164,26 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendSnaps)
 
+	// All non-snaps flow to these channels.
+	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
+	storeErrs := c.StoreTracks(ctx, storeCh)
+	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
+
+	//// P.S. Don't send all tracks to tiled unless development.
+	//sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+	//	SourceSchema: tiled.SourceSchema{
+	//		CatID:      c.CatID,
+	//		SourceName: "tracks",
+	//		LayerName:  "tracks",
+	//	},
+	//	TippeConfigName: params.TippeConfigNameTracks,
+	//	Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+	//}, sendTiledCh)
+
 	// Clean and improve tracks for pipeline handlers.
 	betterTracks := TracksWithOffset(ctx, c.ImprovedActTracks(ctx, c.CleanTracks(ctx, pipelineChan)))
 	areaPipeCh, vectorPipeCh := stream.Tee(ctx, betterTracks)
-
-	// S2 indexing pipeline. Stateful/cat.
-	// Filter out probably-airborne tracks.
-	// Not really interested in heat maps from space.
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
 	go c.S2IndexTracks(ctx, groundedArea)
 	// Laps, naps.

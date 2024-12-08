@@ -75,7 +75,8 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 
 	apiJSONRoutes.Path("/last").HandlerFunc(handleLastTracks).Methods(http.MethodGet)
 	apiJSONRoutes.Path("/catsnaps").HandlerFunc(handleGetCatSnaps).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/state").HandlerFunc(handleGetCatState).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/dump").HandlerFunc(handleS2DumpLevel).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/collect").HandlerFunc(handleS2CollectLevel).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)

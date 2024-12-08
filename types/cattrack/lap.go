@@ -78,6 +78,9 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		distanceTraversed += meters
 
 		seconds := track.MustTime().Sub(prev.MustTime()).Seconds()
+		if seconds == 0 {
+			continue
+		}
 		calculatedSpeeds = append(calculatedSpeeds, meters/seconds)
 
 		elevationDelta := elevation - elevations[i-1]
