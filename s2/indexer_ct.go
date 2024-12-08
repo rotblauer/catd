@@ -51,7 +51,7 @@ func (*TrackStackerV1) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattr
 		"FirstTime":               ixr.FirstTime.Format(time.RFC3339),
 		"LastTime":                ixr.LastTime.Format(time.RFC3339),
 		"TotalTimeOffset":         ixr.TotalTimeOffset.Seconds(),
-		"Activity":                ixr.Activity.String(),
+		"ActivityMode":            ixr.Activity.String(),
 		"ActivityMode.Unknown":    ixr.AMUnknown,
 		"ActivityMode.Stationary": ixr.AMStationary,
 		"ActivityMode.Walking":    ixr.AMWalking,

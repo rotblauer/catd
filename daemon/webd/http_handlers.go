@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 )
 
@@ -21,17 +22,59 @@ func pingPong(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("pong"))
 }
 
-func lastTracks(w http.ResponseWriter, r *http.Request) {
+func lastKnown(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
-	result, err := cat.LastKnown()
+	tracks, err := cat.S2CollectLevel(r.Context(), s2.CellLevel(0))
 	if err != nil {
 		slog.Warn("Failed to get last known", "error", err)
 		http.Error(w, "Failed to get last known", http.StatusInternalServerError)
 		return
 	}
-	if err := json.NewEncoder(w).Encode(result); err != nil {
-		slog.Warn("Failed to write response", "error", err)
+	if len(tracks) == 0 {
+		http.Error(w, "No tracks found", http.StatusNotFound)
+		return
+	}
+	// Freshest first.
+	sort.SliceStable(tracks, func(i, j int) bool {
+		return tracks[i].MustTime().Unix() > tracks[j].MustTime().Unix()
+	})
+
+	bs, err := json.Marshal(tracks[0])
+	if err != nil {
+		slog.Warn("Failed to marshal response", "error", err)
+		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
+		return
+	}
+
+	//// Remove TrackStacker (indexed) properties by hand, for now. (?)
+	//for _, p := range []string{
+	//	"Count",
+	//	"VisitCount",
+	//	"FirstTime",
+	//	"LastTime",
+	//	"ActivityMode",
+	//	"TotalTimeOffset",
+	//	"ActivityMode.Automotive",
+	//	"ActivityMode.Bike",
+	//	"ActivityMode.Fly",
+	//	"ActivityMode.Running",
+	//	"ActivityMode.Stationary",
+	//	"ActivityMode.Unknown",
+	//	"ActivityMode.Walking",
+	//} {
+	//	bs, err = sjson.DeleteBytes(bs, "properties."+p)
+	//	if err != nil {
+	//		slog.Warn("Failed to remove property", "error", err)
+	//		http.Error(w, "Failed to remove geometry", http.StatusInternalServerError)
+	//		return
+	//	}
+	//}
+
+	if _, err := w.Write(bs); err != nil {
+		slog.Error("Failed to write response", "error", err)
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
 	}
 }
 

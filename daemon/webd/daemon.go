@@ -73,10 +73,10 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 	jsonMiddleware := contentTypeMiddlewareFunc("application/json")
 	apiJSONRoutes.Use(jsonMiddleware)
 
-	apiJSONRoutes.Path("/last").HandlerFunc(lastTracks).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/catsnaps").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/dump").HandlerFunc(s2Dump).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/collect").HandlerFunc(s2Collect).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/last.json").HandlerFunc(lastKnown).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/catsnaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)
