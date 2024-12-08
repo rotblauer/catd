@@ -42,7 +42,7 @@ run() {
 #    grep -E '2024-1[1,2]'
 #    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #     zcat "${HOME}/tdata/edge.json.gz"
-    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
   }
 
   go install . &&\

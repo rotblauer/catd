@@ -141,9 +141,9 @@ Missoula, Montana
 		// will only block if it is the same cat as the previous package.
 		//var workingWorkN int32 = 0
 
-		catJobs := [][][]byte{}
-		jobLock := sync.Mutex{}
-		catJobIndexMap := map[string]int{}
+		//catJobs := [][][][]byte{}
+		//jobLock := sync.Mutex{}
+		//catJobIndexMap := map[string]int{}
 
 		workerFn := func(workerI int, w workT) {
 			defer workersWG.Done()
@@ -179,7 +179,8 @@ Missoula, Montana
 					return cattrack.CatTrack{}
 				}
 				return cattrack.CatTrack(*feat)
-			}, stream.Slice(ctx, catJobs[w.indexedAt]))
+				//}, stream.Slice(ctx, catJobs[w.indexedAt][0]))
+			}, stream.Slice(ctx, w.lines))
 
 			// Ensure ordered cat tracks per cat.
 			o := sync.Once{}
@@ -196,14 +197,14 @@ Missoula, Montana
 			} else {
 				slog.Info("Populator worker done", "cat", cat.CatID)
 			}
-			if len(catJobs[w.indexedAt]) > 1 {
-				catJobs[w.indexedAt] = catJobs[w.indexedAt][1:]
-			} else {
-				catJobs[w.indexedAt] = nil
-				jobLock.Lock()
-				delete(catJobIndexMap, w.name)
-				jobLock.Unlock()
-			}
+			//if len(catJobs[w.indexedAt]) > 1 {
+			//	catJobs[w.indexedAt] = catJobs[w.indexedAt][1:]
+			//} else {
+			//	catJobs[w.indexedAt] = nil
+			//	jobLock.Lock()
+			//	delete(catJobIndexMap, w.name)
+			//	jobLock.Unlock()
+			//}
 		}
 
 		// Spin up the workers.
@@ -230,22 +231,25 @@ Missoula, Montana
 			}
 			cat := names.AliasOrSanitizedName(gjson.GetBytes(lines[0], "properties.Name").String())
 
-			jobLock.Lock()
-			if i, ok := catJobIndexMap[cat]; ok {
-				catJobs[i] = append(catJobs[i], lines...)
-			} else {
-				catJobIndexMap[cat] = len(catJobs)
-				catJobs = append(catJobs, lines)
-			}
-			jobLock.Unlock()
+			//jobLock.Lock()
+			//if i, ok := catJobIndexMap[cat]; ok {
+			//	catJobs[i] = append(catJobs[i], lines)
+			//} else {
+			//	i := len(catJobs)
+			//	catJobIndexMap[cat] = i
+			//	catJobs = append(catJobs, [][][]byte{})
+			//	catJobs[i] = [][][]byte{}
+			//	catJobs[i] = append(catJobs[i], lines)
+			//}
+			//jobLock.Unlock()
 
 			workersWG.Add(1)
 			receivedWorkN.Add(1)
 			workCh <- workT{
-				n:         receivedWorkN.Load(),
-				name:      cat,
-				indexedAt: catJobIndexMap[cat],
-				//lines: lines,
+				n:    receivedWorkN.Load(),
+				name: cat,
+				//indexedAt: catJobIndexMap[cat],
+				lines: lines,
 			}
 		}
 
