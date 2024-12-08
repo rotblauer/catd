@@ -21,7 +21,7 @@ func pingPong(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("pong"))
 }
 
-func handleLastTracks(w http.ResponseWriter, r *http.Request) {
+func lastTracks(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
 	result, err := cat.LastKnown()
@@ -35,14 +35,14 @@ func handleLastTracks(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleGetCatSnaps(w http.ResponseWriter, r *http.Request) {
+func getCatSnaps(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode([]byte("implement me")); err != nil {
 		slog.Warn("Failed to write response", "error", err)
 	}
 }
 
-// handleS2DumpLevel is a debug tool.
-func handleS2DumpLevel(w http.ResponseWriter, r *http.Request) {
+// s2Dump is a debug tool.
+func s2Dump(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	// https://github.com/ipfs/kubo/issues/3737
 	// https://stackoverflow.com/questions/57301886/what-is-the-suitable-http-content-type-for-consuming-an-asynchronous-stream-of-d
@@ -69,8 +69,8 @@ func handleS2DumpLevel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleS2CollectLevel is a debug tool.
-func handleS2CollectLevel(w http.ResponseWriter, r *http.Request) {
+// s2Collect is a debug tool.
+func s2Collect(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	if catID == "" {
 		http.Error(w, "Missing cat", http.StatusBadRequest)
@@ -95,13 +95,13 @@ func handleS2CollectLevel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handlePopulate is a handler for the /populate endpoint.
+// populate is a handler for the /populate endpoint.
 // It is where Cat Tracks get posted and persisted for-ev-er.
 // Due to legacy support requirements it supports a variety of
 // input formats.
 // Android (GCPS) posts a GeoJSON FeatureCollection.
 // iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
-func (s *WebDaemon) handlePopulate(w http.ResponseWriter, r *http.Request) {
+func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 
 	var body []byte
 	var err error
@@ -112,6 +112,11 @@ func (s *WebDaemon) handlePopulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO.
+	// Could potentially use a streaming JSON decoder here.
+	// customizeableTrackHat sends array of trackpoints.
+	// gcps sends a feature collection.
+	// Like herding cats.
 	body, err = io.ReadAll(r.Body)
 	if err != nil {
 		s.logger.Error("Failed to read request body", "error", err)
@@ -132,13 +137,14 @@ func (s *WebDaemon) handlePopulate(w http.ResponseWriter, r *http.Request) {
 	catID := features[0].CatID()
 	cat := api.NewCat(catID, s.Config.TileDaemonConfig)
 
-	ctx := context.Background()
+	// Collect values for streaming.
 	featureVals := make([]cattrack.CatTrack, len(features))
 	for i, f := range features {
 		featureVals[i] = *f
 	}
-	ch := stream.Slice(ctx, featureVals)
-	err = cat.Populate(ctx, true, ch)
+
+	ctx := r.Context()
+	err = cat.Populate(ctx, true, stream.Slice(ctx, featureVals))
 	if err != nil {
 		s.logger.Error("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)

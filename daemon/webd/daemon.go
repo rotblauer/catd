@@ -73,18 +73,18 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 	jsonMiddleware := contentTypeMiddlewareFunc("application/json")
 	apiJSONRoutes.Use(jsonMiddleware)
 
-	apiJSONRoutes.Path("/last").HandlerFunc(handleLastTracks).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/catsnaps").HandlerFunc(handleGetCatSnaps).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/dump").HandlerFunc(handleS2DumpLevel).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/collect").HandlerFunc(handleS2CollectLevel).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/last").HandlerFunc(lastTracks).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/catsnaps").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/dump").HandlerFunc(s2Dump).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/s2/collect").HandlerFunc(s2Collect).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)
 
 	populateRoutes := authenticatedAPIRoutes.NewRoute().Subrouter()
 
-	populateRoutes.Path("/populate/").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
-	populateRoutes.Path("/populate").HandlerFunc(s.handlePopulate).Methods(http.MethodPost)
+	populateRoutes.Path("/populate/").HandlerFunc(s.populate).Methods(http.MethodPost)
+	populateRoutes.Path("/populate").HandlerFunc(s.populate).Methods(http.MethodPost)
 
 	// TODO: Proxy to the tiler daemon's RPC server
 
