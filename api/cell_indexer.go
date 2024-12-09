@@ -19,7 +19,7 @@ func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
 		Levels:          catS2.DefaultCellLevels,
-		BatchSize:       params.DefaultBatchSize,
+		BatchSize:       params.DefaultBatchSize / 10,
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 	})

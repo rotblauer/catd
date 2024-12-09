@@ -14,12 +14,14 @@ func (c *Cat) GetLapState() (*lap.State, error) {
 	ls := lap.NewState(params.DefaultLapConfig)
 
 	// Attempt to restore lap-builder state.
-	if data, err := c.State.ReadKV(params.CatStateBucket, []byte("lapstate")); err == nil && data != nil {
+	data, err := c.State.ReadKV(params.CatStateBucket, []byte("lapstate"))
+	if err == nil && data != nil {
 		if err := json.Unmarshal(data, ls); err != nil {
 			return nil, err
 		}
+		return ls, nil
 	}
-	return ls, nil
+	return nil, err
 }
 
 func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) (*lap.State, <-chan cattrack.CatLap) {

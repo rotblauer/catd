@@ -130,7 +130,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 		return true
 	}, in)
-	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
+	sanitized := stream.Transform(ctx, cattrack.Sanitize, stream.Meter(ctx, "Validated", validated))
 	pipedLast := sanitized
 	if sort {
 		// Sorting is blocking.
@@ -145,7 +145,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}, pipedLast)
 
 	// Snap storage mutates the original snap tracks.
-	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
+	snapped, snapErrs := c.StoreSnaps(ctx, stream.Meter(ctx, "Store Snaps", yesSnaps))
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
 	if err != nil {
@@ -166,7 +166,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// All non-snaps flow to these channels.
 	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
-	storeErrs := c.StoreTracks(ctx, storeCh)
+	storeErrs := c.StoreTracks(ctx, stream.Meter(ctx, "Store Tracks", storeCh))
 	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
 
 	//// P.S. Don't send all tracks to tiled unless development.
@@ -182,13 +182,15 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//}, sendTiledCh)
 
 	// Clean and improve tracks for pipeline handlers.
-	betterTracks := TracksWithOffset(ctx, c.ImprovedActTracks(ctx, c.CleanTracks(ctx, pipelineChan)))
+	betterTracks := TracksWithOffset(ctx,
+		stream.Meter(ctx, "Improver", c.ImprovedActTracks(ctx,
+			stream.Meter(ctx, "Clean Tracks", c.CleanTracks(ctx, pipelineChan)))))
 	areaPipeCh, vectorPipeCh := stream.Tee(ctx, betterTracks)
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
-	go c.S2IndexTracks(ctx, groundedArea)
+	go c.S2IndexTracks(ctx, stream.Meter(ctx, "S2 Index", groundedArea))
 	// Laps, naps.
 	// CatActPipeline is an upgrade from `go c.TripDetectionPipeline(ctx, vectorPipeCh)`.
-	go c.CatActPipeline(ctx, vectorPipeCh)
+	go c.CatActPipeline(ctx, stream.Meter(ctx, "Act Pipeline", vectorPipeCh))
 
 	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")

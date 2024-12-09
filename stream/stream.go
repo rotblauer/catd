@@ -3,9 +3,12 @@ package stream
 import (
 	"context"
 	"encoding/json"
+	"github.com/rotblauer/catd/common"
 	"io"
+	"log/slog"
 	"slices"
 	"sync"
+	"time"
 )
 
 // Slice, et al., taken originally from:
@@ -281,6 +284,42 @@ func TeeFilter[T any](ctx context.Context, filter func(T) bool, in <-chan T) (hi
 		}
 	}()
 	return
+}
+
+func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		var count int
+		var start time.Time
+		var rangeStart time.Time
+		var rangeEnd time.Time
+		defer func() {
+			rangeElapsed := rangeEnd.Sub(rangeStart)
+			secondsPerItem := float64(0)
+			if count > 0 {
+				secondsPerItem = rangeElapsed.Seconds() / float64(count)
+			}
+			slog.Info("Meter", "label", label, "count", count,
+				"ranged.elapsed", rangeElapsed.Round(time.Second),
+				"start.elapsed", time.Since(start).Round(time.Second),
+				"i/s", common.DecimalToFixed(secondsPerItem, 6))
+		}()
+		start = time.Now()
+		for el := range in {
+			select {
+			case <-ctx.Done():
+				return
+			case out <- el:
+				if count == 0 {
+					rangeStart = time.Now()
+				}
+				rangeEnd = time.Now()
+				count++
+			}
+		}
+	}()
+	return out
 }
 
 // TeeManyN is like TeeMany, but returns a slice of n output channels.
