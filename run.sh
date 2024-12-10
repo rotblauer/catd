@@ -4,7 +4,6 @@
 # Batches of 100_000 in ~30s = 30_000ms - about 10x faster.
 
 rm -rf /tmp/catd*
-rm -f /tmp/catscann
 
 review() {
   for i in 100_000; do
@@ -50,7 +49,6 @@ run() {
 
   go install . &&\
    for i in 100_000; do
-    rm -f /tmp/catscann;
     tracksource \
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \

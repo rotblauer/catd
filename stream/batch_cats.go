@@ -12,8 +12,6 @@ import (
 	"log"
 	"log/slog"
 	"math"
-	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,55 +52,21 @@ func (rl *readTrackLogger) done() {
 	rl.ticker.Stop()
 }
 
-func storeReadCount(n int64, lastTrackStorePath string) error {
-	f, err := os.OpenFile(lastTrackStorePath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write([]byte(strconv.FormatInt(n, 10)))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func restoreReadCount(lastTrackStorePath string) (int64, error) {
-	f, err := os.Open(lastTrackStorePath)
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(f)
-	if err != nil {
-		return 0, err
-	}
-	// Trim newlines.
-	return strconv.ParseInt(string(data), 10, 64)
-}
-
 // ScanLinesBatchingCats returns a buffered channel (of 'workers' size)
 // of same-cat track line batches.
-func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int, skip int64) (<-chan [][]byte, chan error) {
+func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int, workers int) (<-chan [][]byte, chan error) {
 	if workers == 0 {
 		panic("cats too fast (refusing to send on unbuffered channel)")
 	}
 	output := make(chan [][]byte, workers)
 	err := make(chan error, 1)
 
-	lastReadN, lastReadNRestoreErr := restoreReadCount("/tmp/catscann")
-	if lastReadNRestoreErr == nil {
-		slog.Info("Restored last read track n", "n", lastReadN)
-	} else {
-		slog.Warn("Failed to get last read track", "error", lastReadNRestoreErr)
-	}
-
 	go func(out chan [][]byte, errs chan error, reader io.Reader) {
 		defer close(out)
 		defer close(errs)
 
-		readN, skippedN := int64(0), int64(0)
-		skipLog, skipLog2, readLog := sync.Once{}, sync.Once{}, sync.Once{}
+		readN := int64(0)
+		readOnce := sync.Once{}
 
 		catBatches := map[string][][]byte{}
 		dec := json.NewDecoder(reader)
@@ -111,15 +75,6 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			interval: 5 * time.Second,
 		}
 
-		defer func() {
-			if err := storeReadCount(readN, "/tmp/catscann"); err != nil {
-				slog.Error("Cat scanner failed to store last read track", "error", err)
-			} else {
-				slog.Info("Cat scanner stored last read n", "n", readN)
-			}
-		}()
-
-		didSkip := int64(0)
 	readLoop:
 		for {
 			msg := json.RawMessage{}
@@ -146,27 +101,10 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 				break
 			}
 
-			if didSkip < skip {
-				skipLog2.Do(func() {
-					slog.Warn("Skipping --skip lines...", "skip", skip)
-				})
-				didSkip++
-				continue
-			}
-
 			readN++
 
-			if readN <= lastReadN {
-				skipLog.Do(func() {
-					slog.Warn("Skipping decode on already-seen tracks...")
-				})
-
-				skippedN++
-				continue
-			}
-
-			readLog.Do(func() {
-				slog.Info("Reading tracks", "skipped", skippedN)
+			readOnce.Do(func() {
+				slog.Info("Reading tracks")
 				tlogger.started = time.Now()
 				tlogger.n.Store(0)
 				go tlogger.run()
