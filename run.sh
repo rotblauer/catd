@@ -40,10 +40,11 @@ run() {
 #    cat
 #    grep -E '2024-1[1,2]'
 #    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
-#     zcat "${HOME}/tdata/edge.json.gz"
+#     zcat "${HOME}"/tdata/edge.json.gz
+     zcat "${HOME}"/tdata/{edge,devop}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
-    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz | head -1000000
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
   }
 
@@ -53,7 +54,7 @@ run() {
     | catd populate --datadir "/tmp/catd${i}" \
       --verbosity 0 \
       --batch-size ${i} \
-      --workers 4 \
+      --workers 0 \
       --sort true \
       --tiled.skip-edge
     done

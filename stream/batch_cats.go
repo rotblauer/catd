@@ -162,72 +162,9 @@ func sendErr(errs chan error, err error) {
 	}
 }
 
-type catSeeker struct {
-	reader io.Reader
-	dec    *json.Decoder
-	dict   *sync.Map
-	cat    string
-	send   chan []byte
-	errs   chan error
-	quit   chan struct{}
-}
-
-//func (cs *catSeeker) seek(cat string) {
-//	cs.cat = cat
-//
-//	for {
-//		select {
-//		case <-cs.quit:
-//			return
-//		default:
-//		}
-//		msg := json.RawMessage{}
-//		err := cs.dec.Decode(&msg)
-//		if err != nil {
-//			if errors.Is(err, io.EOF) {
-//				return
-//			}
-//			sendErr(cs.errs, fmt.Errorf("scanner(%w)", err))
-//			return
-//		}
-//		name := gjson.GetBytes(msg, "properties.Name").String()
-//		if name == "" {
-//			sendErr(cs.errs, fmt.Errorf("cat(%s) missing properties.Name in line: %s", cat, string(msg)))
-//			return
-//		}
-//		// we are the seeker
-//		if cs.cat == "" {
-//			// lookup cat in hat
-//			alias := names.AliasOrSanitizedName(name)
-//			if _, loaded := cs.dict.LoadOrStore(alias, struct{}{}); loaded {
-//				continue // questing fresh cats
-//			}
-//			// fresh cat
-//
-//			r, w := io.Pipe()
-//			go io.TeeReader(cs.reader, w)
-//			catMatcher := &catSeeker{
-//				// Tee reader
-//				reader: r,
-//				dec:    json.NewDecoder(r),
-//				dict:   cs.dict,
-//				cat:    alias,
-//				send:   cs.send,
-//				errs:   cs.errs,
-//				quit:   cs.quit,
-//			}
-//		} else {
-//			// we are cat herder
-//			if cs.cat != names.AliasOrSanitizedName(name) {
-//				continue
-//			}
-//		}
-//
-//		cs.send <- msg
-//	}
-//}
-
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN int) (chan chan []byte, chan error) {
+	// FIXME: What happens if there are more cats than workersN?
+	// Will the scanner ever free itself from the cat race?
 	catChCh := make(chan chan []byte, workersN)
 	errs := make(chan error, 1)
 	go func() {
@@ -235,24 +172,18 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer close(catChCh)
 		dec := json.NewDecoder(reader)
 
-		catLineExpiry := uint64(bufferN)
-		catChMap := sync.Map{}
+		// A cat not seen in this many lines will have their channel closed.
+		// Upon meeting this cat later, a new channel will be opened.
+		closeCatAfter := uint64(bufferN) + 1
+		// A map of cat:line_index.
 		catLastMap := sync.Map{}
+		// A map of cat:channel.
+		catChMap := sync.Map{}
+		defer catChMap.Range(func(key, value interface{}) bool {
+			close(value.(chan []byte))
+			return true
+		})
 
-		//catMapOpts := ttlcache.WithTTL[conceptual.CatID, struct{}](10 * time.Second)
-		//catTTL := ttlcache.New[conceptual.CatID, struct{}](catMapOpts)
-		//catTTL.OnEviction(func(ctx context.Context,
-		//	reason ttlcache.EvictionReason, i *ttlcache.Item[conceptual.CatID, struct{}]) {
-		//	slog.Info("👋 Unbatcher evicting cat", "cat", i.Key())
-		//	_, loaded := catChMap.LoadAndDelete(i.Key())
-		//	if !loaded {
-		//		panic("cat not found in map")
-		//	}
-		//	//close(v.(chan []byte))
-		//})
-		//go catTTL.Start()
-
-		catCount := 0
 		tlogger := &readTrackLogger{
 			interval: 5 * time.Second,
 		}
@@ -260,6 +191,8 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		tlogger.n.Store(0)
 		go tlogger.run()
 		defer tlogger.done()
+
+		catCount := 0
 		defer func() {
 			slog.Info("Unbatcher done", "catCount", catCount, "lines", tlogger.n.Load())
 		}()
@@ -288,18 +221,18 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			}
 			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
 
-			// Every once in a while, check to see if there are cats we haven't seen tracks from in a while.
-			// For these expired cats, close their chans to free up resources.
-			if n := tlogger.n.Load(); n%catLineExpiry == 0 {
+			// Every once in bufferN, check to see if there are cats we haven't seen tracks from since last.
+			// For these expired cats, close their chans to free up resources, and make way for more cats.
+			if n := tlogger.n.Load(); n%closeCatAfter == 0 {
 				expired := []conceptual.CatID{}
 				catLastMap.Range(func(catID, last interface{}) bool {
-					if n-last.(uint64) > catLineExpiry {
+					if n-last.(uint64) > closeCatAfter {
 						expired = append(expired, catID.(conceptual.CatID))
 					}
 					return true
 				})
 				for _, catID := range expired {
-					slog.Warn(fmt.Sprintf("👋 Unbatcher cat not seen in %d lines", catLineExpiry), "cat", catID)
+					slog.Warn(fmt.Sprintf("👋 Unbatcher cat not seen in %d lines", closeCatAfter), "cat", catID)
 					v, loaded := catChMap.LoadAndDelete(catID)
 					if !loaded {
 						panic("where is cat")
@@ -323,17 +256,13 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			}
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
 			v.(chan []byte) <- msg
+
+			// If catChCh is buffered (workersN), this will block until a worker is available.
+			// If catChCh is unbuffered, this will block until a worker is available,
+			// but it might stack lots of cats very high... if there are many cats.
 			catChCh <- v.(chan []byte)
 			catCount++
 		}
-		//catTTL.Stop()
-		//catTTL.Range(func(item *ttlcache.Item[conceptual.CatID, struct{}]) bool {
-		//	return true
-		//})
-		catChMap.Range(func(key, value interface{}) bool {
-			close(value.(chan []byte))
-			return true
-		})
 	}()
 	return catChCh, errs
 }
