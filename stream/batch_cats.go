@@ -1,11 +1,9 @@
 package stream
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -299,15 +297,22 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer close(catChCh)
 		dec := json.NewDecoder(reader)
 
-		catMap := ttlcache.New[conceptual.CatID, chan []byte](
-			ttlcache.WithTTL[conceptual.CatID, chan []byte](10 * time.Second))
+		catLineExpiry := uint64(bufferN)
+		catChMap := sync.Map{}
+		catLastMap := sync.Map{}
 
-		catMap.OnEviction(func(ctx context.Context,
-			reason ttlcache.EvictionReason, i *ttlcache.Item[conceptual.CatID, chan []byte]) {
-			slog.Info("👋 Unbatcher evicting cat", "cat", i.Key())
-			close(i.Value())
-		})
-		go catMap.Start()
+		//catMapOpts := ttlcache.WithTTL[conceptual.CatID, struct{}](10 * time.Second)
+		//catTTL := ttlcache.New[conceptual.CatID, struct{}](catMapOpts)
+		//catTTL.OnEviction(func(ctx context.Context,
+		//	reason ttlcache.EvictionReason, i *ttlcache.Item[conceptual.CatID, struct{}]) {
+		//	slog.Info("👋 Unbatcher evicting cat", "cat", i.Key())
+		//	_, loaded := catChMap.LoadAndDelete(i.Key())
+		//	if !loaded {
+		//		panic("cat not found in map")
+		//	}
+		//	//close(v.(chan []byte))
+		//})
+		//go catTTL.Start()
 
 		catCount := 0
 		tlogger := &readTrackLogger{
@@ -344,16 +349,34 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
-			it, loaded := catMap.GetOrSet(catID, make(chan []byte, bufferN))
+
+			// Every once in a while, check to see if there are cats we haven't seen tracks from in a while.
+			// For these expired cats, close their chans to free up resources.
+			if n := tlogger.n.Load(); n%catLineExpiry == 0 {
+				expired := []conceptual.CatID{}
+				catLastMap.Range(func(catID, last interface{}) bool {
+					if n-last.(uint64) > catLineExpiry {
+						expired = append(expired, catID.(conceptual.CatID))
+					}
+					return true
+				})
+				for _, catID := range expired {
+					slog.Warn(fmt.Sprintf("👋 Unbatcher cat not seen in %d lines", catLineExpiry), "cat", catID)
+					v, loaded := catChMap.LoadAndDelete(catID)
+					if !loaded {
+						panic("where is cat")
+					}
+					close(v.(chan []byte))
+					catLastMap.Delete(catID)
+				}
+			}
+
+			catLastMap.Store(catID, tlogger.n.Load())
+			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, bufferN))
 			if loaded {
-				it.Value() <- msg
+				v.(chan []byte) <- msg
 				continue
 			}
-			//actualCatCh, loaded := catMap.LoadOrStore(catID, make(chan []byte, bufferN), ttlcache.DefaultTTL)
-			//if loaded {
-			//	actualCatCh.(chan []byte) <- msg
-			//	continue // questing fresh cats
-			//}
 			ct := cattrack.CatTrack{}
 			err = json.Unmarshal(msg, &ct)
 			if err != nil {
@@ -361,19 +384,18 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
-			catChCh <- it.Value()
-			it.Value() <- msg
+			v.(chan []byte) <- msg
+			catChCh <- v.(chan []byte)
 			catCount++
 		}
-		catMap.Stop()
-		catMap.Range(func(item *ttlcache.Item[conceptual.CatID, chan []byte]) bool {
-			close(item.Value())
-			return true
-		})
-		//catMap.Range(func(key, value interface{}) bool {
-		//	close(value.(chan []byte))
+		//catTTL.Stop()
+		//catTTL.Range(func(item *ttlcache.Item[conceptual.CatID, struct{}]) bool {
 		//	return true
 		//})
+		catChMap.Range(func(key, value interface{}) bool {
+			close(value.(chan []byte))
+			return true
+		})
 	}()
 	return catChCh, errs
 }

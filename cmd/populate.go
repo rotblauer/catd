@@ -228,6 +228,10 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 		"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
 		"cat", cat.CatID)
 
+	defer func() {
+		slog.Info("Cat worker populator done", "cat", cat.CatID)
+	}()
+
 	recat := make(chan []byte, params.DefaultBatchSize)
 	recat <- first
 	go func() {
@@ -245,7 +249,7 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 			return cattrack.CatTrack{}
 		}
 		return cattrack.CatTrack(*feat)
-	}, catCh)
+	}, recat)
 
 	// Populate is blocking. It holds a lock on the cat state.
 	err := cat.Populate(ctx, optSortTrackBatches, decoded)

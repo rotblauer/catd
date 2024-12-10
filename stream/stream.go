@@ -298,7 +298,7 @@ func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
 			stop := time.Now()
 			rangeElapsed := last.Sub(first)
 			tps := float64(0)
-			if count > 0 {
+			if count > 0 && rangeElapsed.Seconds() > 0 {
 				tps = float64(count) / rangeElapsed.Seconds()
 			}
 			slog.Info("Meter", "label", label, "count", count,
@@ -352,7 +352,7 @@ func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string,
 				stop := time.Now()
 				rangeElapsed := last.Sub(first)
 				tps := float64(0)
-				if count > 0 {
+				if count > 0 && rangeElapsed.Seconds() > 0 {
 					tps = float64(count) / rangeElapsed.Seconds()
 				}
 				tlogger.Info("tick",
