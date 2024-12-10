@@ -292,29 +292,30 @@ func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
 		defer close(out)
 		var count int
 		var start time.Time
-		var rangeStart time.Time
-		var rangeEnd time.Time
+		var first time.Time
+		var last time.Time
 		defer func() {
-			rangeElapsed := rangeEnd.Sub(rangeStart)
+			stop := time.Now()
+			rangeElapsed := last.Sub(first)
 			secondsPerItem := float64(0)
 			if count > 0 {
 				secondsPerItem = rangeElapsed.Seconds() / float64(count)
 			}
 			slog.Info("Meter", "label", label, "count", count,
-				"ranged.elapsed", rangeElapsed.Round(time.Second),
-				"start.elapsed", time.Since(start).Round(time.Second),
+				"range.elapsed", rangeElapsed.Round(time.Second),
+				"start.elapsed", stop.Sub(start).Round(time.Second),
 				"i/s", common.DecimalToFixed(secondsPerItem, 6))
 		}()
 		start = time.Now()
 		for el := range in {
+			if count == 0 {
+				first = time.Now()
+			}
+			last = time.Now()
 			select {
 			case <-ctx.Done():
 				return
 			case out <- el:
-				if count == 0 {
-					rangeStart = time.Now()
-				}
-				rangeEnd = time.Now()
 				count++
 			}
 		}

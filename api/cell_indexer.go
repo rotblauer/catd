@@ -19,7 +19,7 @@ func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
 		Levels:          catS2.DefaultCellLevels,
-		BatchSize:       params.DefaultBatchSize / 10,
+		BatchSize:       (params.DefaultBatchSize / 10) + 1, // 10% of default batch size. Why? Reduce batch-y-ness.
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 	})
