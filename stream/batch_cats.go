@@ -289,6 +289,7 @@ type catSeeker struct {
 //}
 
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN int) (chan chan []byte, chan error) {
+
 	catChCh := make(chan chan []byte, workersN)
 	errs := make(chan error, 1)
 	go func() {
@@ -311,6 +312,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer func() {
 			slog.Info("Unbatcher done", "catCount", catCount, "lines", tlogger.n.Load())
 		}()
+		pipeWriters := []io.WriteCloser{}
 		for {
 			select {
 			case <-quit:
@@ -360,18 +362,22 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			catR, catW := io.Pipe()
 			tee := io.TeeReader(io.MultiReader(dec.Buffered(), reader), catW)
 			dec = json.NewDecoder(tee)
+			pipeWriters = append(pipeWriters, catW)
 
 			defer func() {
-				if err := catW.Close(); err != nil {
-					slog.Error("catW.Close()", "error", err)
-				}
-				if err := catR.Close(); err != nil {
-					slog.Error("catR.Close()", "error", err)
-				}
+				// FIXME - (?) close (all) the pipe r/w's after the for loop, not deferred.
+				//if err := catW.Close(); err != nil {
+				//	slog.Error("catW.Close()", "error", err)
+				//}
+				//if err := catR.Close(); err != nil {
+				//	slog.Error("catR.Close()", "error", err)
+				//}
 
 			}()
 
 			go func() {
+				//defer wait.Done()
+
 				slog.Info("Unbatcher reading cat", "cat", catID)
 				tracksCh, catErrs := readCat(catID, catR, bufferN, quitCat)
 				catChCh <- tracksCh
@@ -403,6 +409,13 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				}
 			}()
 		}
+		//for i, w := range pipeWriters {
+		//	if err := w.Close(); err != nil {
+		//		slog.Error("pipeWriter.Close()", "error", err)
+		//	} else {
+		//		slog.Info("pipeWriter closed", "i", i)
+		//	}
+		//}
 		//wait.Wait()
 	}()
 	return catChCh, errs
