@@ -289,14 +289,11 @@ type catSeeker struct {
 //}
 
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN int) (chan chan []byte, chan error) {
-
 	catChCh := make(chan chan []byte, workersN)
 	errs := make(chan error, 1)
 	go func() {
-
 		defer close(errs)
 		defer close(catChCh)
-
 		dec := json.NewDecoder(reader)
 		catMap := sync.Map{}
 		catCount := 0
@@ -310,25 +307,13 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer func() {
 			slog.Info("Unbatcher done", "catCount", catCount, "lines", tlogger.n.Load())
 		}()
-
-		quitCat := make(chan struct{})
-		//eofCat := []chan struct{}{}
-		//wait := sync.WaitGroup{}
-		//pipeWriters := []io.WriteCloser{}
-
 		for {
 			select {
 			case <-quit:
 				slog.Info("Unbatcher quitting")
-				for i := 0; i < catCount; i++ {
-					slog.Info("Unbatcher quitting cat", i)
-					quitCat <- struct{}{}
-				}
-				close(quitCat)
-				return
+				break
 			default:
 			}
-
 			msg := json.RawMessage{}
 			err := dec.Decode(&msg)
 			if err != nil {
@@ -339,22 +324,18 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				sendErr(errs, fmt.Errorf("scanner(%w)", err))
 				return
 			}
-
 			tlogger.mark(gjson.GetBytes(msg, "properties.Time").String())
-
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
 				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
 				return
 			}
 			catID := names.AliasOrSanitizedName(cat)
-
 			actualCatCh, loaded := catMap.LoadOrStore(catID, make(chan []byte, bufferN))
 			if loaded {
 				actualCatCh.(chan []byte) <- msg
 				continue // questing fresh cats
 			}
-
 			ct := cattrack.CatTrack{}
 			err = json.Unmarshal(msg, &ct)
 			if err != nil {
@@ -362,10 +343,9 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
-			catCount++
-
 			catChCh <- actualCatCh.(chan []byte)
 			actualCatCh.(chan []byte) <- msg
+			catCount++
 		}
 		catMap.Range(func(key, value interface{}) bool {
 			close(value.(chan []byte))

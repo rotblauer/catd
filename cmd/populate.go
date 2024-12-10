@@ -131,7 +131,6 @@ Missoula, Montana
 		workersWG := new(sync.WaitGroup)
 
 		quitScanner := make(chan struct{}, 1)
-		//linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quitScanner, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(os.Stdin, quitScanner, optWorkersN, params.DefaultBatchSize)
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -153,9 +152,14 @@ Missoula, Montana
 	readLoop:
 		for {
 			select {
-			case catCh := <-catChCh:
+			case catCh, open := <-catChCh:
+				if !open {
+					slog.Info("Channel of cat channels closed")
+					break readLoop
+				}
 				catN++
 				workersWG.Add(1)
+				slog.Info("Received cat chan", "cat", catN)
 				go catWorkerFn(ctx, catN, catCh, workersWG, d)
 
 			case err, open := <-errCh:
@@ -175,7 +179,22 @@ Missoula, Montana
 		}
 
 		slog.Info("Waiting on workers")
+		workersDone := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					slog.Info("Still waiting on workers...")
+				case <-workersDone:
+					return
+				}
+			}
+		}()
 		workersWG.Wait()
+		workersDone <- struct{}{}
+		close(workersDone)
 
 		if !optTilingOff {
 			slog.Info("Interrupting tiled")
@@ -199,15 +218,24 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	}
 
 	var cat *api.Cat
-	//defer cat.Close()
 
-	first := <-catCh // FIXME
+	first := <-catCh
 	slog.Info("First track", "cat", catN, "track", string(first))
+
 	catID := names.AliasOrSanitizedName(gjson.GetBytes(first, "properties.Name").String())
 	cat = api.NewCat(conceptual.CatID(catID), tiledConfig)
 	slog.Info("Populating",
 		"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
 		"cat", cat.CatID)
+
+	recat := make(chan []byte, params.DefaultBatchSize)
+	recat <- first
+	go func() {
+		defer close(recat)
+		for line := range catCh {
+			recat <- line
+		}
+	}()
 
 	decoded := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
 		feat, err := geojson.UnmarshalFeature(data)
