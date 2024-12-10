@@ -1,9 +1,12 @@
 package stream
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jellydator/ttlcache/v3"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/tidwall/gjson"
@@ -295,7 +298,17 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer close(errs)
 		defer close(catChCh)
 		dec := json.NewDecoder(reader)
-		catMap := sync.Map{}
+
+		catMap := ttlcache.New[conceptual.CatID, chan []byte](
+			ttlcache.WithTTL[conceptual.CatID, chan []byte](10 * time.Second))
+
+		catMap.OnEviction(func(ctx context.Context,
+			reason ttlcache.EvictionReason, i *ttlcache.Item[conceptual.CatID, chan []byte]) {
+			slog.Info("👋 Unbatcher evicting cat", "cat", i.Key())
+			close(i.Value())
+		})
+		go catMap.Start()
+
 		catCount := 0
 		tlogger := &readTrackLogger{
 			interval: 5 * time.Second,
@@ -330,12 +343,17 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
 				return
 			}
-			catID := names.AliasOrSanitizedName(cat)
-			actualCatCh, loaded := catMap.LoadOrStore(catID, make(chan []byte, bufferN))
+			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
+			it, loaded := catMap.GetOrSet(catID, make(chan []byte, bufferN))
 			if loaded {
-				actualCatCh.(chan []byte) <- msg
-				continue // questing fresh cats
+				it.Value() <- msg
+				continue
 			}
+			//actualCatCh, loaded := catMap.LoadOrStore(catID, make(chan []byte, bufferN), ttlcache.DefaultTTL)
+			//if loaded {
+			//	actualCatCh.(chan []byte) <- msg
+			//	continue // questing fresh cats
+			//}
 			ct := cattrack.CatTrack{}
 			err = json.Unmarshal(msg, &ct)
 			if err != nil {
@@ -343,14 +361,19 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
-			catChCh <- actualCatCh.(chan []byte)
-			actualCatCh.(chan []byte) <- msg
+			catChCh <- it.Value()
+			it.Value() <- msg
 			catCount++
 		}
-		catMap.Range(func(key, value interface{}) bool {
-			close(value.(chan []byte))
+		catMap.Stop()
+		catMap.Range(func(item *ttlcache.Item[conceptual.CatID, chan []byte]) bool {
+			close(item.Value())
 			return true
 		})
+		//catMap.Range(func(key, value interface{}) bool {
+		//	close(value.(chan []byte))
+		//	return true
+		//})
 	}()
 	return catChCh, errs
 }
