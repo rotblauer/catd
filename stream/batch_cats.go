@@ -7,6 +7,7 @@ import (
 	"github.com/rotblauer/catd/names"
 	"github.com/tidwall/gjson"
 	"io"
+	"log"
 	"log/slog"
 	"math"
 	"os"
@@ -211,6 +212,129 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 	}(output, err, reader)
 
 	return output, err
+}
+
+func sendErr(errs chan error, err error) {
+	select {
+	case errs <- err:
+	default:
+		log.Println("error channel full, dropping error", err)
+	}
+}
+
+func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN int) (chan chan []byte, chan error) {
+	out := make(chan chan []byte, workersN)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(errs)
+		defer close(out)
+		dec := json.NewDecoder(reader)
+		catMap := sync.Map{}
+		catCount := 0
+		quitCat := make(chan struct{})
+		for {
+			select {
+			case <-quit:
+				log.Println("Unbatcher quitting")
+				for i := 0; i < catCount; i++ {
+					log.Println("Unbatcher quitting cat", i)
+					quitCat <- struct{}{}
+				}
+				close(quitCat)
+				return
+			default:
+			}
+
+			msg := json.RawMessage{}
+			err := dec.Decode(&msg)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				sendErr(errs, fmt.Errorf("scanner(%w)", err))
+				return
+			}
+			cat := gjson.GetBytes(msg, "properties.Name").String()
+			if cat == "" {
+				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
+				return
+			}
+			catID := names.AliasOrSanitizedName(cat)
+			if _, loaded := catMap.LoadOrStore(catID, struct{}{}); loaded {
+				continue // questing fresh cats
+			}
+
+			// fresh cat
+			log.Println("Unbatcher starting cat", catID)
+			catCount++
+			catLine := dec.Buffered()
+			go func() {
+				catR, catW := io.Pipe()
+				catLines, catErrs := readCat(catID, catR, bufferN, quitCat)
+
+				go func() {
+					for {
+						select {
+						case out <- catLines:
+						case err := <-catErrs:
+							if err != nil {
+								sendErr(errs, err)
+								return
+							}
+						case <-quit:
+							return
+						}
+					}
+				}()
+
+				// Tee the original reader
+				if _, err := io.Copy(catW, io.MultiReader(catLine, reader)); err != nil {
+					sendErr(errs, err)
+					return
+				}
+			}()
+		}
+	}()
+	return out, errs
+}
+
+func readCat(catId string, reader io.Reader, bufferN int, quit chan struct{}) (chan []byte, chan error) {
+	catCh := make(chan []byte, bufferN)
+	errCh := make(chan error, 1)
+	go func(catID string, reader io.Reader) {
+		defer close(catCh)
+		defer close(errCh)
+		// read catReader and send []byte to cat chan
+		catDec := json.NewDecoder(reader)
+		for {
+			select {
+			case <-quit:
+				return
+			default:
+			}
+			msg := json.RawMessage{}
+			err := catDec.Decode(&msg)
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					close(catCh)
+					return
+				}
+				sendErr(errCh, fmt.Errorf("%s(%w): %s", catID, err, string(msg)))
+				return
+			}
+			name := gjson.GetBytes(msg, "properties.Name").String()
+			if name == "" {
+				sendErr(errCh, fmt.Errorf("cat(%s) missing properties.Name in line: %s", catID, string(msg)))
+				return
+			}
+			cat := names.AliasOrSanitizedName(name)
+			if cat != catId {
+				continue
+			}
+			catCh <- msg
+		}
+	}(catId, reader)
+	return catCh, errCh
 }
 
 /*

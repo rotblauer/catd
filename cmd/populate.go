@@ -36,7 +36,6 @@ import (
 	"os"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -130,132 +129,10 @@ Missoula, Montana
 
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
-		workCh := make(chan workT, optWorkersN)
-
-		// workingWorkN is used to ensure cat chronology.
-		// It permits 2 cats to populate simultaneously,
-		// but does not permit the same cat to Populate out of order (cat.Populate's state lock ensure serial-cats).
-		// It is incremented for each work package received.
-		// Workers then block until their increment matches the latest package number.
-		// Since cat Populators do not block each other, the worker
-		// will only block if it is the same cat as the previous package.
-		//var workingWorkN int32 = 0
-
-		//catJobs := [][][][]byte{}
-		//jobLock := sync.Mutex{}
-		//catJobIndexMap := map[string]int{}
-
-		workerFn := func(workerI int, w workT) {
-			defer workersWG.Done()
-
-			var tiledConfig *params.TileDaemonConfig
-			if d != nil {
-				tiledConfig = d.Config
-			}
-			cat := api.NewCat(conceptual.CatID(w.name), tiledConfig)
-
-			// Use a temporary cat flat base path (dir).
-			// This will be non-blocking, but will init empty state for each batch;
-			// tripdetector, s2indexer will have tabula rasas.
-			// There will be spuriously-broken laps and naps at every batch edge.
-			// Then need to collapse tmp cat-dirs into a/the canonical one;
-			// Depend on lexical ordering for chrono.
-			// tracks.geojson.gzs append.
-			// cat/state.dbs use last one... (but will break/incomplete snaps KV!).
-			// Snapper needs to mv .json and .jpeg files. Which it can do; no conflicts in path naming.
-			//firstTrackTime := gjson.GetBytes(w.lines[0], "properties.Time").Time()
-			//cat.State.Flat = flat.NewFlatWithRoot(cat.State.Flat.Path() + fmt.Sprintf(".%011d", firstTrackTime.Unix()))
-
-			slog.Info("Populating",
-				"worker", fmt.Sprintf("%d/%d", workerI, optWorkersN),
-				"work-n", w.n,
-				"cat", cat.CatID, "lines", len(w.lines))
-
-			pipe := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
-				feat, err := geojson.UnmarshalFeature(data)
-				if err != nil {
-					slog.Error("cmd/populate : Failed to unmarshal track", "error", err)
-					slog.Error(string(data))
-					return cattrack.CatTrack{}
-				}
-				return cattrack.CatTrack(*feat)
-				//}, stream.Slice(ctx, catJobs[w.indexedAt][0]))
-			}, stream.Slice(ctx, w.lines))
-
-			// Ensure ordered cat tracks per cat.
-			o := sync.Once{}
-			//for !atomic.CompareAndSwapInt32(&workingWorkN, w.n-1, w.n) {
-			o.Do(func() {
-				slog.Info("Worker unblocking", "worker", workerI, "cat", cat.CatID, "work-n", w.n)
-			})
-			//}
-
-			// Populate is blocking. It holds a lock on the cat state.
-			err := cat.Populate(ctx, optSortTrackBatches, pipe)
-			if err != nil {
-				slog.Error("Failed to populate CatTracks", "error", err)
-			} else {
-				slog.Info("Populator worker done", "cat", cat.CatID)
-			}
-			//if len(catJobs[w.indexedAt]) > 1 {
-			//	catJobs[w.indexedAt] = catJobs[w.indexedAt][1:]
-			//} else {
-			//	catJobs[w.indexedAt] = nil
-			//	jobLock.Lock()
-			//	delete(catJobIndexMap, w.name)
-			//	jobLock.Unlock()
-			//}
-		}
-
-		// Spin up the workers.
-		for i := 0; i < optWorkersN; i++ {
-			workerI := i + 1
-			go func() {
-				workerI := workerI
-				for w := range workCh {
-					workerFn(workerI, w)
-				}
-			}()
-		}
-
-		// receivedWorkN is used to ensure per-cat populate chronology.
-		// Work packages are indexed and the workers consume them likewise.
-		// With a blocking per-cat Populate function, this means that cats
-		// must (attempt/blocking) Populate in the order in which work was received.
-		var receivedWorkN atomic.Int32
-		receivedWorkN.Store(0)
-
-		handleLinesBatch := func(lines [][]byte) {
-			if len(lines) == 0 {
-				return
-			}
-			cat := names.AliasOrSanitizedName(gjson.GetBytes(lines[0], "properties.Name").String())
-
-			//jobLock.Lock()
-			//if i, ok := catJobIndexMap[cat]; ok {
-			//	catJobs[i] = append(catJobs[i], lines)
-			//} else {
-			//	i := len(catJobs)
-			//	catJobIndexMap[cat] = i
-			//	catJobs = append(catJobs, [][][]byte{})
-			//	catJobs[i] = [][][]byte{}
-			//	catJobs[i] = append(catJobs[i], lines)
-			//}
-			//jobLock.Unlock()
-
-			workersWG.Add(1)
-			receivedWorkN.Add(1)
-			workCh <- workT{
-				n:    receivedWorkN.Load(),
-				name: cat,
-				//indexedAt: catJobIndexMap[cat],
-				lines: lines,
-			}
-		}
 
 		quitScanner := make(chan struct{}, 1)
-		linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quitScanner, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
-
+		//linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quitScanner, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
+		catLinesCh, errCh := stream.ScanLinesUnbatchedCats(os.Stdin, quitScanner, 100_000, optWorkersN)
 		go func() {
 			for i := 0; i < 2; i++ {
 				select {
@@ -272,11 +149,14 @@ Missoula, Montana
 			}
 		}()
 
+		catN := 0
 	readLoop:
 		for {
 			select {
-			case lines := <-linesCh:
-				handleLinesBatch(lines)
+			case catCh := <-catLinesCh:
+				catN++
+				workersWG.Add(1)
+				go catWorkerFn(ctx, catN, catCh, workersWG, d)
 
 			case err, open := <-errCh:
 				if err == io.EOF {
@@ -294,14 +174,6 @@ Missoula, Montana
 			}
 		}
 
-		// Flush any remaining lines
-		for linesCh != nil && len(linesCh) > 0 {
-			slog.Info("Import flushing remaining cat-line batches", "len", len(linesCh))
-			handleLinesBatch(<-linesCh)
-		}
-
-		slog.Info("Closing work chan")
-		close(workCh)
 		slog.Info("Waiting on workers")
 		workersWG.Wait()
 
@@ -316,6 +188,52 @@ Missoula, Montana
 		ctxCanceler()
 		slog.Info("Populate graceful dismount")
 	},
+}
+
+func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, d *tiled.TileDaemon) {
+	defer done.Done()
+
+	var tiledConfig *params.TileDaemonConfig
+	if d != nil {
+		tiledConfig = d.Config
+	}
+
+	var cat *api.Cat
+	//defer cat.Close()
+
+	inited := make(chan struct{}, 1)
+
+	initer := stream.Filter(ctx, func(data []byte) bool {
+		if cat == nil {
+			catID := names.AliasOrSanitizedName(gjson.GetBytes(data, "properties.Name").String())
+			cat = api.NewCat(conceptual.CatID(catID), tiledConfig)
+			slog.Info("Populating",
+				"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
+				"cat", cat.CatID)
+			inited <- struct{}{}
+		}
+		return true
+	}, catCh)
+
+	decoded := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
+		feat, err := geojson.UnmarshalFeature(data)
+		if err != nil {
+			slog.Error("cmd/populate : Failed to unmarshal track", "error", err)
+			slog.Error(string(data))
+			return cattrack.CatTrack{}
+		}
+		return cattrack.CatTrack(*feat)
+	}, initer)
+
+	<-inited
+
+	// Populate is blocking. It holds a lock on the cat state.
+	err := cat.Populate(ctx, optSortTrackBatches, decoded)
+	if err != nil {
+		slog.Error("Failed to populate CatTracks", "error", err)
+	} else {
+		slog.Info("Populator worker done", "cat", cat.CatID)
+	}
 }
 
 func init() {
