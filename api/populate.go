@@ -130,7 +130,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 		return true
 	}, in)
-	sanitized := stream.Transform(ctx, cattrack.Sanitize, stream.Meter(ctx, "Validated", validated))
+	sanitized := stream.Transform(ctx, cattrack.Sanitize, stream.MeterTicker(ctx, c.logger, "Validated", 10*time.Second, validated))
 	pipedLast := sanitized
 	if sort {
 		// Sorting is blocking.

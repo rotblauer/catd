@@ -132,7 +132,7 @@ Missoula, Montana
 
 		quitScanner := make(chan struct{}, 1)
 		//linesCh, errCh := stream.ScanLinesBatchingCats(os.Stdin, quitScanner, params.DefaultBatchSize, optWorkersN, optSkipOverrideN)
-		catLinesCh, errCh := stream.ScanLinesUnbatchedCats(os.Stdin, quitScanner, 100_000, optWorkersN)
+		catChCh, errCh := stream.ScanLinesUnbatchedCats(os.Stdin, quitScanner, optWorkersN, params.DefaultBatchSize)
 		go func() {
 			for i := 0; i < 2; i++ {
 				select {
@@ -153,7 +153,7 @@ Missoula, Montana
 	readLoop:
 		for {
 			select {
-			case catCh := <-catLinesCh:
+			case catCh := <-catChCh:
 				catN++
 				workersWG.Add(1)
 				go catWorkerFn(ctx, catN, catCh, workersWG, d)
@@ -199,21 +199,15 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	}
 
 	var cat *api.Cat
-	//defer cat.Close()
+	defer cat.Close()
 
-	inited := make(chan struct{}, 1)
-
-	initer := stream.Filter(ctx, func(data []byte) bool {
-		if cat == nil {
-			catID := names.AliasOrSanitizedName(gjson.GetBytes(data, "properties.Name").String())
-			cat = api.NewCat(conceptual.CatID(catID), tiledConfig)
-			slog.Info("Populating",
-				"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
-				"cat", cat.CatID)
-			inited <- struct{}{}
-		}
-		return true
-	}, catCh)
+	first := <-catCh // FIXME
+	slog.Info("First track", "cat", catN, "track", string(first))
+	catID := names.AliasOrSanitizedName(gjson.GetBytes(first, "properties.Name").String())
+	cat = api.NewCat(conceptual.CatID(catID), tiledConfig)
+	slog.Info("Populating",
+		"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
+		"cat", cat.CatID)
 
 	decoded := stream.Transform(ctx, func(data []byte) cattrack.CatTrack {
 		feat, err := geojson.UnmarshalFeature(data)
@@ -223,9 +217,7 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 			return cattrack.CatTrack{}
 		}
 		return cattrack.CatTrack(*feat)
-	}, initer)
-
-	<-inited
+	}, catCh)
 
 	// Populate is blocking. It holds a lock on the cat state.
 	err := cat.Populate(ctx, optSortTrackBatches, decoded)

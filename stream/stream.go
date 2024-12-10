@@ -304,7 +304,63 @@ func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
 			slog.Info("Meter", "label", label, "count", count,
 				"range.elapsed", rangeElapsed.Round(time.Second),
 				"start.elapsed", stop.Sub(start).Round(time.Second),
-				"i/s", common.DecimalToFixed(secondsPerItem, 6))
+				"t/s", common.DecimalToFixed(secondsPerItem, 6))
+		}()
+		start = time.Now()
+		for el := range in {
+			if count == 0 {
+				first = time.Now()
+			}
+			last = time.Now()
+			select {
+			case <-ctx.Done():
+				return
+			case out <- el:
+				count++
+			}
+		}
+	}()
+	return out
+}
+
+func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string, tick time.Duration, in <-chan T) <-chan T {
+	out := make(chan T)
+	ticker := time.NewTicker(tick)
+	tlogger := slogger.With("MeterTicker", label)
+	go func() {
+		defer close(out)
+		var count int
+		var start time.Time
+		var first time.Time
+		var last time.Time
+		defer func() {
+			ticker.Stop()
+			stop := time.Now()
+			rangeElapsed := last.Sub(first)
+			secondsPerItem := float64(0)
+			if count > 0 {
+				secondsPerItem = rangeElapsed.Seconds() / float64(count)
+			}
+			tlogger.Info("Done",
+				"count", count,
+				"range.elapsed", rangeElapsed.Round(time.Second),
+				"start.elapsed", stop.Sub(start).Round(time.Second),
+				"t/s", common.DecimalToFixed(secondsPerItem, 6))
+		}()
+		go func() {
+			for range ticker.C {
+				stop := time.Now()
+				rangeElapsed := last.Sub(first)
+				secondsPerItem := float64(0)
+				if count > 0 {
+					secondsPerItem = rangeElapsed.Seconds() / float64(count)
+				}
+				tlogger.Info("tick",
+					"count", count,
+					"range.elapsed", rangeElapsed.Round(time.Second),
+					"start.elapsed", stop.Sub(start).Round(time.Second),
+					"t/s", common.DecimalToFixed(secondsPerItem, 6))
+			}
 		}()
 		start = time.Now()
 		for el := range in {
