@@ -324,6 +324,12 @@ func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
 }
 
 func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string, tick time.Duration, in <-chan T) <-chan T {
+	// HACK/FIXME
+	// Turn tickers on an off.
+	if label != "In" {
+		return in
+	}
+
 	out := make(chan T)
 	ticker := time.NewTicker(tick)
 	tlogger := slogger.With("MeterTicker", label)

@@ -56,7 +56,7 @@ run() {
       --verbosity 0 \
       --batch-size ${i} \
       --workers 4 \
-      --sort false \
+      --sort true \
       --tiled.skip-edge
     done
 

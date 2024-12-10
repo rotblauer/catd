@@ -132,18 +132,18 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}, stream.MeterTicker(ctx, c.logger, "In", 10*time.Second, in))
 	sanitized := stream.Transform(ctx, cattrack.Sanitize,
 		stream.MeterTicker(ctx, c.logger, "Validated", 10*time.Second, validated))
-	//pipedLast := sanitized
-	//if sort {
-	//	// Sorting is blocking.
-	//	sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
-	//	pipedLast = stream.MeterTicker(ctx, c.logger, "Sorted", 10*time.Second, sorted)
-	//}
+	pipedLast := sanitized
+	if sort {
+		// Sorting is blocking.
+		sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		pipedLast = stream.MeterTicker(ctx, c.logger, "Sorted", 10*time.Second, sorted)
+	}
 
 	// Fork stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
-	}, sanitized)
+	}, pipedLast)
 
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, stream.Meter(ctx, "Store Snaps", yesSnaps))
