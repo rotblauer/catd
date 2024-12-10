@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -195,6 +196,16 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 // Args from the last all are persisted.
 func (d *TileDaemon) pending(args *TilingRequestArgs) {
 	d.pendingTTLCache.Set(args.id(), args, 0)
+}
+
+// mbtileserverHUP tries to reload a/any 'mbtileserver' instance
+// by sending in a HUP signal which it uses a signal to reload tiles.
+func (d *TileDaemon) mbtileserverHUP() ([]byte, error) {
+	// Execute the following command, which will signal any
+	// running mbtileserver processes to reload serviced tilesets.
+	// pgrep mbtileserver | tail -1 | xargs kill -HUP
+	return exec.Command("sh", "-c",
+		`pgrep mbtileserver | tail -1 | xargs kill -HUP`).Output()
 }
 
 type SourceSchema struct {
@@ -669,6 +680,12 @@ func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) 
 	if err := d.tiling(args, reply); err != nil {
 		return err
 	}
+
+	// TODO
+	//// Try reload mbtileserver.
+	//if out, err := d.mbtileserverHUP(); err != nil {
+	//	d.logger.Warn("Failed to HUP mbtileserver", "error", err, "output", string(out))
+	//}
 
 	// We can safely return now if this was canon;
 	// there's no magic after the canon run.

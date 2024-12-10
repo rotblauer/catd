@@ -131,7 +131,10 @@ Missoula, Montana
 		workersWG := new(sync.WaitGroup)
 
 		quitScanner := make(chan struct{}, 1)
-		catChCh, errCh := stream.ScanLinesUnbatchedCats(os.Stdin, quitScanner, optWorkersN, params.DefaultBatchSize)
+		catChCh, errCh := stream.ScanLinesUnbatchedCats(
+			os.Stdin, quitScanner,
+			optWorkersN, params.DefaultBatchSize, params.DefaultBatchSize*10)
+
 		go func() {
 			for i := 0; i < 2; i++ {
 				select {
@@ -278,8 +281,10 @@ Also relatively important for cat tracking.`)
 		`Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT.
 For best results, use a value approximately equivalent to the total number cats.`)
 
-	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", 100_000,
-		`Number of tracks per cat-batch through the cat-scanner. `)
+	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", params.DefaultBatchSize,
+		`Number of tracks per cat-batch.
+This value is used for buffering incoming tracks, for sorting, and for indexing.
+`)
 
 	pFlags.Int64Var(&optSkipOverrideN, "skip", 0,
 		`Skip n lines before the cat scanner scans. (Easier than zcat | tail | head.)`)

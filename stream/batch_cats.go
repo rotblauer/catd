@@ -162,7 +162,7 @@ func sendErr(errs chan error, err error) {
 	}
 }
 
-func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN int) (chan chan []byte, chan error) {
+func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN, closeCatAfterInt int) (chan chan []byte, chan error) {
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
 	catChCh := make(chan chan []byte, workersN)
@@ -174,7 +174,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 		// A cat not seen in this many lines will have their channel closed.
 		// Upon meeting this cat later, a new channel will be opened.
-		closeCatAfter := uint64(bufferN) + 1
+		closeCatAfter := uint64(closeCatAfterInt)
 		// A map of cat:line_index.
 		catLastMap := sync.Map{}
 		// A map of cat:channel.

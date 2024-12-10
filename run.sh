@@ -3,8 +3,6 @@
 # Batches of 1_000 in 300ms.
 # Batches of 100_000 in ~30s = 30_000ms - about 10x faster.
 
-rm -rf /tmp/catd*
-
 review() {
   for i in 100_000; do
     echo
@@ -20,22 +18,7 @@ ${l} ${f}"
   done
 }
 
-# BEWARE. Dev only.
-# ctrl-cing the tee'd catd command will not allow catd to shutdown gracefully.
-run() {
-  set -e
-
-#  local source_gz="edge.20241008.json.gz"
-  local source_gz="edge.json.gz"
-#  local source_gz="master.json.gz"
-#  local source_gz="local/yyyy-mm/2024*.json.gz"
-#  local source_gz="local/yyyy-mm/2024-07.json.gz"
-#  local source_gz="local/yyyy-mm/2024-09.json.gz"
-#  local source_gz="local/yyyy-mm/2024-12.json.gz"
-#  local source_gz="local/yyyy-mm/2024-1*.json.gz"
-#  local source_gz="local/yyyy-mm/2024-1*.json.gz"
-
-  tracksource() {
+tracksource() {
 #    zcat ~/tdata/${source_gz}
 #    cat
 #    grep -E '2024-1[1,2]'
@@ -46,18 +29,26 @@ run() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz | head -1000000
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
-  }
+}
 
-  go install . &&\
-   for i in 100_000; do
-    tracksource \
-    | catd populate --datadir "/tmp/catd${i}" \
-      --verbosity 0 \
-      --batch-size ${i} \
-      --workers 0 \
-      --sort true \
-      --tiled.skip-edge
-    done
+# BEWARE. Dev only.
+# ctrl-cing the tee'd catd command will not allow catd to shutdown gracefully.
+run() {
+  set -e
+  go install .
+  rm -rf /tmp/catd/cats/
+  rm -rf /tmp/catd/tiled/source/
+  tracksource \
+  | catd populate \
+    --datadir /tmp/catd \
+    --verbosity 0 \
+    --batch-size 10_000 \
+    --workers 0 \
+    --sort true \
+    --tiled.skip-edge
+
+  { pgrep mbtileserver | tail -1 | xargs kill -HUP ;} || true;
+}
 
 #  catd webd --datadir "/tmp/catd100_000" --http.port 3003 --verbosity 0
 
@@ -65,7 +56,6 @@ run() {
 #    |& tee run.out; done
       # --skip 1_000_000 \
 #  review
-}
 run
 
 

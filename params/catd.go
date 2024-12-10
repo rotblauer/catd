@@ -31,7 +31,7 @@ var CatStateDBName = "state.db"
 var CatStateBucket = []byte("state")
 var CatSnapBucket = []byte("snaps")
 
-var DefaultBatchSize = 1
+var DefaultBatchSize = 100_000
 
 var DefaultGZipCompressionLevel = gzip.BestCompression
 
