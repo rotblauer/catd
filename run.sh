@@ -44,8 +44,8 @@ run() {
 #     zcat "${HOME}/tdata/edge.json.gz"
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
-#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
-    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
+    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
   }
 
   go install . &&\

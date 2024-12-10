@@ -22,6 +22,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
 	// Cat/thread safe because gz file locks.
 	// Cat pushes will be stored in cat push/populate-batches.
+	c.logger.Info("Waiting on master locker...")
 	gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
 		NamedGZWriter(params.MasterTracksGZFileName, nil)
 	if err != nil {
