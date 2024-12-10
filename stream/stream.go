@@ -297,14 +297,14 @@ func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
 		defer func() {
 			stop := time.Now()
 			rangeElapsed := last.Sub(first)
-			secondsPerItem := float64(0)
+			tps := float64(0)
 			if count > 0 {
-				secondsPerItem = rangeElapsed.Seconds() / float64(count)
+				tps = float64(count) / rangeElapsed.Seconds()
 			}
 			slog.Info("Meter", "label", label, "count", count,
 				"range.elapsed", rangeElapsed.Round(time.Second),
 				"start.elapsed", stop.Sub(start).Round(time.Second),
-				"t/s", common.DecimalToFixed(secondsPerItem, 6))
+				"t/s", common.DecimalToFixed(tps, 0))
 		}()
 		start = time.Now()
 		for el := range in {
@@ -337,29 +337,29 @@ func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string,
 			ticker.Stop()
 			stop := time.Now()
 			rangeElapsed := last.Sub(first)
-			secondsPerItem := float64(0)
+			tps := float64(0)
 			if count > 0 {
-				secondsPerItem = rangeElapsed.Seconds() / float64(count)
+				tps = float64(count) / rangeElapsed.Seconds()
 			}
 			tlogger.Info("Done",
 				"count", count,
 				"range.elapsed", rangeElapsed.Round(time.Second),
 				"start.elapsed", stop.Sub(start).Round(time.Second),
-				"t/s", common.DecimalToFixed(secondsPerItem, 6))
+				"t/s", common.DecimalToFixed(tps, 0))
 		}()
 		go func() {
 			for range ticker.C {
 				stop := time.Now()
 				rangeElapsed := last.Sub(first)
-				secondsPerItem := float64(0)
+				tps := float64(0)
 				if count > 0 {
-					secondsPerItem = rangeElapsed.Seconds() / float64(count)
+					tps = float64(count) / rangeElapsed.Seconds()
 				}
 				tlogger.Info("tick",
 					"count", count,
 					"range.elapsed", rangeElapsed.Round(time.Second),
 					"start.elapsed", stop.Sub(start).Round(time.Second),
-					"t/s", common.DecimalToFixed(secondsPerItem, 6))
+					"t/s", common.DecimalToFixed(tps, 0))
 			}
 		}()
 		start = time.Now()

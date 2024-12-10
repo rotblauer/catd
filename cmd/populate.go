@@ -199,7 +199,7 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	}
 
 	var cat *api.Cat
-	defer cat.Close()
+	//defer cat.Close()
 
 	first := <-catCh // FIXME
 	slog.Info("First track", "cat", catN, "track", string(first))

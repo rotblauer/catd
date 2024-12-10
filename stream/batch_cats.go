@@ -300,8 +300,6 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		dec := json.NewDecoder(reader)
 		catMap := sync.Map{}
 		catCount := 0
-		quitCat := make(chan struct{})
-		//wait := sync.WaitGroup{}
 		tlogger := &readTrackLogger{
 			interval: 5 * time.Second,
 		}
@@ -312,7 +310,12 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		defer func() {
 			slog.Info("Unbatcher done", "catCount", catCount, "lines", tlogger.n.Load())
 		}()
-		pipeWriters := []io.WriteCloser{}
+
+		quitCat := make(chan struct{})
+		//eofCat := []chan struct{}{}
+		//wait := sync.WaitGroup{}
+		//pipeWriters := []io.WriteCloser{}
+
 		for {
 			select {
 			case <-quit:
@@ -330,6 +333,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			err := dec.Decode(&msg)
 			if err != nil {
 				if errors.Is(err, io.EOF) {
+					slog.Info("Unbatcher EOF")
 					break
 				}
 				sendErr(errs, fmt.Errorf("scanner(%w)", err))
@@ -344,12 +348,13 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 			catID := names.AliasOrSanitizedName(cat)
-			if _, loaded := catMap.LoadOrStore(catID, struct{}{}); loaded {
+
+			actualCatCh, loaded := catMap.LoadOrStore(catID, make(chan []byte, bufferN))
+			if loaded {
+				actualCatCh.(chan []byte) <- msg
 				continue // questing fresh cats
 			}
 
-			// fresh cat
-			//wait.Add(1)
 			ct := cattrack.CatTrack{}
 			err = json.Unmarshal(msg, &ct)
 			if err != nil {
@@ -359,105 +364,53 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
 			catCount++
 
-			catR, catW := io.Pipe()
-			tee := io.TeeReader(io.MultiReader(dec.Buffered(), reader), catW)
-			dec = json.NewDecoder(tee)
-			pipeWriters = append(pipeWriters, catW)
-
-			defer func() {
-				// FIXME - (?) close (all) the pipe r/w's after the for loop, not deferred.
-				//if err := catW.Close(); err != nil {
-				//	slog.Error("catW.Close()", "error", err)
-				//}
-				//if err := catR.Close(); err != nil {
-				//	slog.Error("catR.Close()", "error", err)
-				//}
-
-			}()
-
-			go func() {
-				//defer wait.Done()
-
-				slog.Info("Unbatcher reading cat", "cat", catID)
-				tracksCh, catErrs := readCat(catID, catR, bufferN, quitCat)
-				catChCh <- tracksCh
-
-				slog.Info("Unbatcher sent <- tracksCh", "cat", catID)
-				defer func() {
-					slog.Info("Unbatcher closing cat", "cat", catID)
-					//catR.Close()
-				}()
-				for {
-					select {
-					case err, open := <-catErrs:
-						if !open {
-							return
-						}
-						if err != nil {
-							if errors.Is(err, io.EOF) {
-								slog.Info("Unbatcher cat EOF", "cat", catID)
-								return
-							}
-							slog.Error("Unbatcher cat error", "cat", catID, "error", err)
-							sendErr(errs, err)
-							return
-						}
-						return
-					case <-quit:
-						return
-					}
-				}
-			}()
+			catChCh <- actualCatCh.(chan []byte)
+			actualCatCh.(chan []byte) <- msg
 		}
-		//for i, w := range pipeWriters {
-		//	if err := w.Close(); err != nil {
-		//		slog.Error("pipeWriter.Close()", "error", err)
-		//	} else {
-		//		slog.Info("pipeWriter closed", "i", i)
-		//	}
-		//}
-		//wait.Wait()
+		catMap.Range(func(key, value interface{}) bool {
+			close(value.(chan []byte))
+			return true
+		})
 	}()
 	return catChCh, errs
 }
 
-func readCat(catId string, reader io.Reader, bufferN int, quit chan struct{}) (chan []byte, chan error) {
-	catCh := make(chan []byte, bufferN)
-	errCh := make(chan error, 1)
-	go func(catID string, reader io.Reader) {
-		defer close(catCh)
-		defer close(errCh)
-		// read catReader and send []byte to cat chan
-		catDec := json.NewDecoder(reader)
-		for {
-			select {
-			case <-quit:
-				return
-			default:
-			}
-			msg := json.RawMessage{}
-			err := catDec.Decode(&msg)
-			if err != nil {
-				if errors.Is(err, io.EOF) {
-					sendErr(errCh, err)
-					return
-				}
-				sendErr(errCh, fmt.Errorf("%s(%w): %s", catID, err, string(msg)))
-				return
-			}
-			name := gjson.GetBytes(msg, "properties.Name").String()
-			if name == "" {
-				sendErr(errCh, fmt.Errorf("cat(%s) missing properties.Name in line: %s", catID, string(msg)))
-				return
-			}
-			if catId != names.AliasOrSanitizedName(name) {
-				continue
-			}
-			catCh <- msg
-		}
-	}(catId, reader)
-	return catCh, errCh
-}
+//func readCat(catId string, lines chan []byte, bufferN int, quit chan struct{}) (chan []byte, chan error) {
+//	catCh := make(chan []byte, bufferN)
+//	errCh := make(chan error, 1)
+//	go func() {
+//		defer close(catCh)
+//		defer close(errCh)
+//		// read catReader and send []byte to cat chan
+//		catDec := json.NewDecoder(reader)
+//		for line := range lines {
+//			select {
+//			case <-quit:
+//				return
+//			default:
+//			}
+//			msg := json.RawMessage{}
+//			err := catDec.Decode(&msg)
+//			if err != nil {
+//				if errors.Is(err, io.EOF) {
+//					return
+//				}
+//				sendErr(errCh, fmt.Errorf("%s(%w): %s", catID, err, string(msg)))
+//				return
+//			}
+//			name := gjson.GetBytes(msg, "properties.Name").String()
+//			if name == "" {
+//				sendErr(errCh, fmt.Errorf("cat(%s) missing properties.Name in line: %s", catID, string(msg)))
+//				return
+//			}
+//			if catId != names.AliasOrSanitizedName(name) {
+//				continue
+//			}
+//			catCh <- msg
+//		}
+//	}()
+//	return catCh, errCh
+//}
 
 /*
 panic: runtime error: invalid memory address or nil pointer dereference
