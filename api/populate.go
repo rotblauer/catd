@@ -204,6 +204,21 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return lastErr
 }
 
+func sinkStreamToJSONWriter[T any](ctx context.Context, c *Cat, wr io.Writer, in <-chan T) {
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		defer c.logger.Info("Sunk JSON stream to writer")
+		enc := json.NewEncoder(wr)
+		// Blocking.
+		stream.Sink(ctx, func(a T) {
+			if err := enc.Encode(a); err != nil {
+				c.logger.Error("Failed to write", "error", err)
+			}
+		}, in)
+	}()
+}
+
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
 	c.State.Waiting.Add(1)
 	go func() {

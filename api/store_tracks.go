@@ -6,6 +6,7 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"os"
 )
 
@@ -18,62 +19,52 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 
+	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
+	// Cat/thread safe because gz file locks.
+	// Cat pushes will be stored in cat push/populate-batches.
+	gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
+		NamedGZWriter(params.MasterTracksGZFileName, nil)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		select {
+		case errCh <- err:
+		default:
+		}
+		return
+	}
+
+	truncate := flat.DefaultGZFileWriterConfig()
+	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	gzftwLast, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
+	if err != nil {
+		c.logger.Error("Failed to create custom writer", "error", err)
+		select {
+		case errCh <- err:
+		default:
+		}
+	}
+
+	cattracks, err := c.State.NamedGZWriter(params.TracksGZFileName)
+	if err != nil {
+		c.logger.Error("Failed to create track writer", "error", err)
+		select {
+		case errCh <- err:
+		default:
+		}
+		return
+	}
+
 	// Tee for storage globally (master) and per cat.
-	master := make(chan cattrack.CatTrack)
-	myCat := make(chan cattrack.CatTrack)
-	pushLast := make(chan cattrack.CatTrack)
-	count := make(chan cattrack.CatTrack)
-	stream.TeeMany(ctx, in, master, myCat, pushLast, count)
+	//master := make(chan cattrack.CatTrack)
+	//myCat := make(chan cattrack.CatTrack)
+	//pushLast := make(chan cattrack.CatTrack)
+	//count := make(chan cattrack.CatTrack)
+	//stream.TeeMany(ctx, in, master, myCat, pushLast, count)
 
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
-		// Cat/thread safe because gz file locks.
-		// Cat pushes will be stored in cat push/populate-batches.
-		gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
-			NamedGZWriter(params.MasterTracksGZFileName, nil)
-		if err != nil {
-			c.logger.Error("Failed to create custom writer", "error", err)
-			select {
-			case errCh <- err:
-			default:
-			}
-			return
-		}
-		sinkStreamToJSONGZWriter(ctx, c, gzftwMaster, master)
-	}()
+	write, count := stream.Tee(ctx, in)
+	writeAll := io.MultiWriter(gzftwMaster.Writer(), gzftwLast.Writer(), cattracks.Writer())
 
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		truncate := flat.DefaultGZFileWriterConfig()
-		truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-		gzftwLast, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
-		if err != nil {
-			c.logger.Error("Failed to create custom writer", "error", err)
-			select {
-			case errCh <- err:
-			default:
-			}
-		}
-		sinkStreamToJSONGZWriter(ctx, c, gzftwLast, pushLast)
-	}()
-
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		wr, err := c.State.NamedGZWriter(params.TracksGZFileName)
-		if err != nil {
-			c.logger.Error("Failed to create track writer", "error", err)
-			select {
-			case errCh <- err:
-			default:
-			}
-			return
-		}
-		sinkStreamToJSONGZWriter(ctx, c, wr, myCat)
-	}()
+	sinkStreamToJSONWriter(ctx, c, writeAll, write)
 
 	c.State.Waiting.Add(1)
 	go func() {
