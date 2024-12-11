@@ -10,6 +10,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
+	"sync"
 	"time"
 )
 
@@ -17,8 +18,6 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 
 	lapTracks := make(chan cattrack.CatTrack)
 	napTracks := make(chan cattrack.CatTrack)
-	defer close(lapTracks)
-	defer close(napTracks)
 
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
@@ -42,26 +41,6 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	notifyLaps := make(chan cattrack.CatLap)
 	stream.TeeMany(ctx, simplified, sinkLaps, sendLaps, notifyLaps)
 
-	wr, err := c.State.Flat.NamedGZWriter(params.LapsGZFileName, nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return err
-	}
-	sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "laps",
-			LayerName:  "laps",
-		},
-		TippeConfigName: params.TippeConfigNameLaps,
-		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	}, sendLaps)
-	go stream.Sink(ctx, func(ct cattrack.CatLap) {
-		c.completedLaps.Send(ct)
-	}, notifyLaps)
-
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
 	completedNaps := c.TrackNaps(ctx, napTracks)
@@ -73,22 +52,56 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	notifyNaps := make(chan cattrack.CatNap)
 	stream.TeeMany(ctx, filteredNaps, sinkNaps, sendNaps, notifyNaps)
 
-	wr, err = c.State.Flat.NamedGZWriter(params.NapsGZFileName, nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return err
-	}
-	sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "naps",
-			LayerName:  "naps",
-		},
-		TippeConfigName: params.TippeConfigNameNaps,
-		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	}, sendNaps)
+	expectedErrsN := 4
+	errCh := make(chan error, expectedErrsN)
+	go func() {
+		wr, err := c.State.Flat.NamedGZWriter(params.LapsGZFileName, nil)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			errCh <- err
+			return
+		}
+		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
+	}()
+	go func() {
+		wr, err := c.State.Flat.NamedGZWriter(params.NapsGZFileName, nil)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			errCh <- err
+			return
+		}
+
+		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
+	}()
+	go func() {
+		errCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "laps",
+				LayerName:  "laps",
+			},
+			TippeConfigName: params.TippeConfigNameLaps,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, sendLaps)
+	}()
+	go func() {
+		errCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "naps",
+				LayerName:  "naps",
+			},
+			TippeConfigName: params.TippeConfigNameNaps,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, sendNaps)
+	}()
+
+	go stream.Sink(ctx, func(ct cattrack.CatLap) {
+		c.completedLaps.Send(ct)
+	}, notifyLaps)
+
 	go stream.Sink(ctx, func(ct cattrack.CatNap) {
 		c.completedNaps.Send(ct)
 	}, notifyNaps)
@@ -98,27 +111,63 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		c.logger.Info("Act detection pipeline unblocked")
 	}()
 
-	lastActiveTime := time.Time{}
-
-	// Blocking.
-	stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
-		a := activity.FromString(ct.Properties.MustString("Activity", ""))
-		if act.IsActivityActive(a) {
-
-			lastActiveTime = ct.MustTime()
-			lapTracks <- ct
-
-		} else {
-
-			// Flush last lap if cat is sufficiently napping.
-			if !lastActiveTime.IsZero() &&
-				ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.Interval {
-				ls.Flush()
-				lastActiveTime = time.Time{}
+	sinkWG := sync.WaitGroup{}
+	sinkWG.Add(1)
+	sinkErr := make(chan error, expectedErrsN)
+	go func() {
+		c.logger.Info("Act detection waiting on errors")
+		defer sinkWG.Done()
+		defer close(sinkErr)
+		defer func() {
+			c.logger.Info("Act detection pipeline errors complete")
+		}()
+		for i := 0; i < expectedErrsN; i++ {
+			select {
+			case err := <-errCh:
+				if err != nil {
+					sinkErr <- err
+					c.logger.Error("Act detection pipeline error (looper: err)", "error", err)
+				}
 			}
-
-			napTracks <- ct
 		}
-	}, in)
+	}()
+
+	// nBlocking.
+	lastActiveTime := time.Time{}
+	for ct := range in {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err, open := <-sinkErr:
+			if !open {
+				panic("impossible")
+			}
+			if err != nil {
+				c.logger.Error("Act detection pipeline error (looper: in)", "error", err)
+				return err
+			}
+		default:
+			a := activity.FromString(ct.Properties.MustString("Activity", ""))
+			if act.IsActivityActive(a) {
+
+				lastActiveTime = ct.MustTime()
+				lapTracks <- ct
+
+			} else {
+
+				// Flush last lap if cat is sufficiently napping.
+				if !lastActiveTime.IsZero() &&
+					ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.Interval {
+					ls.Flush()
+					lastActiveTime = time.Time{}
+				}
+
+				napTracks <- ct
+			}
+		}
+	}
+	close(lapTracks)
+	close(napTracks)
+	sinkWG.Wait()
 	return nil
 }

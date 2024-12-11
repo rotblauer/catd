@@ -311,6 +311,7 @@ func Merge[T any](ctx context.Context, ins ...chan T) <-chan T {
 }
 
 // TeeMany is a non-blocking function that sends elements from the input channel to multiple output channels.
+// It is responsible for closing the outputs.
 func TeeMany[T any](ctx context.Context, in <-chan T, outs ...chan T) {
 	go func() {
 		defer func() {

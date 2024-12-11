@@ -14,7 +14,11 @@ import (
 
 // ReproducePipelines causes the cat to regenerate ("re-produce") application (catd)-generated data.
 // This is a destructive operation; it will delete indexes, laps, naps, and tiling source files.
+// Note that it does not remove the cat's TILES, tiled will overwrite them.
 // It reads cat/tracks.gz data and sends it through the producer pipelines.
+//
+// FIXME/TODO: On an {devop,edge} run, this takes 1m20s. cat.Populate takes 1m30s.
+// FIXME: This assumes that the tiled/source is accessible and writable. No offshore tilers.
 func (c *Cat) ReproducePipelines() error {
 	// Dump all tracks from cat/tracks.gz to a transformer
 	// for JSON decoding then on to the CatActPipeline.

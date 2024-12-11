@@ -19,7 +19,7 @@ func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
 		Levels:          catS2.DefaultCellLevels,
-		BatchSize:       (params.DefaultBatchSize / 10) + 1, // 10% of default batch size. Why? Reduce batch-y-ness.
+		BatchSize:       (params.DefaultBatchSize / 10) + 1, // 10% of default batch size? Why? Reduce batch-y-ness.
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 	})
@@ -48,18 +48,16 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
+	sendErrs := make(chan error, 30)
 	for _, level := range cellIndexer.Config.Levels {
-
 		if level < catS2.CellLevelTilingMinimum ||
 			level > catS2.CellLevelTilingMaximum {
 			continue
 		}
-
-		if c.tiledConf == nil {
+		if !c.IsRPCEnabled() {
 			c.logger.Warn("No tiled configuration, skipping S2 indexing", "level", level)
 			continue
 		}
-
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
@@ -102,8 +100,9 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 		chans = append(chans, u2)
 		u2Sub := uniqLevelFeed.Subscribe(u2)
 		subs = append(subs, u2Sub)
-		cellIndexer.Waiting.Add(1)
-		go c.tiledDumpLevelIfUnique(ctx, cellIndexer, level, u2)
+		go func() {
+			sendErrs <- c.tiledDumpLevelIfUnique(ctx, cellIndexer, level, u2)
+		}()
 	}
 
 	// Blocking.
@@ -111,19 +110,20 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer errored", "error", err)
 	}
-	for _, sub := range subs {
+	for i, sub := range subs {
 		sub.Unsubscribe()
+		close(chans[i])
+		rpcErr := <-sendErrs
+		if rpcErr != nil {
+			c.logger.Error("Failed to send unique tracks level", "error", rpcErr)
+			return err
+		}
 	}
-	for _, ch := range chans {
-		close(ch)
-	}
-	cellIndexer.Waiting.Wait()
+	close(sendErrs)
 	return nil
 }
 
-func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {
-	defer cellIndexer.Waiting.Done()
-
+func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
 	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
 	// Block, waiting to see if any unique tracks are sent.
@@ -131,7 +131,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	stream.Sink(ctx, func(track cattrack.CatTrack) { uniqs++ }, unsliced)
 	if uniqs == 0 {
 		c.logger.Debug("No unique tracks for level", "level", level)
-		return
+		return nil
 	}
 
 	// There were some unique tracks at this level.
@@ -150,7 +150,8 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+	sendErrCh := make(chan error, 1)
+	sendErrCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "s2_cells",
@@ -175,6 +176,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 			c.logger.Error("Failed to dump level if unique", "error", err)
 		}
 	}
+	return <-sendErrCh
 }
 
 func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
@@ -195,7 +197,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendBatchToCatRPCClient[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
+	sendToCatRPCClient[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
 		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "s2_cells_first",

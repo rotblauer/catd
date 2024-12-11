@@ -21,6 +21,7 @@ import (
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	"github.com/spf13/cobra"
+	"log/slog"
 	"time"
 )
 
@@ -43,14 +44,17 @@ sorting, and storage steps. Just the fun stuff.
 			cmd.Help()
 			return
 		}
-		d := tiled.NewDaemon(params.DefaultTileDaemonConfig())
-		d.Config.TilingPendingExpiry = 100 * time.Hour
-		d.Config.SkipEdge = true
-		d.Config.AwaitPendingOnShutdown = true
+		slog.Info("Reproducing pipelines for cats", "cats", args)
+		dConfig := params.DefaultTileDaemonConfig()
+		dConfig.TilingPendingExpiry = 1 * time.Hour
+		dConfig.SkipEdge = true
+		dConfig.AwaitPendingOnShutdown = true
+		d := tiled.NewDaemon(dConfig)
 		if err := d.Run(); err != nil {
 			panic(err)
 		}
-		for _, kitty := range args {
+		for i, kitty := range args {
+			slog.Info("Reproducing pipelines for cat", "cat", kitty, "i", i, "n", len(args))
 			cat, err := api.NewCat(conceptual.CatID(kitty), d.Config)
 			if err != nil {
 				panic(err)
@@ -61,9 +65,13 @@ sorting, and storage steps. Just the fun stuff.
 			if err := cat.ReproducePipelines(); err != nil {
 				panic(err)
 			}
+			cat.Close()
+			slog.Info("Reproduced pipelines for cat", "cat", kitty, "i", i, "n", len(args))
 		}
 		d.Stop()
+		slog.Info("Waiting for daemon to stop")
 		d.Wait()
+		slog.Info("Daemon stopped")
 	},
 }
 

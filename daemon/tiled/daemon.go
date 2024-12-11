@@ -49,8 +49,9 @@ type TileDaemon struct {
 	// RPC responses to clients about long-running jobs.
 	tilingEvents *event.FeedOf[TilingResponse]
 
-	done      chan struct{}
-	interrupt chan struct{}
+	done        chan struct{}
+	interrupt   chan struct{}
+	interrupted atomic.Bool
 }
 
 func NewDaemon(config *params.TileDaemonConfig) *TileDaemon {
@@ -87,22 +88,49 @@ func (d *TileDaemon) Run() error {
 	}
 
 	server.HandleHTTP(d.Config.RPCPath, rpc.DefaultDebugPath)
-	l, err := net.Listen(d.Config.RPCNetwork, d.Config.RPCAddress)
+	listen, err := net.Listen(d.Config.RPCNetwork, d.Config.RPCAddress)
 	if err != nil {
 		return err
 	}
 
 	go func() {
-		if err := http.Serve(l, server); err != nil {
+
+		/*
+			2024/12/11 09:03:46 INFO 🗺️ Tiling done d=tile args=rye/s2_cells/level-17-polygons/canonical to=/tmp/catd/tiled/tiles/rye/s2_cells/level-17-polygons.mbtiles took=547ms
+			2024/12/11 09:03:46 INFO 🗺️ Tiling done d=tile args=rye/s2_cells/level-18-polygons/canonical to=/tmp/catd/tiled/tiles/rye/s2_cells/level-18-polygons.mbtiles took=894ms
+			2024/12/11 09:03:46 INFO TileDaemon pending requests complete d=tile
+			2024/12/11 09:03:46 INFO TileDaemon interrupted d=tile awaiting=running
+			2024/12/11 09:03:46 INFO TileDaemon exiting d=tile
+			panic: pattern "/tiler_rpc" (registered at /home/ia/go1.22.2.linux-amd64/go/src/net/rpc/server.go:715) conflicts with pattern "/tiler_rpc" (registered at /home/ia/go1.22.2.linux-amd64/go/s
+			rc/net/rpc/server.go:715):
+			/tiler_rpc matches the same requests as /tiler_rpc
+
+			goroutine 1 [running]:
+			net/http.(*ServeMux).register(...)
+			        /home/ia/go1.22.2.linux-amd64/go/src/net/http/server.go:2733
+			net/http.Handle({0xe27ce3?, 0x40?}, {0x13449c0?, 0xc01814a000?})
+			        /home/ia/go1.22.2.linux-amd64/go/src/net/http/server.go:2717 +0x7d
+			net/rpc.(*Server).HandleHTTP(0xc01814a000, {0xe27ce3?, 0xc000630200?}, {0xe27cb1, 0xa})
+			        /home/ia/go1.22.2.linux-amd64/go/src/net/rpc/server.go:715 +0x3a
+			github.com/rotblauer/catd/daemon/tiled.(*TileDaemon).Run(0xc000630200)
+			        /home/ia/dev/rotblauer/catd/daemon/tiled/daemon.go:90 +0x15f
+			github.com/rotblauer/catd/cmd.init.func2(0xc000191000?, {0xc00045c580?, 0x4?, 0xe2205f?})
+			        /home/ia/dev/rotblauer/catd/cmd/repro.go:51 +0xce
+
+		*/
+		err := http.Serve(listen, server)
+		if err != nil && !d.interrupted.Load() {
 			d.logger.Error("TileDaemon RPC HTTP serve error", "error", err)
 			os.Exit(1)
 		}
+		if err != nil && d.interrupted.Load() {
+			d.logger.Warn("TileDaemon RPC HTTP server stopped", "error", err)
+		}
 		d.logger.Info("TileDaemon RPC HTTP server stopped")
-		os.Exit(0)
 	}()
 
 	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
-		d.logger.Info("Running pending tiling", "args", item.Value().id())
+		d.logger.Info("Pending tiling request up", "args", item.Value().id())
 		// Reset pending if an equivalent request is still running.
 		if _, ok := d.tilingRunningM.Load(item.Key()); ok {
 			d.pending(item.Value())
@@ -124,6 +152,11 @@ func (d *TileDaemon) Run() error {
 
 		// Block until interrupted
 		<-d.interrupt
+		d.interrupted.Store(true)
+
+		if err := listen.Close(); err != nil {
+			d.logger.Error("TileDaemon failed to close listener", "error", err)
+		}
 
 		// Running pending tiling is important for `import` porting in.
 		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
@@ -141,6 +174,7 @@ func (d *TileDaemon) Run() error {
 		d.logger.Info("TileDaemon interrupted", "awaiting", "running")
 		d.running.Wait()
 		d.logger.Info("TileDaemon exiting")
+		server = nil
 		return
 
 	}()
@@ -384,6 +418,9 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 }
 
 func (d *TileDaemon) rollEdgeToBackup(args *TilingRequestArgs) error {
+	if d.Config.SkipEdge {
+		return nil
+	}
 	backupPath, _ := d.SourcePathFor(args.SourceSchema, sourceVersionBackup)
 
 	edgePath, _ := d.SourcePathFor(args.SourceSchema, SourceVersionEdge)

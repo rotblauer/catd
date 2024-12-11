@@ -159,17 +159,33 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		c.logger.Error("Failed to create custom writer", "error", err)
 		return err
 	}
-	sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps)
-	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "snaps",
-			LayerName:  "snaps",
-		},
-		TippeConfigName: params.TippeConfigNameSnaps,
-		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	}, sendSnaps)
+
+	// FIXME Unhandled errors.
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		if err := sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps); err != nil {
+			c.logger.Error("Failed to write snaps", "error", err)
+		}
+	}()
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "snaps",
+				LayerName:  "snaps",
+			},
+			TippeConfigName: params.TippeConfigNameSnaps,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, sendSnaps)
+		if err != nil {
+			c.logger.Error("Failed to send snaps", "error", err)
+		}
+	}()
 
 	// All non-snaps flow to these channels.
 	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
@@ -195,7 +211,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}()
 
 	//// P.S. Don't send all tracks to tiled unless development.
-	//sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+	//sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 	//	SourceSchema: tiled.SourceSchema{
 	//		CatID:      c.CatID,
 	//		SourceName: "tracks",
@@ -219,68 +235,63 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return lastErr
 }
 
-func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) error {
 
-		defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
-		defer func() {
-			if err := wr.Close(); err != nil {
-				c.logger.Error("Failed to close writer", "error", err)
-			}
-		}()
-
-		w := wr.Writer()
-		enc := json.NewEncoder(w)
-
-		// Blocking.
-		stream.Sink(ctx, func(a T) {
-			if err := enc.Encode(a); err != nil {
-				c.logger.Error("Failed to write", "error", err)
-			}
-		}, in)
+	defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
+	defer func() {
+		if err := wr.Close(); err != nil {
+			c.logger.Error("Failed to close writer", "error", err)
+		}
 	}()
+
+	w := wr.Writer()
+	enc := json.NewEncoder(w)
+
+	// Blocking.
+	for a := range in {
+		if err := enc.Encode(a); err != nil {
+			c.logger.Error("Failed to write", "error", err)
+			return err
+		}
+	}
+	return nil
 }
 
-// sendBatchToCatRPCClient sends a batch of features to the Cat RPC client.
+func (c *Cat) IsRPCEnabled() bool {
+	return c.rpcClient != nil
+}
+
+// sendToCatRPCClient sends a batch of features to the Cat RPC client.
 // It is a non-blocking function, and registers itself with the Cat Waiting state.
-func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) {
-	c.State.Waiting.Add(1)
-	if c.rpcClient == nil {
+func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
+	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		go func() {
-			defer c.State.Waiting.Done()
-			stream.Sink(ctx, nil, in)
-		}()
-		return
+		go stream.Sink(ctx, nil, in)
 	}
-	go func() {
-		defer c.State.Waiting.Done()
 
-		all := stream.Collect(ctx, in)
-		if len(all) == 0 {
-			return
+	all := stream.Collect(ctx, in)
+	if len(all) == 0 {
+		c.logger.Warn("No features to send", "source", args.SourceName)
+		return nil
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	enc := json.NewEncoder(buf)
+
+	for _, el := range all {
+		cp := el
+		if err := enc.Encode(cp); err != nil {
+			c.logger.Error("Failed to encode feature", "error", err)
+			return err
 		}
+	}
 
-		buf := bytes.NewBuffer([]byte{})
-		enc := json.NewEncoder(buf)
+	args.JSONBytes = buf.Bytes()
 
-		for _, el := range all {
-			cp := el
-			if err := enc.Encode(cp); err != nil {
-				c.logger.Error("Failed to encode feature", "error", err)
-				return
-			}
-		}
-
-		args.JSONBytes = buf.Bytes()
-
-		err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
-		if err != nil {
-			c.logger.Error("Failed to call RPC client",
-				"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
-		}
-		return
-	}()
+	err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
+	if err != nil {
+		c.logger.Error("Failed to call RPC client",
+			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
+	}
+	return err
 }
