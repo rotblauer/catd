@@ -9,15 +9,12 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ReproducePipelines causes the cat to regenerate ("re-produce") application (catd)-generated data.
-// This is a destructive operation; it will delete indexes, laps, and naps files.
-// It's possible and likely that the cat has been running for some time, and that the data it has
-// is out of date, or that the data has been lost or corrupted.
-// This function is a way to regenerate the data that the cat produces.
-// It assumes that source data (tracks.geojson.gz) has already been stored, so it skips those initial steps.
-// It manually deletes their output files (eg. naps.geojson.gz), and sends them to the ProducerPipelines.
+// This is a destructive operation; it will delete indexes, laps, naps, and tiling source files.
+// It reads cat/tracks.gz data and sends it through the producer pipelines.
 func (c *Cat) ReproducePipelines() error {
 	// Dump all tracks from cat/tracks.gz to a transformer
 	// for JSON decoding then on to the CatActPipeline.
@@ -32,6 +29,24 @@ func (c *Cat) ReproducePipelines() error {
 	if err != nil {
 		c.logger.Error("Failed to create tracks reader", "error", err)
 		return err
+	}
+
+	// carefully rm -rf tiled/source
+	tiledSource := filepath.Join(c.tiledConf.RootDir, "source")
+	fi, err := os.Stat(tiledSource)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.logger.Warn("No tiled source dir to remove", "path", tiledSource)
+		} else {
+			c.logger.Error("Failed to stat tiled source dir", "error", err)
+			return err
+		}
+	} else if fi.IsDir() && strings.Contains(tiledSource, "tiled/source") {
+		if err := os.RemoveAll(tiledSource); err != nil {
+			c.logger.Warn("Failed to remove tiled source dir", "error", err)
+		} else {
+			c.logger.Warn("Removed tiled source dir", "path", tiledSource)
+		}
 	}
 
 	s2IndexDBPath := filepath.Join(c.State.Flat.Path(), catS2.DBName)

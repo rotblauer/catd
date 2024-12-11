@@ -2,20 +2,19 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/dustin/go-humanize"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"os"
 )
 
 // StoreTracks stores incoming CatTracks for one cat to disk.
-func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (errs <-chan error) {
+func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (errCh chan error) {
 	c.getOrInitState(false)
-
-	errCh := make(chan error, 1)
-	defer close(errCh)
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
 
@@ -34,49 +33,52 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	//	return
 	//}
 
+	errCh = make(chan error, 1)
+	defer close(errCh)
+
 	truncate := flat.DefaultGZFileWriterConfig()
 	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	gzftwLast, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
-		select {
-		case errCh <- err:
-		default:
-		}
+		errCh <- err
+		return
 	}
+	rLast := gzftwLast.Writer()
+	defer rLast.Close()
 
 	cattracks, err := c.State.NamedGZWriter(params.TracksGZFileName)
 	if err != nil {
 		c.logger.Error("Failed to create track writer", "error", err)
-		select {
-		case errCh <- err:
-		default:
-		}
+		errCh <- err
 		return
 	}
+	rTracks := cattracks.Writer()
+	defer rTracks.Close()
 
-	// Tee for storage globally (master) and per cat.
-	//master := make(chan cattrack.CatTrack)
-	//myCat := make(chan cattrack.CatTrack)
-	//pushLast := make(chan cattrack.CatTrack)
-	//count := make(chan cattrack.CatTrack)
-	//stream.TeeMany(ctx, in, master, myCat, pushLast, count)
+	writeAll := io.MultiWriter( /* gzftwMaster.Writer(), */ rTracks, rLast)
+	enc := json.NewEncoder(writeAll)
 
-	write, count := stream.Tee(ctx, in)
-	writeAll := io.MultiWriter( /* gzftwMaster.Writer(), */ gzftwLast.Writer(), cattracks.Writer())
+	count := metrics.NewCounter()
+	meter := metrics.NewMeter()
+	defer meter.Stop()
 
-	sinkStreamToJSONWriter(ctx, c, writeAll, write)
+	// Blocking.
+	for ct := range in {
+		if err := enc.Encode(ct); err != nil {
+			c.logger.Error("Failed to write", "error", err)
+			errCh <- err
+			return
+		}
+		count.Inc(1)
+		meter.Mark(1)
+	}
 
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		countN := int64(0)
-		defer func() {
-			c.logger.Info("Stored cat tracks gz", "count", countN)
-		}()
-		stream.Sink[cattrack.CatTrack](ctx, func(ct cattrack.CatTrack) {
-			countN++
-		}, count)
-	}()
-	return errCh
+	countSnap := count.Snapshot()
+	meterSnap := meter.Snapshot()
+	c.logger.Info("Stored cat tracks gzs",
+		"count", humanize.Comma(countSnap.Count()),
+		"tps", humanize.CommafWithDigits(meterSnap.RateMean(), 0),
+	)
+	return
 }

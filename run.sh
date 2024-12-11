@@ -6,11 +6,17 @@ tracksource() {
 #    grep -E '2024-1[1,2]'
 #    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #     zcat "${HOME}"/tdata/edge.json.gz
-     zcat "${HOME}"/tdata/{edge,devop}.json.gz
+     zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
+}
+
+bump_tileservice() {
+    if ! pgrep mbtileserver | tail -1 | xargs kill -HUP
+    then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal &
+    fi
 }
 
 run() {
@@ -20,7 +26,10 @@ run() {
   rm -rf /tmp/catd_tmp
 
   rm -rf /tmp/catd/cats/
-  rm -rf /tmp/catd/tiled/source/
+  # Only remove the source directory, not the tiles.
+  # mbtileserver freaks out if the tiles are removed.
+  # rm -rf /tmp/catd/tiled/source/
+  rm -rf /tmp/catd/tiled/
 
   tracksource \
   | catd populate \
@@ -31,13 +40,18 @@ run() {
     --sort true \
     --tiled.skip-edge
 
-  { pgrep mbtileserver | tail -1 | xargs kill -HUP ;} || true;
+  zcat /tmp/catd/cats/rye/tracks.geojson.gz | wc -l
+  bump_tileservice
 }
 
 repro() {
-  catd --datadir /tmp/catd_tmp repro rye
+  set -e
+  go install .
+  catd --datadir /tmp/catd repro {rye,ia}
+  bump_tileservice
 }
 
-run
+#run
+ repro
 
 

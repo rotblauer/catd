@@ -284,7 +284,8 @@ func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 }
 
 // Merge is a non-blocking function that merges multiple input channels into a single output channel.
-func Merge[T any](ctx context.Context, ins ...<-chan T) <-chan T {
+// It blocks until all input channels are closed.
+func Merge[T any](ctx context.Context, ins ...chan T) <-chan T {
 	out := make(chan T)
 	go func() {
 		defer close(out)

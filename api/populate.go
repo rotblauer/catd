@@ -173,8 +173,26 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// All non-snaps flow to these channels.
 	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
-	storeErrs := c.StoreTracks(ctx, storeCh)
-	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
+			c.logger.Error("Failed to run producer pipelines", "error", err)
+		}
+	}()
+
+	storeErrs := make(chan error, 1)
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		defer close(storeErrs)
+		err := <-c.StoreTracks(ctx, storeCh)
+		if err != nil {
+			c.logger.Error("Failed to store tracks", "error", err)
+			storeErrs <- err
+		}
+	}()
 
 	//// P.S. Don't send all tracks to tiled unless development.
 	//sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
@@ -188,39 +206,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	//}, sendTiledCh)
 
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
-			c.logger.Error("Failed to run producer pipelines", "error", err)
-		}
-	}()
-
 	// Block on any store errors, returning last.
-	c.logger.Info("Blocking on store cat tracks gz")
+	c.logger.Info("Blocking on store cat tracks+snaps gz")
+	merged := stream.Merge(ctx, storeErrs, snapErrs)
 	stream.Sink(ctx, func(e error) {
 		lastErr = e
 		c.logger.Error("Failed to populate CatTrack", "error", lastErr)
-	}, storeErrs)
+	}, merged)
 
 	c.logger.Info("Blocking on cat pipelines")
 	c.State.Waiting.Wait()
 	return lastErr
-}
-
-func sinkStreamToJSONWriter[T any](ctx context.Context, c *Cat, wr io.Writer, in <-chan T) {
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		defer c.logger.Info("Sunk JSON stream to writer")
-		enc := json.NewEncoder(wr)
-		// Blocking.
-		stream.Sink(ctx, func(a T) {
-			if err := enc.Encode(a); err != nil {
-				c.logger.Error("Failed to write", "error", err)
-			}
-		}, in)
-	}()
 }
 
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) {

@@ -2,10 +2,15 @@ package params
 
 import (
 	"compress/gzip"
+	"github.com/ethereum/go-ethereum/metrics"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+func init() {
+	metrics.Enabled = true
+}
 
 const (
 	CatsDir        = "cats"
