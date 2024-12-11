@@ -11,6 +11,8 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -123,6 +125,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	return nil
 }
 
+// tiledDumpLevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
+// FIXME: Dumps for high levels can be large, and currently all these dumps are blocking and sent in one request.
 func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
 	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
@@ -140,7 +144,11 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	// So now we need to send ALL unique tracks at this level to tiled,
 	// and tell tiled to use mode truncate.
 	// This will replace the existing map/level with the newest version of unique tracks.
+	sendErrCh := make(chan error, 1)
 	dump, errs := cellIndexer.DumpLevel(level)
+	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+		return len(s) > 10_000
+	}, dump)
 
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
@@ -150,25 +158,46 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendErrCh := make(chan error, 1)
-	sendErrCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
-		SourceSchema: tiled.SourceSchema{
-			CatID:      c.CatID,
-			SourceName: "s2_cells",
-			LayerName:  fmt.Sprintf("level-%02d-polygons", level),
-		},
-		TippeConfigName: "",
-		TippeConfigRaw:  levelTippeConfig,
-		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
-		SourceModes:     []tiled.SourceMode{tiled.SourceModeTrunc},
-	}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-		cp := track
+	wait := sync.WaitGroup{}
+	didErr := atomic.Bool{}
+	go func() {
+		sourceMode := tiled.SourceModeTrunc
+		first := true
+		stream.Sink(ctx, func(s []cattrack.CatTrack) {
+			if didErr.Load() {
+				return
+			}
+			wait.Add(1)
+			defer wait.Done()
+			if !first {
+				sourceMode = tiled.SourceModeAppend
+			}
+			first = false
+			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+				SourceSchema: tiled.SourceSchema{
+					CatID:      c.CatID,
+					SourceName: "s2_cells",
+					LayerName:  fmt.Sprintf("level-%02d-polygons", level),
+				},
+				TippeConfigName: "",
+				TippeConfigRaw:  levelTippeConfig,
+				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
+				SourceModes:     []tiled.SourceMode{sourceMode},
+			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+				cp := track
 
-		cp.ID = track.MustTime().Unix()
-		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
+				cp.ID = track.MustTime().Unix()
+				cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
 
-		return cp
-	}, dump))
+				return cp
+			}, stream.Slice(ctx, s)))
+			if err != nil {
+				didErr.Store(true)
+				sendErrCh <- err
+			}
+		}, batched)
+		sendErrCh <- nil
+	}()
 
 	// Block on dump errors.
 	for err := range errs {
@@ -176,6 +205,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 			c.logger.Error("Failed to dump level if unique", "error", err)
 		}
 	}
+	wait.Wait()
 	return <-sendErrCh
 }
 

@@ -47,8 +47,8 @@ repro() {
   bump_tileservice &
 }
 
-#run
-repro
+run
+#repro
 
 
 
