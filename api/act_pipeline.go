@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
+func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) error {
+
 	lapTracks := make(chan cattrack.CatTrack)
 	napTracks := make(chan cattrack.CatTrack)
 	defer close(lapTracks)
@@ -44,7 +45,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	wr, err := c.State.Flat.NamedGZWriter(params.LapsGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
-		return
+		return err
 	}
 	sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
 	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
@@ -67,12 +68,15 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 	filteredNaps := stream.Filter(ctx, clean.FilterNaps, completedNaps)
 
 	// End of the line for all cat naps...
-	sinkNaps, sendNaps := stream.Tee(ctx, filteredNaps)
+	sinkNaps := make(chan cattrack.CatNap)
+	sendNaps := make(chan cattrack.CatNap)
+	notifyNaps := make(chan cattrack.CatNap)
+	stream.TeeMany(ctx, filteredNaps, sinkNaps, sendNaps, notifyNaps)
 
 	wr, err = c.State.Flat.NamedGZWriter(params.NapsGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
-		return
+		return err
 	}
 	sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
 	sendBatchToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
@@ -85,6 +89,9 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
 		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, sendNaps)
+	go stream.Sink(ctx, func(ct cattrack.CatNap) {
+		c.completedNaps.Send(ct)
+	}, notifyNaps)
 
 	c.logger.Info("Act detection pipeline blocking")
 	defer func() {
@@ -113,4 +120,5 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) {
 			napTracks <- ct
 		}
 	}, in)
+	return nil
 }

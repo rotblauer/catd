@@ -26,11 +26,8 @@ func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 }
 
 // S2IndexTracks indexes incoming CatTracks for one cat.
-func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
+func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) error {
 	c.getOrInitState(false)
-
-	c.State.Waiting.Add(1)
-	defer c.State.Waiting.Done()
 
 	c.logger.Info("S2 Indexing cat tracks")
 	start := time.Now()
@@ -41,7 +38,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	cellIndexer, err := c.GetDefaultCellIndexer()
 	if err != nil {
 		c.logger.Error("Failed to initialize indexer", "error", err)
-		return
+		return err
 	}
 	defer func() {
 		if err := cellIndexer.Close(); err != nil {
@@ -61,7 +58,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
-			return
+			return err
 		}
 
 		// First paradigm: send unique tracks to tiled, with source mode appending.
@@ -105,6 +102,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 	}
 
 	// Blocking.
+	c.logger.Info("S2 Indexing blocking")
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer errored", "error", err)
 	}
@@ -115,6 +113,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) {
 		close(ch)
 	}
 	cellIndexer.Waiting.Wait()
+	return nil
 }
 
 func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) {

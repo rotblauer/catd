@@ -63,6 +63,26 @@ func (a Activity) String() string {
 	return "Unknown"
 }
 
+func (a Activity) Emoji() string {
+	switch a {
+	case TrackerStateUnknown:
+		return "❓"
+	case TrackerStateStationary:
+		return "🛑"
+	case TrackerStateWalking:
+		return "🚶"
+	case TrackerStateRunning:
+		return "🏃"
+	case TrackerStateBike:
+		return "🚴"
+	case TrackerStateAutomotive:
+		return "🚗"
+	case TrackerStateFlying:
+		return "✈️"
+	}
+	return "❓"
+}
+
 func IsContinuous(a, b Activity) bool {
 	if a == TrackerStateUnknown || b == TrackerStateUnknown {
 		return true

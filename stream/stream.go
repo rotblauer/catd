@@ -3,8 +3,10 @@ package stream
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/rotblauer/catd/common"
 	"io"
+	"log"
 	"log/slog"
 	"slices"
 	"sync"
@@ -82,43 +84,6 @@ func Collect[T any](ctx context.Context, in <-chan T) []T {
 	return out
 }
 
-// BatchSort is a batching function that can sort batches of elements
-// before forwarding them on the channel. The 'sorter' function is optional.
-func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-
-		var batch []T
-		flush := func() {
-			if sorter != nil {
-				if !slices.IsSortedFunc(batch, sorter) {
-					slices.SortFunc(batch, sorter)
-				}
-			}
-			Sink(ctx, func(t T) {
-				out <- t
-			}, Slice(ctx, batch))
-			batch = []T{}
-		}
-		defer flush()
-
-		// Range, blocking until 'in' is closed.
-		for element := range in {
-			batch = append(batch, element)
-			if len(batch) == batchSize {
-				flush()
-			}
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-		}
-	}()
-	return out
-}
-
 // Tee is a non-blocking function that sends copies of each element from the input channel
 // to two output channels.
 func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
@@ -176,6 +141,112 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 	}()
 	return out
 }
+
+// BatchSort is a batching function that can sort batches of elements
+// before forwarding them on the channel. The 'sorter' function is optional.
+func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+
+		var batch []T
+		flush := func() {
+			if sorter != nil {
+				if !slices.IsSortedFunc(batch, sorter) {
+					slices.SortFunc(batch, sorter)
+				}
+			}
+			Sink(ctx, func(t T) {
+				out <- t
+			}, Slice(ctx, batch))
+			batch = []T{}
+		}
+		defer flush()
+
+		// Range, blocking until 'in' is closed.
+		for element := range in {
+			batch = append(batch, element)
+			if len(batch) == batchSize {
+				flush()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	return out
+}
+
+func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in <-chan T) <-chan T {
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		var ring []T
+		defer func() {
+			for _, r := range ring {
+				select {
+				case <-ctx.Done():
+					return
+				case out <- r:
+				}
+			}
+		}()
+		for element := range in {
+			ring = append(ring, element)
+			if len(ring) > 1 {
+				slices.SortFunc(ring, sorter)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case out <- ring[0]:
+				ring = ring[1:]
+			}
+			for len(ring) > size {
+				ring = ring[1:]
+			}
+		}
+	}()
+	return out
+}
+
+//
+//func SortRingMod[T any](ctx context.Context, sorter func(a, b T) int, size int, in <-chan T) <-chan T {
+//	out := make(chan T)
+//	go func() {
+//		defer close(out)
+//		var n atomic.Uint64
+//		var ring = make([]T, size, size)
+//		defer func() {
+//			for _, r := range ring {
+//				select {
+//				case <-ctx.Done():
+//					return
+//				case out <- r:
+//				}
+//			}
+//		}()
+//		for element := range in {
+//			nn := n.Load()
+//			i := nn % uint64(size)
+//			ring[int(i)] = element
+//
+//			if len(ring) > 2 {
+//				slices.SortFunc(ring, sorter)
+//			}
+//			n.Add(1)
+//			select {
+//			case <-ctx.Done():
+//				return
+//			case out <- ring[int(i)]:
+//				n.Add(1)
+//			}
+//		}
+//	}()
+//	return out
+//}
 
 // Unbatch is a non-blocking function that sends slice elements from a slice channel to a single-element output channel.
 // Slices in, items out.
@@ -286,50 +357,7 @@ func TeeFilter[T any](ctx context.Context, filter func(T) bool, in <-chan T) (hi
 	return
 }
 
-func Meter[T any](ctx context.Context, label string, in <-chan T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		var count int
-		var start time.Time
-		var first time.Time
-		var last time.Time
-		defer func() {
-			stop := time.Now()
-			rangeElapsed := last.Sub(first)
-			tps := float64(0)
-			if count > 0 && rangeElapsed.Seconds() > 0 {
-				tps = float64(count) / rangeElapsed.Seconds()
-			}
-			slog.Info("Meter", "label", label, "count", count,
-				"range.elapsed", rangeElapsed.Round(time.Second),
-				"start.elapsed", stop.Sub(start).Round(time.Second),
-				"t/s", common.DecimalToFixed(tps, 0))
-		}()
-		start = time.Now()
-		for el := range in {
-			if count == 0 {
-				first = time.Now()
-			}
-			last = time.Now()
-			select {
-			case <-ctx.Done():
-				return
-			case out <- el:
-				count++
-			}
-		}
-	}()
-	return out
-}
-
 func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string, tick time.Duration, in <-chan T) <-chan T {
-	// HACK/FIXME
-	// Turn tickers on an off.
-	if label != "In" {
-		return in
-	}
-
 	out := make(chan T)
 	ticker := time.NewTicker(tick)
 	tlogger := slogger.With("MeterTicker", label)
@@ -348,7 +376,7 @@ func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string,
 				tps = float64(count) / rangeElapsed.Seconds()
 			}
 			tlogger.Info("Done",
-				"count", count,
+				"line", count,
 				"range.elapsed", rangeElapsed.Round(time.Second),
 				"start.elapsed", stop.Sub(start).Round(time.Second),
 				"t/s", common.DecimalToFixed(tps, 0))
@@ -362,7 +390,7 @@ func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string,
 					tps = float64(count) / rangeElapsed.Seconds()
 				}
 				tlogger.Info("tick",
-					"count", count,
+					"line", count,
 					"range.elapsed", rangeElapsed.Round(time.Second),
 					"start.elapsed", stop.Sub(start).Round(time.Second),
 					"t/s", common.DecimalToFixed(tps, 0))
@@ -424,11 +452,12 @@ func NDJSON[T any](ctx context.Context, in io.Reader) <-chan T {
 		for {
 			var element T
 			if err := dec.Decode(&element); err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
+					log.Println(err)
 					return
 				}
+				log.Println("NDJSON error", err)
 				continue
-				// return?
 			}
 			select {
 			case <-ctx.Done():

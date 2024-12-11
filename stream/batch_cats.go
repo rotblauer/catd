@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dustin/go-humanize"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -11,45 +14,90 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-type readTrackLogger struct {
-	once     sync.Once
-	started  time.Time
-	n        atomic.Uint64
-	logV     any // e.g. track.time
-	interval time.Duration
-	ticker   *time.Ticker
+type tickScanMeter struct {
+	logV       any // any value, eg track.time
+	interval   time.Duration
+	started    time.Time
+	ticker     *time.Ticker
+	nn         atomic.Uint64
+	reg        metrics.Registry
+	count      metrics.Counter
+	size       metrics.Counter
+	countMeter metrics.Meter
+	sizeMeter  metrics.Meter
 }
 
-func (rl *readTrackLogger) mark(val any) {
+func newTickScanMeter(interval time.Duration) *tickScanMeter {
+	metrics.Enabled = true // wtf
+	reg := metrics.NewRegistry()
+	rl := &tickScanMeter{
+		reg:        reg,
+		interval:   interval,
+		started:    time.Now(),
+		nn:         atomic.Uint64{},
+		count:      metrics.NewCounter(),
+		size:       metrics.NewCounter(),
+		countMeter: metrics.NewMeter(),
+		sizeMeter:  metrics.NewMeter(),
+	}
+
+	if err := reg.Register("count.count", rl.count); err != nil {
+		panic(err)
+	}
+	if err := reg.Register("size.count", rl.size); err != nil {
+		panic(err)
+	}
+	if err := reg.Register("line.meter", rl.countMeter); err != nil {
+		panic(err)
+	}
+	if err := reg.Register("size.meter", rl.sizeMeter); err != nil {
+		panic(err)
+	}
+	rl.nn.Store(0)
+	go rl.run()
+	return rl
+}
+
+func (rl *tickScanMeter) mark(val any, data []byte) {
 	rl.logV = val
-	rl.n.Add(1)
+	rl.nn.Add(1)
+	rl.count.Inc(1)
+	rl.size.Inc(int64(len(data)))
+	rl.countMeter.Mark(1)
+	rl.sizeMeter.Mark(int64(len(data)))
 }
 
-func (rl *readTrackLogger) run() {
+func (rl *tickScanMeter) run() {
 	rl.ticker = time.NewTicker(rl.interval)
 	for range rl.ticker.C {
 		rl.log()
 	}
 }
 
-func (rl *readTrackLogger) log() {
-	n := rl.n.Load()
-	tps := math.Round(float64(n) / time.Since(rl.started).Seconds())
-	slog.Info("Read tracks", "n", n, "read.last", rl.logV, "tps", tps,
+func (rl *tickScanMeter) log() {
+
+	countSnap := rl.countMeter.Snapshot()
+	sizeSnap := rl.sizeMeter.Snapshot()
+
+	slog.Info("Read tracks", "n", countSnap.Count(), "read.last", rl.logV,
+		"tps", common.DecimalToFixed(countSnap.Rate1(), 0),
+		"bps", humanize.Bytes(uint64(sizeSnap.Rate1())),
+		"total.bytes", humanize.Bytes(uint64(sizeSnap.Count())),
 		"running", time.Since(rl.started).Round(time.Second))
 }
 
-func (rl *readTrackLogger) done() {
+func (rl *tickScanMeter) stop() {
 	if rl == nil || rl.ticker == nil {
 		return
 	}
 	rl.ticker.Stop()
+	rl.countMeter.Stop()
+	rl.sizeMeter.Stop()
 }
 
 // ScanLinesBatchingCats returns a buffered channel (of 'workers' size)
@@ -71,9 +119,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 		catBatches := map[string][][]byte{}
 		dec := json.NewDecoder(reader)
 
-		tlogger := &readTrackLogger{
-			interval: 5 * time.Second,
-		}
+		met := newTickScanMeter(5 * time.Second)
 
 	readLoop:
 		for {
@@ -101,16 +147,13 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 				break
 			}
 
-			readN++
-
 			readOnce.Do(func() {
 				slog.Info("Reading tracks")
-				tlogger.started = time.Now()
-				tlogger.n.Store(0)
-				go tlogger.run()
+				met.started = time.Now()
 			})
 
-			tlogger.mark(gjson.GetBytes(msg, "properties.Time").String())
+			readN++
+			met.mark(gjson.GetBytes(msg, "properties.Time").String(), msg)
 
 			result := gjson.GetBytes(msg, "properties.Name")
 			if !result.Exists() {
@@ -138,7 +181,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			}
 		}
 
-		tlogger.done()
+		met.stop()
 
 		// Flush any remaining cats (partial batches)
 		for cat, trackLines := range catBatches {
@@ -184,17 +227,13 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			return true
 		})
 
-		tlogger := &readTrackLogger{
-			interval: 5 * time.Second,
-		}
-		tlogger.started = time.Now()
-		tlogger.n.Store(0)
-		go tlogger.run()
-		defer tlogger.done()
+		met := newTickScanMeter(5 * time.Second)
+		defer met.stop()
 
 		catCount := 0
 		defer func() {
-			slog.Info("Unbatcher done", "catCount", catCount, "lines", tlogger.n.Load())
+			total := met.countMeter.Snapshot().Count()
+			slog.Info("Unbatcher done", "catCount", catCount, "lines", total)
 		}()
 		for {
 			select {
@@ -213,7 +252,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				sendErr(errs, fmt.Errorf("scanner(%w)", err))
 				return
 			}
-			tlogger.mark(gjson.GetBytes(msg, "properties.Time").String())
+			met.mark(gjson.GetBytes(msg, "properties.Time").String(), msg)
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
 				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
@@ -223,7 +262,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 			// Every once in bufferN, check to see if there are cats we haven't seen tracks from since last.
 			// For these expired cats, close their chans to free up resources, and make way for more cats.
-			if n := tlogger.n.Load(); n%closeCatAfter == 0 {
+			if n := met.nn.Load(); n%closeCatAfter == 0 {
 				expired := []conceptual.CatID{}
 				catLastMap.Range(func(catID, last interface{}) bool {
 					if n-last.(uint64) > closeCatAfter {
@@ -242,7 +281,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				}
 			}
 
-			catLastMap.Store(catID, tlogger.n.Load())
+			catLastMap.Store(catID, met.nn.Load())
 			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, bufferN))
 			if loaded {
 				v.(chan []byte) <- msg
@@ -311,7 +350,7 @@ panic: runtime error: invalid memory address or nil pointer dereference
 goroutine 14 [running]:
 time.(*Ticker).Stop(...)
         /home/ia/go1.22.2.linux-amd64/go/src/time/tick.go:45
-github.com/rotblauer/catd/stream.(*readTrackLogger).done(...)
+github.com/rotblauer/catd/stream.(*tickScanMeter).done(...)
         /home/ia/dev/rotblauer/catd/stream/batch_cats.go:47
 github.com/rotblauer/catd/stream.ScanLinesBatchingCats.func1(0xc00005e780, 0xc000032660, {0xb3c880, 0xc00011a018})
         /home/ia/dev/rotblauer/catd/stream/batch_cats.go:176 +0xc71

@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rotblauer/catd/catdb/cache"
+	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/daemon/tiled"
-	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
+	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"math"
 	"net/rpc"
 	"time"
 )
@@ -78,9 +79,46 @@ func (c *Cat) dialRPCServer() error {
 	return nil
 }
 
+func (c *Cat) SubscribeFancyLogs() {
+	// Let's celebrate laps.
+	onLaps := make(chan cattrack.CatLap)
+	c.completedLaps.Subscribe(onLaps)
+	defer close(onLaps)
+	go func() {
+		for lap := range onLaps {
+			a := activity.FromString(lap.Properties.MustString("Activity", "Unknown"))
+			c.logger.Info(fmt.Sprintf(
+				"%s Completed lap", a.Emoji()),
+				"lap.duration", lap.Duration().Truncate(time.Second),
+				"lap.meters", humanize.SIWithDigits(lap.DistanceTraversed(), 2, "m"),
+				"lap.activity", a.String(),
+			)
+		}
+	}()
+	// And naps...
+	onNaps := make(chan cattrack.CatNap)
+	c.completedNaps.Subscribe(onNaps)
+	defer close(onNaps)
+	go func() {
+		for nap := range onNaps {
+			area := nap.Properties.MustFloat64("Area", 0)
+			edge := math.Sqrt(area)
+			seconds := nap.Properties.MustFloat64("Duration", 0)
+			duration := time.Duration(seconds * float64(time.Second))
+			c.logger.Info(fmt.Sprintf("%s Completed nap", activity.TrackerStateStationary.Emoji()),
+				"nap.duration", duration.Round(time.Second),
+				"nap.area", humanize.SIWithDigits(area, 0, "m²"),
+				"nap.edge", humanize.SIWithDigits(edge, 0, "m"),
+			)
+		}
+	}()
+}
+
 // Populate persists incoming CatTracks for one cat.
 // FIXME: All functions should return errors, and this function should return first of any errors.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
+
+	c.SubscribeFancyLogs()
 
 	// Blocking.
 	c.logger.Info("Populate blocking on lock state")
@@ -108,7 +146,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
-	dedupeCache := cache.NewDedupePassLRUFunc()
+	dedupeCache := cattrack.NewDedupeLRUFunc()
 	validated := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		if ct.IsEmpty() {
 			c.logger.Error("Invalid track: track is empty")
@@ -130,13 +168,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 		return true
 	}, stream.MeterTicker(ctx, c.logger, "In", 10*time.Second, in))
-	sanitized := stream.Transform(ctx, cattrack.Sanitize,
-		stream.MeterTicker(ctx, c.logger, "Validated", 10*time.Second, validated))
+	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
 	pipedLast := sanitized
 	if sort {
 		// Sorting is blocking.
-		sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
-		pipedLast = stream.MeterTicker(ctx, c.logger, "Sorted", 10*time.Second, sorted)
+		//sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 
 	// Fork stream into snaps/no-snaps.
@@ -146,7 +183,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}, pipedLast)
 
 	// Snap storage mutates the original snap tracks.
-	snapped, snapErrs := c.StoreSnaps(ctx, stream.Meter(ctx, "Store Snaps", yesSnaps))
+	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
 	gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
 	if err != nil {
@@ -167,7 +204,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// All non-snaps flow to these channels.
 	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
-	storeErrs := c.StoreTracks(ctx, stream.Meter(ctx, "Store Tracks", storeCh))
+	storeErrs := c.StoreTracks(ctx, storeCh)
 	storeErrs = stream.Merge(ctx, storeErrs, snapErrs)
 
 	//// P.S. Don't send all tracks to tiled unless development.
@@ -182,16 +219,13 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	//}, sendTiledCh)
 
-	// Clean and improve tracks for pipeline handlers.
-	betterTracks := TracksWithOffset(ctx,
-		stream.Meter(ctx, "Improver", c.ImprovedActTracks(ctx,
-			stream.Meter(ctx, "Clean Tracks", c.CleanTracks(ctx, pipelineChan)))))
-	areaPipeCh, vectorPipeCh := stream.Tee(ctx, betterTracks)
-	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
-	go c.S2IndexTracks(ctx, stream.Meter(ctx, "S2 Index", groundedArea))
-	// Laps, naps.
-	// CatActPipeline is an upgrade from `go c.TripDetectionPipeline(ctx, vectorPipeCh)`.
-	go c.CatActPipeline(ctx, stream.Meter(ctx, "Act Pipeline", vectorPipeCh))
+	c.State.Waiting.Add(1)
+	go func() {
+		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
+			c.logger.Error("Failed to run producer pipelines", "error", err)
+		}
+		c.State.Waiting.Done()
+	}()
 
 	// Block on any store errors, returning last.
 	c.logger.Info("Blocking on store cat tracks gz")

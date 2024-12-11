@@ -27,7 +27,7 @@ tracksource() {
      zcat "${HOME}"/tdata/{edge,devop}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
-#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz | head -1000000
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 }
 
@@ -36,8 +36,8 @@ tracksource() {
 run() {
   set -e
   go install .
-  rm -rf /tmp/catd/cats/
-  rm -rf /tmp/catd/tiled/source/
+#  rm -rf /tmp/catd/cats/
+#  rm -rf /tmp/catd/tiled/source/
   tracksource \
   | catd populate \
     --datadir /tmp/catd \
@@ -50,12 +50,9 @@ run() {
   { pgrep mbtileserver | tail -1 | xargs kill -HUP ;} || true;
 }
 
-#  catd webd --datadir "/tmp/catd100_000" --http.port 3003 --verbosity 0
-
-#      --tiled.off
-#    |& tee run.out; done
-      # --skip 1_000_000 \
-#  review
+repro() {
+  catd repro rye
+}
 run
 
 

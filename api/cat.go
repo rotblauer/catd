@@ -31,6 +31,7 @@ type Cat struct {
 	rpcClient *rpc.Client
 
 	completedLaps event.FeedOf[cattrack.CatLap]
+	completedNaps event.FeedOf[cattrack.CatNap]
 }
 
 func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
@@ -39,12 +40,16 @@ func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
 		logger:        slog.With("cat", catID),
 		tiledConf:     daemonConf,
 		completedLaps: event.FeedOf[cattrack.CatLap]{},
+		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
 }
 
 // WithState returns a CatState for the Cat.
 // If readOnly is false it will block.
 func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
+	if c.State != nil {
+		return c.State, nil
+	}
 	s := &state.Cat{CatID: c.CatID}
 	st, err := s.NewCatWithState(readOnly)
 	if err != nil {
