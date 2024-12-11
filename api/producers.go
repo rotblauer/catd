@@ -2,32 +2,44 @@ package api
 
 import (
 	"context"
+	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"time"
 )
 
 func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack) error {
+
+	c.logger.Info("Producer pipelines")
+	defer c.logger.Info("Producer pipelines complete")
+
+	//return c.S2IndexTracks(ctx, in)
+
 	// Clean and improve tracks for pipeline handlers.
-	betterTracks := TracksWithOffset(ctx, c.ImprovedActTracks(ctx, c.CleanTracks(ctx, in)))
-	_, v := stream.Tee(ctx, betterTracks)
-	//groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, a)
-	return c.CatActPipeline(ctx, v)
-	//errs := make(chan error, 2)
-	//go func() {
-	//	errs <- c.S2IndexTracks(ctx, groundedArea)
-	//}()
-	//go func() {
-	//	errs <- c.CatActPipeline(ctx, vectorPipeCh)
-	//}()
-	//for i := 0; i < 2; i++ {
-	//	select {
-	//	case err := <-errs:
-	//		if err != nil {
-	//			return err
-	//		}
-	//	case <-ctx.Done():
-	//		return ctx.Err()
-	//	}
-	//}
-	//return nil
+	cleaned := c.CleanTracks(ctx, in)
+	improved := c.ImprovedActTracks(ctx, cleaned)
+	woffsets := TracksWithOffset(ctx, improved)
+
+	metered := stream.MeterTicker(ctx, c.logger, "ProducerPipelines", 5*time.Second, woffsets)
+	areaPipeCh, vectorPipeCh := stream.Tee(ctx, metered)
+	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
+
+	errs := make(chan error, 2)
+	go func() { errs <- c.S2IndexTracks(ctx, groundedArea) }()
+	go func() { errs <- c.CatActPipeline(ctx, vectorPipeCh) }()
+
+	c.logger.Info("Producer pipelines waiting for completion")
+
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errs:
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	close(errs)
+	return nil
 }

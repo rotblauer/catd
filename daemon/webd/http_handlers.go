@@ -178,7 +178,12 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT better.
 	catID := features[0].CatID()
-	cat := api.NewCat(catID, s.Config.TileDaemonConfig)
+	cat, err := api.NewCat(catID, s.Config.TileDaemonConfig)
+	if err != nil {
+		s.logger.Error("Failed to create cat", "error", err)
+		http.Error(w, "Failed to create cat", http.StatusInternalServerError)
+		return
+	}
 
 	// Collect values for streaming.
 	featureVals := make([]cattrack.CatTrack, len(features))

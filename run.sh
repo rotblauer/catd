@@ -1,26 +1,8 @@
 #!/usr/bin/env bash
 
-# Batches of 1_000 in 300ms.
-# Batches of 100_000 in ~30s = 30_000ms - about 10x faster.
-
-review() {
-  for i in 100_000; do
-    echo
-    echo "- batch=${i} ---";
-    shopt -s globstar
-    local out=""
-    for f in /tmp/catd${i}/{,cats/**/}*.geojson.gz; do
-      l=$(zcat "$f" | wc -l)
-      out="${out}
-${l} ${f}"
-    done;
-    echo "${out}" | sort -r -k1 -n | tail -n 50
-  done
-}
-
 tracksource() {
-#    zcat ~/tdata/${source_gz}
 #    cat
+#    zcat ~/tdata/${source_gz}
 #    grep -E '2024-1[1,2]'
 #    zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #     zcat "${HOME}"/tdata/edge.json.gz
@@ -31,13 +13,15 @@ tracksource() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 }
 
-# BEWARE. Dev only.
-# ctrl-cing the tee'd catd command will not allow catd to shutdown gracefully.
 run() {
   set -e
   go install .
-#  rm -rf /tmp/catd/cats/
-#  rm -rf /tmp/catd/tiled/source/
+
+  rm -rf /tmp/catd_tmp
+
+  rm -rf /tmp/catd/cats/
+  rm -rf /tmp/catd/tiled/source/
+
   tracksource \
   | catd populate \
     --datadir /tmp/catd \
@@ -51,8 +35,9 @@ run() {
 }
 
 repro() {
-  catd repro rye
+  catd --datadir /tmp/catd_tmp repro rye
 }
+
 run
 
 

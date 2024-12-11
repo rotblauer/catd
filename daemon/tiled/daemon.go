@@ -50,7 +50,7 @@ type TileDaemon struct {
 	tilingEvents *event.FeedOf[TilingResponse]
 
 	done      chan struct{}
-	Interrupt chan struct{}
+	interrupt chan struct{}
 }
 
 func NewDaemon(config *params.TileDaemonConfig) *TileDaemon {
@@ -65,7 +65,7 @@ func NewDaemon(config *params.TileDaemonConfig) *TileDaemon {
 		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.TilingPendingExpiry)),
 		tilingEvents:    &event.FeedOf[TilingResponse]{},
 		done:            make(chan struct{}, 1),
-		Interrupt:       make(chan struct{}, 1),
+		interrupt:       make(chan struct{}, 1),
 	}
 }
 
@@ -73,8 +73,12 @@ func (d *TileDaemon) Wait() {
 	<-d.done
 }
 
-// Start starts the tiling daemon and does not block.
-func (d *TileDaemon) Start() error {
+func (d *TileDaemon) Stop() {
+	d.interrupt <- struct{}{}
+}
+
+// Run starts the tiling daemon and does not block.
+func (d *TileDaemon) Run() error {
 	server := rpc.NewServer()
 
 	if err := server.Register(d); err != nil {
@@ -119,7 +123,7 @@ func (d *TileDaemon) Start() error {
 			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
 
 		// Block until interrupted
-		<-d.Interrupt
+		<-d.interrupt
 
 		// Running pending tiling is important for `import` porting in.
 		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")

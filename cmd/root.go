@@ -67,8 +67,15 @@ func init() {
 	pFlags := rootCmd.PersistentFlags()
 	pFlags.StringVar(&cfgFile, "config", "",
 		`Config file (default is $HOME/.catd.yaml)`)
+
 	pFlags.StringVar(&params.DatadirRoot, "datadir", "/tmp/catd",
 		`Root directory for data storage`)
+	
+	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", params.DefaultBatchSize,
+		`Number of tracks per cat-batch.
+This value is used for buffering incoming tracks, for sorting, and for indexing.
+`)
+
 	pFlags.Int("verbosity", 0,
 		`Verbosity level -5, -4..8 (golang/slog) 
 https://pkg.go.dev/log/slog#Level`)

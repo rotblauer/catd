@@ -34,12 +34,12 @@ var tiledCmd = &cobra.Command{
 
 		config := params.DefaultTileDaemonConfig()
 		d := tiled.NewDaemon(config)
-		if err := d.Start(); err != nil {
+		if err := d.Run(); err != nil {
 			log.Fatalln(err)
 		}
 
 		<-common.Interrupted()
-		d.Interrupt <- struct{}{}
+		d.Stop()
 		d.Wait()
 	},
 }

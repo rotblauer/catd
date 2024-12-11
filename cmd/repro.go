@@ -47,11 +47,14 @@ sorting, and storage steps. Just the fun stuff.
 		d.Config.TilingPendingExpiry = 100 * time.Hour
 		d.Config.SkipEdge = true
 		d.Config.AwaitPendingOnShutdown = true
-		if err := d.Start(); err != nil {
+		if err := d.Run(); err != nil {
 			panic(err)
 		}
 		for _, kitty := range args {
-			cat := api.NewCat(conceptual.CatID(kitty), d.Config)
+			cat, err := api.NewCat(conceptual.CatID(kitty), d.Config)
+			if err != nil {
+				panic(err)
+			}
 			if _, err := cat.WithState(false); err != nil {
 				panic(err)
 			}
@@ -59,6 +62,8 @@ sorting, and storage steps. Just the fun stuff.
 				panic(err)
 			}
 		}
+		d.Stop()
+		d.Wait()
 	},
 }
 

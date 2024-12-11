@@ -457,7 +457,7 @@ func NDJSON[T any](ctx context.Context, in io.Reader) <-chan T {
 					return
 				}
 				log.Println("NDJSON error", err)
-				continue
+				return
 			}
 			select {
 			case <-ctx.Done():

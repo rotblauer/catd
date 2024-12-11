@@ -55,6 +55,11 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			continue
 		}
 
+		if c.tiledConf == nil {
+			c.logger.Warn("No tiled configuration, skipping S2 indexing", "level", level)
+			continue
+		}
+
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)

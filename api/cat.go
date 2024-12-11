@@ -34,14 +34,26 @@ type Cat struct {
 	completedNaps event.FeedOf[cattrack.CatNap]
 }
 
-func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) *Cat {
-	return &Cat{
+func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) (*Cat, error) {
+	c := &Cat{
 		CatID:         catID,
 		logger:        slog.With("cat", catID),
 		tiledConf:     daemonConf,
 		completedLaps: event.FeedOf[cattrack.CatLap]{},
 		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
+
+	if c.tiledConf != nil {
+		if err := c.dialRPCServer(); err != nil {
+			c.logger.Error("Failed to dial RPC client", "error", err)
+			return nil, err
+		}
+		c.logger.Info("Dialed RPC client", "network", c.tiledConf.RPCNetwork, "address", c.tiledConf.RPCAddress)
+	} else {
+		c.logger.Debug("No tiled config, not dialing RPC client")
+	}
+
+	return c, nil
 }
 
 // WithState returns a CatState for the Cat.
@@ -67,4 +79,24 @@ func (c *Cat) getOrInitState(readOnly bool) {
 			return
 		}
 	}
+}
+
+func (c *Cat) Close() {
+	if err := c.State.Close(); err != nil {
+		c.logger.Error("Failed to close cat state", "error", err)
+	}
+	if c.rpcClient != nil {
+		if err := c.rpcClient.Close(); err != nil {
+			c.logger.Error("Failed to close RPC client", "error", err)
+		}
+	}
+}
+
+func (c *Cat) dialRPCServer() error {
+	client, err := rpc.DialHTTP(c.tiledConf.RPCNetwork, c.tiledConf.RPCAddress)
+	if err != nil {
+		return err
+	}
+	c.rpcClient = client
+	return nil
 }

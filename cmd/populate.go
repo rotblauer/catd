@@ -120,7 +120,7 @@ Missoula, Montana
 			dConfig.TilingPendingExpiry = optTilingPendingExpiry
 			dConfig.SkipEdge = optTilingSkipEdge
 			d = tiled.NewDaemon(dConfig)
-			if err := d.Start(); err != nil {
+			if err := d.Run(); err != nil {
 				log.Fatal(err)
 			}
 		} else {
@@ -201,7 +201,7 @@ Missoula, Montana
 
 		if !optTilingOff {
 			slog.Info("Interrupting tiled")
-			d.Interrupt <- struct{}{}
+			d.Stop()
 			slog.Info("Waiting on tiled")
 			d.Wait()
 		}
@@ -221,12 +221,16 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	}
 
 	var cat *api.Cat
+	var err error
 
 	first := <-catCh
 	slog.Info("First track", "cat", catN, "track", string(first))
 
 	catID := names.AliasOrSanitizedName(gjson.GetBytes(first, "properties.Name").String())
-	cat = api.NewCat(conceptual.CatID(catID), tiledConfig)
+	cat, err = api.NewCat(conceptual.CatID(catID), tiledConfig)
+	if err != nil {
+		panic(err)
+	}
 	slog.Info("Populating",
 		"cat-worker", fmt.Sprintf("%d/%d", catN, optWorkersN),
 		"cat", cat.CatID)
@@ -255,7 +259,7 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	}, recat)
 
 	// Populate is blocking. It holds a lock on the cat state.
-	err := cat.Populate(ctx, optSortTrackBatches, decoded)
+	err = cat.Populate(ctx, optSortTrackBatches, decoded)
 	if err != nil {
 		slog.Error("Failed to populate CatTracks", "error", err)
 	} else {
@@ -280,11 +284,6 @@ Also relatively important for cat tracking.`)
 	pFlags.IntVar(&optWorkersN, "workers", runtime.NumCPU(),
 		`Number of workers to run in parallel. But remember: cat-populate calls are blocking PER CAT.
 For best results, use a value approximately equivalent to the total number cats.`)
-
-	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", params.DefaultBatchSize,
-		`Number of tracks per cat-batch.
-This value is used for buffering incoming tracks, for sorting, and for indexing.
-`)
 
 	pFlags.Int64Var(&optSkipOverrideN, "skip", 0,
 		`Skip n lines before the cat scanner scans. (Easier than zcat | tail | head.)`)

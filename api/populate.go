@@ -15,7 +15,6 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"math"
-	"net/rpc"
 	"time"
 )
 
@@ -59,31 +58,11 @@ func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err 
 	return nil
 }
 
-func (c *Cat) Close() {
-	if err := c.State.Close(); err != nil {
-		c.logger.Error("Failed to close cat state", "error", err)
-	}
-	if c.rpcClient != nil {
-		if err := c.rpcClient.Close(); err != nil {
-			c.logger.Error("Failed to close RPC client", "error", err)
-		}
-	}
-}
-
-func (c *Cat) dialRPCServer() error {
-	client, err := rpc.DialHTTP(c.tiledConf.RPCNetwork, c.tiledConf.RPCAddress)
-	if err != nil {
-		return err
-	}
-	c.rpcClient = client
-	return nil
-}
-
 func (c *Cat) SubscribeFancyLogs() {
 	// Let's celebrate laps.
 	onLaps := make(chan cattrack.CatLap)
 	c.completedLaps.Subscribe(onLaps)
-	defer close(onLaps)
+	//defer close(onLaps)
 	go func() {
 		for lap := range onLaps {
 			a := activity.FromString(lap.Properties.MustString("Activity", "Unknown"))
@@ -98,7 +77,7 @@ func (c *Cat) SubscribeFancyLogs() {
 	// And naps...
 	onNaps := make(chan cattrack.CatNap)
 	c.completedNaps.Subscribe(onNaps)
-	defer close(onNaps)
+	//defer close(onNaps)
 	go func() {
 		for nap := range onNaps {
 			area := nap.Properties.MustFloat64("Area", 0)
@@ -128,16 +107,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return
 	}
 	c.logger.Info("Populate has the lock on state conn")
-
-	if c.tiledConf != nil {
-		if err := c.dialRPCServer(); err != nil {
-			c.logger.Error("Failed to dial RPC client", "error", err)
-			return err
-		}
-		c.logger.Info("Dialed RPC client", "network", c.tiledConf.RPCNetwork, "address", c.tiledConf.RPCAddress)
-	} else {
-		c.logger.Debug("No tiled config, not dialing RPC client")
-	}
 
 	started := time.Now()
 	defer func() {
@@ -221,10 +190,10 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	c.State.Waiting.Add(1)
 	go func() {
+		defer c.State.Waiting.Done()
 		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
 			c.logger.Error("Failed to run producer pipelines", "error", err)
 		}
-		c.State.Waiting.Done()
 	}()
 
 	// Block on any store errors, returning last.
@@ -281,12 +250,15 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFil
 // sendBatchToCatRPCClient sends a batch of features to the Cat RPC client.
 // It is a non-blocking function, and registers itself with the Cat Waiting state.
 func sendBatchToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) {
+	c.State.Waiting.Add(1)
 	if c.rpcClient == nil {
-		c.logger.Debug("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		//go stream.Sink(ctx, nil, in)
+		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
+		go func() {
+			defer c.State.Waiting.Done()
+			stream.Sink(ctx, nil, in)
+		}()
 		return
 	}
-	c.State.Waiting.Add(1)
 	go func() {
 		defer c.State.Waiting.Done()
 
