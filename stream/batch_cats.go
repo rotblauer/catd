@@ -208,6 +208,7 @@ func sendErr(errs chan error, err error) {
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN, closeCatAfterInt int) (chan chan []byte, chan error) {
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
+	// CHECKME. Leaky faucet somewhere. Smells in here.
 	catChCh := make(chan chan []byte, workersN)
 	errs := make(chan error, 1)
 	go func() {
@@ -280,8 +281,8 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 					catLastMap.Delete(catID)
 				}
 			}
-
 			catLastMap.Store(catID, met.nn.Load())
+
 			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, bufferN))
 			if loaded {
 				v.(chan []byte) <- msg
