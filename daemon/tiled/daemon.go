@@ -239,11 +239,14 @@ func (d *TileDaemon) pending(args *TilingRequestArgs) {
 	}
 }
 
+// storePending is the structure of a pending request in the database.
 type storePending struct {
 	At      time.Time
 	Request *TilingRequestArgs
 }
 
+// unpersistPending removes a pending request from the database.
+// It is called exclusively by the function responsible for running the request (d.callTiling).
 func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 	return d.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("pending"))
@@ -254,8 +257,8 @@ func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 	})
 }
 
+// Recover attempts to recover pending requests from the database.
 func (d *TileDaemon) Recover() error {
-	reqs := []*TilingRequestArgs{}
 	err := d.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("pending"))
 		if b == nil {
@@ -266,8 +269,7 @@ func (d *TileDaemon) Recover() error {
 			if err := json.Unmarshal(v, &s); err != nil {
 				return err
 			}
-			//d.pending(s.Request)
-			reqs = append(reqs, s.Request)
+			d.pending(s.Request)
 			return nil
 		})
 	})
@@ -275,24 +277,7 @@ func (d *TileDaemon) Recover() error {
 		d.logger.Error("Failed to recover pending requests", "error", err)
 		return err
 	}
-	if len(reqs) == 0 {
-		d.logger.Warn("No pending requests to recover")
-		return nil
-	}
-	removes := []*TilingRequestArgs{}
-	for _, req := range reqs {
-		rep := &TilingResponse{}
-		if err := d.callTiling(req, rep); err != nil {
-			d.logger.Error("Failed to run recovered pending tiling", "error", err)
-			return err
-		}
-		if !rep.Success {
-			d.logger.Error("Failed to recover pending tiling", "args", req.id(), "error", err)
-		} else {
-			removes = append(removes, req)
-			d.logger.Info("Recovered pending tiling", "args", req.id(), "success", rep.Success)
-		}
-	}
+	d.awaitPendingTileRequests()
 	return nil
 }
 
