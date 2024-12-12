@@ -40,7 +40,10 @@ type TileDaemon struct {
 	// and should not compete on file locks with the main app, which could quickly
 	// result in corrupted data.
 	flat *flat.Flat
-	db   *bbolt.DB
+
+	// db is the bbolt database for the tiling daemon.
+	// It is used to persist pending tiling requests.
+	db *bbolt.DB
 
 	logger          *slog.Logger
 	tilingRunningM  sync.Map
@@ -141,25 +144,28 @@ func (d *TileDaemon) Run() error {
 				d.logger.Error("TileDaemon failed to close db", "error", err)
 				os.Exit(1)
 			}
-			d.done <- struct{}{}
-			close(d.done)
+			d.markDone()
 		}()
 		d.logger.Info("TileDaemon RPC HTTP server started",
 			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
 
 		// Block until interrupted
 		<-d.interrupt
+		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
+
 		d.interrupted.Store(true)
 
 		if err := listen.Close(); err != nil {
 			d.logger.Error("TileDaemon failed to close listener", "error", err)
 		}
 
-		// Running pending tiling is important for `import` porting in.
-		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
-		d.running.Wait()
+		if err := d.db.Close(); err != nil {
+			d.logger.Error("TileDaemon failed to close db", "error", err)
+		}
 
+		// Running pending tiling is important for `import` porting in.
 		d.pendingTTLCache.Stop()
+		d.running.Wait()
 
 		// Run all pending tiling on shutdown.
 		// This is a blocking operation, graceful though it may be, and long though it may be.
@@ -178,6 +184,11 @@ func (d *TileDaemon) Run() error {
 	return nil
 }
 
+func (d *TileDaemon) markDone() {
+	d.done <- struct{}{}
+	close(d.done)
+}
+
 func (d *TileDaemon) awaitPendingTileRequests() {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
@@ -193,10 +204,14 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 		requests = append(requests, req)
 	}
 
-	d.logger.Info("TileDaemon awaiting pending edge requests", "len", len(requests))
+	d.logger.Info("TileDaemon awaiting pending requests", "len", len(requests))
 	defer func() {
 		d.logger.Info("TileDaemon pending requests complete")
 	}()
+	if len(requests) == 0 {
+		d.logger.Warn("TileDaemon no pending requests")
+		return
+	}
 
 	// For all pending requests attempt to call
 	type result struct {
@@ -220,9 +235,11 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 	for i := 0; i < len(requests); i++ {
 		res := <-results
 		if res.err != nil {
-			d.logger.Error("Failed to run pending tiling", "req", res.req.id(), "error", res.err)
+			d.logger.Error("Failed to run pending tiling",
+				"i", fmt.Sprintf("%d/%d", i, len(requests)), "req", res.req.id(), "error", res.err)
 			return
 		}
+		d.logger.Info("Ran pending tiling", "i", fmt.Sprintf("%d/%d", i, len(requests)), "req", res.req.id())
 	}
 }
 
@@ -265,6 +282,8 @@ func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 
 // Recover attempts to recover pending requests from the database.
 func (d *TileDaemon) Recover() error {
+	d.logger.Info("Recovering pending requests...")
+	pending := []*TilingRequestArgs{}
 	err := d.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("pending"))
 		if b == nil {
@@ -275,7 +294,8 @@ func (d *TileDaemon) Recover() error {
 			if err := json.Unmarshal(v, &s); err != nil {
 				return err
 			}
-			d.pending(s.Request)
+			d.logger.Info("Recovered pending request", "args", s.Request.id())
+			pending = append(pending, s.Request)
 			return nil
 		})
 	})
@@ -283,7 +303,10 @@ func (d *TileDaemon) Recover() error {
 		d.logger.Error("Failed to recover pending requests", "error", err)
 		return err
 	}
-	d.awaitPendingTileRequests()
+	for _, req := range pending {
+		d.pending(req)
+	}
+	d.logger.Info("Recovered pending requests")
 	return nil
 }
 
@@ -737,18 +760,23 @@ func (d *TileDaemon) RequestTiling(args *TilingRequestArgs, reply *TilingRespons
 
 func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Info("callTiling", "args", args.id())
+
 	d.running.Add(1)
 	defer d.running.Done()
-	defer func() {
-		if reply.Success {
+
+	d.tilingRunningM.Store(args.id(), args)
+	defer d.tilingRunningM.Delete(args.id())
+
+	defer func(r *TilingResponse) {
+		if r == nil {
+			return
+		}
+		if r.Success {
 			if err := d.unpersistPending(args); err != nil {
 				d.logger.Error("Failed to unpersist pending request", "error", err)
 			}
 		}
-	}()
-
-	d.tilingRunningM.Store(args.id(), args)
-	defer d.tilingRunningM.Delete(args.id())
+	}(reply)
 
 	if args == nil {
 		return fmt.Errorf("nil args")
@@ -919,7 +947,7 @@ func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		return err
 	}
 
-	d.logger.Info("🗺️ Tiling done", "args", args.id(), "to", mbtilesOutput,
+	d.logger.Info("🗺 Tiling done", "args", args.id(), "to", mbtilesOutput,
 		"took", elapsed.Round(time.Millisecond))
 
 	if reply == nil {

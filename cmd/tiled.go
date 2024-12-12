@@ -19,9 +19,9 @@ import (
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
-	"log"
-
 	"github.com/spf13/cobra"
+	"log"
+	"log/slog"
 )
 
 // tiledCmd represents the tiled command
@@ -55,6 +55,8 @@ var tiledRecoverCmd = &cobra.Command{
 		setDefaultSlog(cmd, args)
 
 		config := params.DefaultTileDaemonConfig()
+		config.AwaitPendingOnShutdown = true
+		config.SkipEdge = true
 		d, err := tiled.NewDaemon(config)
 		if err != nil {
 			log.Fatalln(err)
@@ -65,7 +67,9 @@ var tiledRecoverCmd = &cobra.Command{
 		if err := d.Recover(); err != nil {
 			log.Fatalln(err)
 		}
+		slog.Info("Stopping daemon")
 		d.Stop()
+		slog.Info("Waiting for daemon to stop")
 		d.Wait()
 	},
 }
