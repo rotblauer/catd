@@ -418,6 +418,9 @@ type PushFeaturesRequestArgs struct {
 	// It must be JSON, obviously.
 	JSONBytes []byte
 
+	// GzippedJSONBytes is pre-gzipped data to be written to the source file.
+	GzippedJSONBytes []byte
+
 	Versions    []TileSourceVersion
 	SourceModes []SourceMode
 }
@@ -443,7 +446,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	if a.TippeConfigName == "" && a.TippeConfigRaw == nil {
 		return fmt.Errorf("missing tippe config")
 	}
-	if len(a.JSONBytes) == 0 {
+	if len(a.JSONBytes) == 0 && len(a.GzippedJSONBytes) == 0 {
 		return fmt.Errorf("missing features")
 	}
 	if len(a.Versions) == 0 {
@@ -458,7 +461,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	return nil
 }
 
-func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig, data []byte) error {
+func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig, jsonData []byte) error {
 	gzftw, err := flat.NewFlatGZWriter(source, writeConfig)
 	if err != nil {
 		return err
@@ -473,7 +476,7 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
-	dec := json.NewDecoder(bytes.NewReader(data))
+	dec := json.NewDecoder(bytes.NewReader(jsonData))
 	enc := json.NewEncoder(wr)
 
 	for {
@@ -487,6 +490,23 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 		if err := enc.Encode(v); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (d *TileDaemon) writeRawGZ(source string, writeConfig *flat.GZFileWriterConfig, gzipData []byte) error {
+	f, err := os.OpenFile(source, writeConfig.Flag, writeConfig.FilePerm)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	_, err = f.Write(gzipData)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -548,8 +568,15 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 		return fmt.Errorf("nil args")
 	}
 
+	var data []byte
+	if args.GzippedJSONBytes != nil {
+		data = args.GzippedJSONBytes
+	} else {
+		data = args.JSONBytes
+	}
+
 	d.logger.Info("PushFeatures", "cat", args.CatID, "source", args.SourceName, "layer", args.LayerName,
-		"size", humanize.Bytes(uint64(len(args.JSONBytes))))
+		"size", humanize.Bytes(uint64(len(data))))
 
 	if err := args.validate(); err != nil {
 		slog.Error("PushFeatures invalid args", "error", err)
@@ -582,18 +609,26 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			return err
 		}
 
+		// Configure to truncate if truncate requested.
 		writeConf := flat.DefaultGZFileWriterConfig()
 		if args.SourceModes[vi] == SourceModeTrunc {
 			writeConf.Flag = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
 		}
-		if err := d.writeGZ(source, writeConf, args.JSONBytes); err != nil {
-			return err
+		if args.GzippedJSONBytes != nil {
+			if err := d.writeRawGZ(source, writeConf, data); err != nil {
+				return err
+			}
+		} else {
+			if err := d.writeGZ(source, writeConf, data); err != nil {
+				return err
+			}
 		}
 		d.logger.Debug("Wrote source", "source", source,
-			"size", humanize.Bytes(uint64(len(args.JSONBytes))))
+			"size", humanize.Bytes(uint64(len(data))))
 	}
 
 	args.JSONBytes = nil
+	args.GzippedJSONBytes = nil
 
 	// Request tiling. Will get debounced.
 	err := d.RequestTiling(&TilingRequestArgs{

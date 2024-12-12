@@ -207,7 +207,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 				sourceMode = tiled.SourceModeAppend
 			}
 			atomic.AddInt32(&pushBatchN, 1)
-			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			err := sendGZippedToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
 					SourceName: "s2_cells",

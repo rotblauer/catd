@@ -265,7 +265,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 			t := gjson.GetBytes(msg, "properties.Time")
 			if !t.Exists() {
-				sendErr(errs, fmt.Errorf("%s: properties.Time in line: %s", ErrMissingAttribute, string(msg)))
+				sendErr(errs, fmt.Errorf("%w: properties.Time in line: %s", ErrMissingAttribute, string(msg)))
 				continue
 			}
 
@@ -273,7 +273,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
-				sendErr(errs, fmt.Errorf("%s: properties.Name in line: %s", ErrMissingAttribute, string(msg)))
+				sendErr(errs, fmt.Errorf("%w: properties.Name in line: %s", ErrMissingAttribute, string(msg)))
 				continue
 			}
 

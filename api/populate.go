@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -328,6 +329,46 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeat
 	args.JSONBytes = buf.Bytes()
 
 	err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
+	if err != nil {
+		c.logger.Error("Failed to call RPC client",
+			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
+	}
+	return err
+}
+
+// sendGZippedToCatRPCClient sends a batch of gzipped features to the Cat RPC client.
+// It is a non-blocking function, and registers itself with the Cat Waiting state.
+func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
+	if !c.IsRPCEnabled() {
+		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
+		go stream.Sink(ctx, nil, in)
+	}
+
+	all := stream.Collect(ctx, in)
+	if len(all) == 0 {
+		c.logger.Warn("No features to send", "source", args.SourceName)
+		return nil
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	gz, err := gzip.NewWriterLevel(buf, params.DefaultGZipCompressionLevel)
+	if err != nil {
+		c.logger.Error("Failed to create gzip writer", "error", err)
+		return err
+	}
+	enc := json.NewEncoder(gz)
+
+	for _, el := range all {
+		cp := el
+		if err := enc.Encode(cp); err != nil {
+			c.logger.Error("Failed to encode feature", "error", err)
+			return err
+		}
+	}
+
+	args.GzippedJSONBytes = buf.Bytes()
+
+	err = c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 	if err != nil {
 		c.logger.Error("Failed to call RPC client",
 			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
