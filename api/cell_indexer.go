@@ -20,7 +20,7 @@ func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
 		Levels:          catS2.DefaultCellLevels,
-		BatchSize:       (params.DefaultBatchSize / 10) + 1, // 10% of default batch size? Why? Reduce batch-y-ness.
+		BatchSize:       params.DefaultBatchSize, // 10% of default batch size? Why? Reduce batch-y-ness.
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 	})
@@ -137,7 +137,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	}
 
 	// There were some unique tracks at this level.
-	batchSize := 10_000
+	batchSize := params.DefaultBatchSize
 	pushBatchN := int32(0)
 	c.logger.Info("S2 Unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
 	defer func() {
