@@ -253,7 +253,9 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				sendErr(errs, fmt.Errorf("scanner(%w)", err))
 				return
 			}
+
 			met.mark(gjson.GetBytes(msg, "properties.Time").String(), msg)
+
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
 				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
@@ -263,7 +265,10 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 			// Every once in bufferN, check to see if there are cats we haven't seen tracks from since last.
 			// For these expired cats, close their chans to free up resources, and make way for more cats.
-			if n := met.nn.Load(); n%closeCatAfter == 0 {
+
+			n := met.nn.Load()
+
+			if n%closeCatAfter == 0 {
 				expired := []conceptual.CatID{}
 				catLastMap.Range(func(catID, last interface{}) bool {
 					if n-last.(uint64) > closeCatAfter {
@@ -282,13 +287,14 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 					catLastMap.Delete(catID)
 				}
 			}
-			catLastMap.Store(catID, met.nn.Load())
+			catLastMap.Store(catID, n)
 
 			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, bufferN))
 			if loaded {
 				v.(chan []byte) <- msg
 				continue
 			}
+
 			ct := cattrack.CatTrack{}
 			err = json.Unmarshal(msg, &ct)
 			if err != nil {
