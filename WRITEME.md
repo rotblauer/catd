@@ -1,3 +1,8 @@
+why so fast
+tps>9000
+2019-01*..-02-18 in 12m
+
+---
 
 - [ ] move params to params
 - s2indexer tippe `maxzoom` `minzoom` for all levels

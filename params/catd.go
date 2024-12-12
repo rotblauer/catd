@@ -36,6 +36,14 @@ var CatStateDBName = "state.db"
 var CatStateBucket = []byte("state")
 var CatSnapBucket = []byte("snaps")
 
+// DefaultBatchSize is the default batch size for cat push/populate-batches.
+// It is used in several important places.
+// Counterintuitively, maybe, bigger is not always better. But neither is smaller.
+// TODO More work with batch vs. buffer sizes.
+// Have a feeling buffers need to tbe small(er) and batches need to be big(ger).
+// What are they anyways, really? Buffers are the channel size, batches are the
+// number of tracks per batch... (so, what's a "batch"?)...
+// TODO: Make this a flag lol
 var DefaultBatchSize = 10_000
 var DefaultBufferSize = 100_000
 
