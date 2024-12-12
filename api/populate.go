@@ -149,14 +149,15 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
 	sinkSnaps, sendSnaps := stream.Tee(ctx, snapped)
-	gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
-	if err != nil {
-		c.logger.Error("Failed to create custom writer", "error", err)
-		return err
-	}
 
 	sinkSnapErrs := make(chan error, 1)
 	go func() {
+		gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
+		if err != nil {
+			c.logger.Error("Failed to create custom writer", "error", err)
+			sinkSnapErrs <- err
+			return
+		}
 		if err := sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps); err != nil {
 			c.logger.Error("Failed to write snaps", "error", err)
 			sinkSnapErrs <- err

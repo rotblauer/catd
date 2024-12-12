@@ -137,7 +137,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	}
 
 	// There were some unique tracks at this level.
-	batchSize := params.DefaultBatchSize
+	batchSize := params.RPCTrackBatchSize
 	pushBatchN := int32(0)
 	c.logger.Info("S2 Unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
 	defer func() {
@@ -158,6 +158,39 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	levelTippeConfig = levelTippeConfig.Copy()
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
+
+	/*
+		2024/12/11 21:13:43 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical                         [29/9497]
+		2024/12/11 21:13:43 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:43 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:44 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:44 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:44 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:44 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:45 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:45 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:45 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:45 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:45 INFO Read tracks n=20,847,931 read.last=2019-06-16T03:19:17.003Z tps=1577 bps="667 kB" total.bytes="8.8 GB" running=1h4m10s
+		2024/12/11 21:13:45 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:46 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:46 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:46 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+		2024/12/11 21:13:46 INFO PushFeatures d=tile cat=iPhone source=s2_cells layer=level-18-polygons size="8.1 MB"
+		2024/12/11 21:13:47 INFO RequestTiling d=tile args=iPhone/s2_cells/level-18-polygons/canonical config="" version=canonical
+
+
+		should describe batch a limit of memory, not track count
+		# batchsizein...MB?
+
+		make all rpc requests in order. do not send all at once.
+		these layers are not that big. they should not take that long; i think they're competing.
+		batsch size ein MB? 1MB? 2MB? 4MB? 8MB? 16MB? 32MB? 64MB? 128MB? 256MB? 512MB? 1024MB? 2048MB? 4096MB? 8192MB? 16384MB? 32768MB? 65536MB? 131072MB? 262144MB? 524288MB? 1048576MB? 2097152MB? 4194304MB? 8388608MB? 16777216MB? 33554432MB? 67108864MB? 134217728MB? 268435456MB? 536870912MB? 1073741824MB? 2147483648MB? 4294967296MB? 8589934592MB? 17179869184MB? 34359738368MB? 68719476736MB? 137438953472MB? 274877906944MB? 549755813888MB? 1099511627776MB? 2199023255552MB? 4398046511104MB? 8796093022208MB? 17592186044416MB? 35184372088832MB? 70368744177664MB? 140737488355328MB? 281474976710656MB? 562949953421312MB? 1125899906842624MB? 2251799813685248MB? 4503599627370496MB? 9007199254740992MB? 18014398509481984MB? 36028797018963968MB? 72057594037927936MB? 144115188075855872MB? 288230376151711744MB? 576460752303423488MB? 1152921504606846976MB? 2305843009213693952MB? 4611686018427387904MB? 9223372036854775808MB? 18446744073709551616MB? 36893488147419103232MB? 73786976294838206464MB? 147573952589676412928MB? 295147905179352825856MB? 590295810358705651712MB? 1180591620717411303424MB
+		ps halt this thing is gonna catch fire
+
+		8.1 MB ~= 9000 tracks batch size
+
+	*/
 
 	// Batch dumped tracks to avoid sending too many at once.
 	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {

@@ -85,7 +85,7 @@ func (c *Cat) Close() {
 	if err := c.State.Close(); err != nil {
 		c.logger.Error("Failed to close cat state", "error", err)
 	}
-	if c.rpcClient != nil {
+	if c.IsRPCEnabled() {
 		if err := c.rpcClient.Close(); err != nil {
 			c.logger.Error("Failed to close RPC client", "error", err)
 		}

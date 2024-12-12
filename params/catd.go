@@ -46,6 +46,7 @@ var CatSnapBucket = []byte("snaps")
 // TODO: Make this a flag lol
 var DefaultBatchSize = 10_000
 var DefaultBufferSize = 100_000
+var RPCTrackBatchSize = 111_111 //  9_000 is about 8.3MB max. Give me 100MB max: 111_000
 
 var DefaultGZipCompressionLevel = gzip.BestCompression
 
