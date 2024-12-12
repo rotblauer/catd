@@ -120,9 +120,13 @@ Missoula, Montana
 			dConfig.AwaitPendingOnShutdown = optTilingAwaitPending
 			dConfig.TilingPendingExpiry = optTilingPendingExpiry
 			dConfig.SkipEdge = optTilingSkipEdge
-			d = tiled.NewDaemon(dConfig)
+			var err error
+			d, err = tiled.NewDaemon(dConfig)
+			if err != nil {
+				log.Fatalln(err)
+			}
 			if err := d.Run(); err != nil {
-				log.Fatal(err)
+				log.Fatalln(err)
 			}
 		} else {
 			slog.Warn("Tiling daemon disabled")

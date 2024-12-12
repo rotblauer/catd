@@ -21,6 +21,7 @@ import (
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	"github.com/spf13/cobra"
+	"log"
 	"log/slog"
 	"time"
 )
@@ -49,7 +50,10 @@ sorting, and storage steps. Just the fun stuff.
 		dConfig.TilingPendingExpiry = 1 * time.Hour
 		dConfig.SkipEdge = true
 		dConfig.AwaitPendingOnShutdown = true
-		d := tiled.NewDaemon(dConfig)
+		d, err := tiled.NewDaemon(dConfig)
+		if err != nil {
+			log.Fatalln(err)
+		}
 		if err := d.Run(); err != nil {
 			panic(err)
 		}

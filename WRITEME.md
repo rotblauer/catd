@@ -1,4 +1,17 @@
 
+
+
+Up until this error, better than good.
+cmd/populate exited hard on this error, so 
+
+```
+2024/12/11 23:11:41 INFO Read tracks n=37,520,142 read.last=2019-10-16T05:46:40Z tps=8249 bps="3.4 MB" total.bytes="16 GB" running=1h13m40s
+2024/12/11 23:11:46 INFO Read tracks n=37,605,726 read.last=2019-10-16T15:54:32.998Z tps=8958 bps="3.7 MB" total.bytes="16 GB" running=1h13m45s
+2024/12/11 23:11:51 INFO Read tracks n=37,685,491 read.last=2019-10-17T01:26:36Z tps=9517 bps="3.9 MB" total.bytes="16 GB" running=1h13m50s
+2024/12/11 23:11:56 INFO Read tracks n=37,753,670 read.last=2019-10-17T09:41:27Z tps=9847 bps="4.0 MB" total.bytes="16 GB" running=1h13m55s
+2024/12/11 23:11:58 ERROR CatScanner errored error="[scanner] missing properties.Name in line: {\"type\":\"Feature\",\"id\":1,\"geometry\":{\"type\":\"Point\",\"coordinates\":[-90.22965,38.60445]},\"properties\":{\"Accuracy\":0,\"Activity\":\"\",\"Elevation\":181.6,\"Heading\":54.72,\"Name\":\"\",\"Notes\":\"\",\"Pressure\":0,\"Speed\":0,\"Time\":\"2019-10-17T18:24:46.821143373Z\",\"UUID\":\"\",\"UnixTime\":1571336686,\"Version\":\"\"}}"
+```
+
 now best `dc475745690069b7928abf64b5376689ea735da9`
 
 2.5 

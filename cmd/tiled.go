@@ -33,7 +33,10 @@ var tiledCmd = &cobra.Command{
 		setDefaultSlog(cmd, args)
 
 		config := params.DefaultTileDaemonConfig()
-		d := tiled.NewDaemon(config)
+		d, err := tiled.NewDaemon(config)
+		if err != nil {
+			log.Fatalln(err)
+		}
 		if err := d.Run(); err != nil {
 			log.Fatalln(err)
 		}
@@ -44,8 +47,32 @@ var tiledCmd = &cobra.Command{
 	},
 }
 
+var tiledRecoverCmd = &cobra.Command{
+	Use:   "recover",
+	Short: "Recover tiles from source",
+	Long:  ``,
+	Run: func(cmd *cobra.Command, args []string) {
+		setDefaultSlog(cmd, args)
+
+		config := params.DefaultTileDaemonConfig()
+		d, err := tiled.NewDaemon(config)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		if err := d.Run(); err != nil {
+			log.Fatalln(err)
+		}
+		if err := d.Recover(); err != nil {
+			log.Fatalln(err)
+		}
+		d.Stop()
+		d.Wait()
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(tiledCmd)
+	tiledCmd.AddCommand(tiledRecoverCmd)
 
 	// Here you will define your flags and configuration settings.
 

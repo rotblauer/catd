@@ -12,6 +12,7 @@ import (
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
+	"go.etcd.io/bbolt"
 	"io"
 	"log/slog"
 	"net"
@@ -38,7 +39,9 @@ type TileDaemon struct {
 	// This is because the tiling daemon is a separate process(es) from the main app
 	// and should not compete on file locks with the main app, which could quickly
 	// result in corrupted data.
-	flat            *flat.Flat
+	flat *flat.Flat
+	db   *bbolt.DB
+
 	logger          *slog.Logger
 	tilingRunningM  sync.Map
 	pendingTTLCache *ttlcache.Cache[string, *TilingRequestArgs]
@@ -54,20 +57,28 @@ type TileDaemon struct {
 	interrupted atomic.Bool
 }
 
-func NewDaemon(config *params.TileDaemonConfig) *TileDaemon {
+func NewDaemon(config *params.TileDaemonConfig) (*TileDaemon, error) {
 	if config == nil {
 		config = params.DefaultTileDaemonConfig()
 	}
+	f := flat.NewFlatWithRoot(config.RootDir)
+
+	db, err := bbolt.Open(filepath.Join(config.RootDir, "tiled.db"), 0660, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	return &TileDaemon{
 		Config:          config,
-		flat:            flat.NewFlatWithRoot(config.RootDir),
+		flat:            f,
+		db:              db,
 		logger:          slog.With("d", "tile"),
 		tilingRunningM:  sync.Map{},
 		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.TilingPendingExpiry)),
 		tilingEvents:    &event.FeedOf[TilingResponse]{},
 		done:            make(chan struct{}, 1),
 		interrupt:       make(chan struct{}, 1),
-	}
+	}, nil
 }
 
 func (d *TileDaemon) Wait() {
@@ -94,30 +105,6 @@ func (d *TileDaemon) Run() error {
 	}
 
 	go func() {
-
-		/*
-			2024/12/11 09:03:46 INFO 🗺️ Tiling done d=tile args=rye/s2_cells/level-17-polygons/canonical to=/tmp/catd/tiled/tiles/rye/s2_cells/level-17-polygons.mbtiles took=547ms
-			2024/12/11 09:03:46 INFO 🗺️ Tiling done d=tile args=rye/s2_cells/level-18-polygons/canonical to=/tmp/catd/tiled/tiles/rye/s2_cells/level-18-polygons.mbtiles took=894ms
-			2024/12/11 09:03:46 INFO TileDaemon pending requests complete d=tile
-			2024/12/11 09:03:46 INFO TileDaemon interrupted d=tile awaiting=running
-			2024/12/11 09:03:46 INFO TileDaemon exiting d=tile
-			panic: pattern "/tiler_rpc" (registered at /home/ia/go1.22.2.linux-amd64/go/src/net/rpc/server.go:715) conflicts with pattern "/tiler_rpc" (registered at /home/ia/go1.22.2.linux-amd64/go/s
-			rc/net/rpc/server.go:715):
-			/tiler_rpc matches the same requests as /tiler_rpc
-
-			goroutine 1 [running]:
-			net/http.(*ServeMux).register(...)
-			        /home/ia/go1.22.2.linux-amd64/go/src/net/http/server.go:2733
-			net/http.Handle({0xe27ce3?, 0x40?}, {0x13449c0?, 0xc01814a000?})
-			        /home/ia/go1.22.2.linux-amd64/go/src/net/http/server.go:2717 +0x7d
-			net/rpc.(*Server).HandleHTTP(0xc01814a000, {0xe27ce3?, 0xc000630200?}, {0xe27cb1, 0xa})
-			        /home/ia/go1.22.2.linux-amd64/go/src/net/rpc/server.go:715 +0x3a
-			github.com/rotblauer/catd/daemon/tiled.(*TileDaemon).Run(0xc000630200)
-			        /home/ia/dev/rotblauer/catd/daemon/tiled/daemon.go:90 +0x15f
-			github.com/rotblauer/catd/cmd.init.func2(0xc000191000?, {0xc00045c580?, 0x4?, 0xe2205f?})
-			        /home/ia/dev/rotblauer/catd/cmd/repro.go:51 +0xce
-
-		*/
 		err := http.Serve(listen, server)
 		if err != nil && !d.interrupted.Load() {
 			d.logger.Error("TileDaemon RPC HTTP serve error", "error", err)
@@ -144,6 +131,10 @@ func (d *TileDaemon) Run() error {
 
 	go func() {
 		defer func() {
+			if err := d.db.Close(); err != nil {
+				d.logger.Error("TileDaemon failed to close db", "error", err)
+				os.Exit(1)
+			}
 			d.done <- struct{}{}
 			close(d.done)
 		}()
@@ -234,6 +225,75 @@ func (d *TileDaemon) awaitPendingTileRequests() {
 // Args from the last all are persisted.
 func (d *TileDaemon) pending(args *TilingRequestArgs) {
 	d.pendingTTLCache.Set(args.id(), args, 0)
+
+	// Persist the pending request.
+	s := &storePending{At: args.requestedAt, Request: args}
+	v, _ := json.Marshal(s)
+
+	err := d.db.Update(func(tx *bbolt.Tx) error {
+		b, _ := tx.CreateBucketIfNotExists([]byte("pending"))
+		return b.Put([]byte(args.id()), v)
+	})
+	if err != nil {
+		d.logger.Error("Failed to persist pending request", "error", err)
+	}
+}
+
+type storePending struct {
+	At      time.Time
+	Request *TilingRequestArgs
+}
+
+func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
+	return d.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("pending"))
+		if b == nil {
+			return nil
+		}
+		return b.Delete([]byte(args.id()))
+	})
+}
+
+func (d *TileDaemon) Recover() error {
+	reqs := []*TilingRequestArgs{}
+	err := d.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("pending"))
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			var s storePending
+			if err := json.Unmarshal(v, &s); err != nil {
+				return err
+			}
+			//d.pending(s.Request)
+			reqs = append(reqs, s.Request)
+			return nil
+		})
+	})
+	if err != nil {
+		d.logger.Error("Failed to recover pending requests", "error", err)
+		return err
+	}
+	if len(reqs) == 0 {
+		d.logger.Warn("No pending requests to recover")
+		return nil
+	}
+	removes := []*TilingRequestArgs{}
+	for _, req := range reqs {
+		rep := &TilingResponse{}
+		if err := d.callTiling(req, rep); err != nil {
+			d.logger.Error("Failed to run recovered pending tiling", "error", err)
+			return err
+		}
+		if !rep.Success {
+			d.logger.Error("Failed to recover pending tiling", "args", req.id(), "error", err)
+		} else {
+			removes = append(removes, req)
+			d.logger.Info("Recovered pending tiling", "args", req.id(), "success", rep.Success)
+		}
+	}
+	return nil
 }
 
 // mbtileserverHUP tries to reload a/any 'mbtileserver' instance
@@ -603,6 +663,7 @@ func (a *TilingRequestArgs) Validate() error {
 	return nil
 }
 
+// TilingResponse is TODO
 type TilingResponse struct {
 	Success     bool
 	Elapsed     time.Duration
@@ -687,6 +748,13 @@ func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) 
 	d.logger.Info("callTiling", "args", args.id())
 	d.running.Add(1)
 	defer d.running.Done()
+	defer func() {
+		if reply.Success {
+			if err := d.unpersistPending(args); err != nil {
+				d.logger.Error("Failed to unpersist pending request", "error", err)
+			}
+		}
+	}()
 
 	d.tilingRunningM.Store(args.id(), args)
 	defer d.tilingRunningM.Delete(args.id())
@@ -848,6 +916,7 @@ func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		return err
 	}
 	elapsed := time.Since(start)
+	reply.Elapsed = elapsed
 
 	if err := os.MkdirAll(filepath.Dir(mbtilesOutput), os.ModePerm); err != nil {
 		d.logger.Error("Failed to create final dir", "error", err)
@@ -868,7 +937,6 @@ func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) erro
 		}
 	}
 	reply.Success = true
-	reply.Elapsed = elapsed
 	reply.MBTilesPath = mbtilesOutput
 	d.tilingEvents.Send(*reply)
 
