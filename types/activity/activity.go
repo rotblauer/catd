@@ -76,7 +76,7 @@ func (a Activity) Emoji() string {
 	case TrackerStateBike:
 		return "🚴"
 	case TrackerStateAutomotive:
-		return "🚗"
+		return "🚗" // "🚜" // "🛻"
 	case TrackerStateFlying:
 		return "✈️"
 	}
