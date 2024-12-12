@@ -278,6 +278,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 						panic("where is cat")
 					}
 					close(v.(chan []byte))
+					v = nil
 					catLastMap.Delete(catID)
 				}
 			}
