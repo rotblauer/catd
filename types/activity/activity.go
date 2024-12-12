@@ -68,7 +68,7 @@ func (a Activity) Emoji() string {
 	case TrackerStateUnknown:
 		return "❓"
 	case TrackerStateStationary:
-		return "🕴" // 🛑  🧍  🛋  🧎️
+		return "🕴 " // 🛑  🧍  🛋  🧎️
 	case TrackerStateWalking:
 		return "🚶"
 	case TrackerStateRunning:

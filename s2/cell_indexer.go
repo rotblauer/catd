@@ -167,7 +167,14 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 		func(tracks []cattrack.CatTrack) bool {
 			return len(tracks) == ci.Config.BatchSize
 		}, stream.Buffered(ctx, in, params.DefaultBatchSize))
+	batchIndex := 0
+	n := params.DefaultBatchSize / ci.Config.BatchSize // eg. 100_000 / 10_000 = 10
 	for batch := range batches {
+		if batchIndex%n == 0 {
+			ci.logger.Debug("S2 Indexing batch", "cat", ci.Config.CatID, "batch.index", batchIndex,
+				"size", len(batch), "levels", len(ci.Config.Levels))
+		}
+		batchIndex++
 		for _, level := range ci.Config.Levels {
 			if err := ci.index(level, batch); err != nil {
 				return err

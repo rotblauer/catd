@@ -2,6 +2,7 @@ package nap
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geo"
 	"github.com/paulmach/orb/planar"
@@ -34,6 +35,7 @@ func (s *State) Add(ct *cattrack.CatTrack) {
 		s.TimeLast = ct.MustTime()
 		s.Tracks = append(s.Tracks, ct)
 		mp := orb.MultiPoint{}
+		metrics.NewEWMA1()
 		for _, t := range s.Tracks {
 			mp = append(mp, t.Geometry.(orb.Point))
 		}

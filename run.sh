@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-tracksource() {
+tdata() {
 #    echo
 #    cat
 #    zcat ~/tdata/${source_gz}
@@ -9,9 +9,9 @@ tracksource() {
 #     zcat "${HOME}"/tdata/edge.json.gz
 #     zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
-#    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
+    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
-    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz "${HOME}"/tdata/{devop,edge}.json.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 }
 
@@ -24,8 +24,11 @@ bump_tileservice() {
 run() {
   set -e
   go install .
-  rm -rf /tmp/catd
-  tracksource | catd populate \
+  # This way you get to look at maps while catd (re-)runs, .mbtiles get overwritten with a mv.
+  rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
+  # rm -rf /tmp/catd
+
+  tdata | catd populate \
     --datadir /tmp/catd \
     --verbosity 0 \
     --batch-size 10_000 \
