@@ -133,7 +133,7 @@ Missoula, Montana
 		quitScanner := make(chan struct{}, 1)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
-			optWorkersN, params.DefaultBufferSize, params.DefaultBufferSize)
+			optWorkersN, params.DefaultBatchSize, params.DefaultBatchSize)
 
 		go func() {
 			for i := 0; i < 2; i++ {

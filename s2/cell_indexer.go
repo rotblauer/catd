@@ -166,7 +166,7 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	batches := stream.Batch(ctx, nil,
 		func(tracks []cattrack.CatTrack) bool {
 			return len(tracks) == ci.Config.BatchSize
-		}, stream.Buffered(ctx, in, params.DefaultBufferSize))
+		}, stream.Buffered(ctx, in, params.DefaultBatchSize))
 	batchIndex := 0
 	n := params.DefaultBatchSize / ci.Config.BatchSize // eg. 100_000 / 10_000 = 10
 	for batch := range batches {
