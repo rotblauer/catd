@@ -11,7 +11,6 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -126,7 +125,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 }
 
 // tiledDumpLevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
-// FIXME: Dumps for high levels can be large, and currently all these dumps are blocking and sent in one request.
 func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
 	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
@@ -139,16 +137,19 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	}
 
 	// There were some unique tracks at this level.
-	c.logger.Info("S2 Unique tracks", "level", level, "count", uniqs)
+	batchSize := 10_000
+	pushBatchN := int32(0)
+	c.logger.Info("S2 Unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
+	defer func() {
+		c.logger.Info("S2 Unique tracks dumped", "level", level, "count", uniqs,
+			"push.batch_size", batchSize, "pushed.batches", pushBatchN)
+	}()
 
 	// So now we need to send ALL unique tracks at this level to tiled,
 	// and tell tiled to use mode truncate.
 	// This will replace the existing map/level with the newest version of unique tracks.
 	sendErrCh := make(chan error, 1)
 	dump, errs := cellIndexer.DumpLevel(level)
-	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-		return len(s) > 10_000
-	}, dump)
 
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
@@ -158,21 +159,21 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	wait := sync.WaitGroup{}
-	didErr := atomic.Bool{}
+	// Batch dumped tracks to avoid sending too many at once.
+	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+		return len(s) == batchSize
+	}, dump)
+	didErr := atomic.Bool{} // Any error will cause the stream fn to noop.
 	go func() {
 		sourceMode := tiled.SourceModeTrunc
-		first := true
 		stream.Sink(ctx, func(s []cattrack.CatTrack) {
 			if didErr.Load() {
 				return
 			}
-			wait.Add(1)
-			defer wait.Done()
-			if !first {
+			if atomic.LoadInt32(&pushBatchN) > 0 {
 				sourceMode = tiled.SourceModeAppend
 			}
-			first = false
+			atomic.AddInt32(&pushBatchN, 1)
 			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
@@ -196,16 +197,18 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 				sendErrCh <- err
 			}
 		}, batched)
-		sendErrCh <- nil
+		if !didErr.Load() {
+			sendErrCh <- nil
+		}
 	}()
 
 	// Block on dump errors.
 	for err := range errs {
 		if err != nil {
 			c.logger.Error("Failed to dump level if unique", "error", err)
+			return err
 		}
 	}
-	wait.Wait()
 	return <-sendErrCh
 }
 

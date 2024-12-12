@@ -19,32 +19,24 @@ import (
 )
 
 func (c *Cat) PopulateReader(ctx context.Context, sort bool, in io.Reader) (err error) {
-
 	send := make(chan cattrack.CatTrack)
 	errs := make(chan error, 2)
-
 	go func() {
 		dec := json.NewDecoder(in)
 		for {
 			ct := cattrack.CatTrack{}
 			err := dec.Decode(&ct)
-			if err == io.EOF {
+			if err != nil {
 				close(send)
 				errs <- err
 				return
 			}
-			if err == nil {
-				send <- ct
-				continue
-			}
-			// else try decoding/umarshaling as trackpoint...
+			send <- ct
 		}
 	}()
-
 	go func() {
 		errs <- c.Populate(ctx, sort, send)
 	}()
-
 	for i := 0; i < 2; i++ {
 		select {
 		case err = <-errs:
@@ -95,7 +87,7 @@ func (c *Cat) SubscribeFancyLogs() {
 
 // Populate persists incoming CatTracks for one cat.
 // FIXME: All functions should return errors, and this function should return first of any errors.
-func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) (lastErr error) {
+func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
 
 	c.SubscribeFancyLogs()
 
@@ -103,8 +95,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	c.logger.Info("Populate blocking on lock state")
 	_, err := c.WithState(false)
 	if err != nil {
-		c.logger.Error("Failed to create cat state", "error", err)
-		return
+		c.logger.Error("Failed to get or create cat state", "error", err)
+		return err
 	}
 	c.logger.Info("Populate has the lock on state conn")
 
@@ -125,9 +117,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			c.logger.Error("Invalid track", "error", err)
 			return false
 		}
-		checkCatID := ct.CatID()
-		if c.CatID != checkCatID {
-			c.logger.Error("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", checkCatID))
+		if id := ct.CatID(); c.CatID != id {
+			c.logger.Error("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", id))
 			return false
 		}
 		// Dedupe with hash cache.
@@ -136,13 +127,13 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			return false
 		}
 		return true
-	}, stream.MeterTicker(ctx, c.logger, "In", 10*time.Second, in))
+	}, in)
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
 	pipedLast := sanitized
 	if sort {
 		// Sorting is blocking.
-		//sorted := stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
-		pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
+		pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		//pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 
 	// Fork stream into snaps/no-snaps.
@@ -160,18 +151,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return err
 	}
 
-	// FIXME Unhandled errors.
-	c.State.Waiting.Add(1)
+	sinkSnapErrs := make(chan error, 1)
 	go func() {
-		defer c.State.Waiting.Done()
 		if err := sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps); err != nil {
 			c.logger.Error("Failed to write snaps", "error", err)
+			sinkSnapErrs <- err
 		}
+		close(sinkSnapErrs)
 	}()
 
-	c.State.Waiting.Add(1)
+	sendSnapErrs := make(chan error, 1)
 	go func() {
-		defer c.State.Waiting.Done()
 		err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
@@ -184,29 +174,33 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}, sendSnaps)
 		if err != nil {
 			c.logger.Error("Failed to send snaps", "error", err)
+			sendSnapErrs <- err
 		}
+		close(sendSnapErrs)
 	}()
 
 	// All non-snaps flow to these channels.
-	storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
-
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
-			c.logger.Error("Failed to run producer pipelines", "error", err)
-		}
-	}()
+	//storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
+	storeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	pipelineChan := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	stream.TeeMany(ctx, noSnaps, storeCh, pipelineChan)
 
 	storeErrs := make(chan error, 1)
-	c.State.Waiting.Add(1)
 	go func() {
-		defer c.State.Waiting.Done()
 		defer close(storeErrs)
 		err := <-c.StoreTracks(ctx, storeCh)
 		if err != nil {
 			c.logger.Error("Failed to store tracks", "error", err)
 			storeErrs <- err
+		}
+	}()
+
+	pipeLineErrs := make(chan error, 1)
+	go func() {
+		defer close(pipeLineErrs)
+		if err := c.ProducerPipelines(ctx, pipelineChan); err != nil {
+			c.logger.Error("Failed to run producer pipelines", "error", err)
+			pipeLineErrs <- err
 		}
 	}()
 
@@ -222,17 +216,57 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	//}, sendTiledCh)
 
-	// Block on any store errors, returning last.
+	// Block on any store errors, returning first.
 	c.logger.Info("Blocking on store cat tracks+snaps gz")
-	merged := stream.Merge(ctx, storeErrs, snapErrs)
-	stream.Sink(ctx, func(e error) {
-		lastErr = e
-		c.logger.Error("Failed to populate CatTrack", "error", lastErr)
-	}, merged)
-
-	c.logger.Info("Blocking on cat pipelines")
-	c.State.Waiting.Wait()
-	return lastErr
+	handledErrorsN := 0
+	for {
+		select {
+		case err, open := <-storeErrs:
+			if err != nil {
+				return fmt.Errorf("storeErrs: %w", err)
+			}
+			if !open {
+				handledErrorsN++
+				storeErrs = nil
+			}
+		case err, open := <-snapErrs:
+			if err != nil {
+				return fmt.Errorf("snapErrs: %w", err)
+			}
+			if !open {
+				handledErrorsN++
+				snapErrs = nil
+			}
+		case err, open := <-sinkSnapErrs:
+			if err != nil {
+				return fmt.Errorf("sinkSnapErrs: %w", err)
+			}
+			if !open {
+				handledErrorsN++
+				sinkSnapErrs = nil
+			}
+		case err, open := <-sendSnapErrs:
+			if err != nil {
+				return fmt.Errorf("sendSnapErrs: %w", err)
+			}
+			if !open {
+				handledErrorsN++
+				sendSnapErrs = nil
+			}
+		case err, open := <-pipeLineErrs:
+			if err != nil {
+				return fmt.Errorf("pipeLineErrs: %w", err)
+			}
+			if !open {
+				handledErrorsN++
+				pipeLineErrs = nil
+			}
+		}
+		if handledErrorsN == 5 {
+			break
+		}
+	}
+	return nil
 }
 
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) error {

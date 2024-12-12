@@ -41,7 +41,7 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 	defer c.State.Waiting.Done()
 
 	out = make(chan cattrack.CatTrack)
-	errs = make(chan error)
+	errs = make(chan error, 1)
 	go func() {
 		defer close(out)
 		defer close(errs)
@@ -51,6 +51,7 @@ func (c *Cat) StoreSnaps(ctx context.Context, in <-chan cattrack.CatTrack) (out 
 			handled, err := c.handleSnap(track)
 			if err != nil {
 				errs <- err
+				return
 			}
 			out <- handled
 			select {

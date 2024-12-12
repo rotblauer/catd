@@ -5,7 +5,6 @@ import (
 	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
-	"time"
 )
 
 func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack) error {
@@ -20,8 +19,7 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	improved := c.ImprovedActTracks(ctx, cleaned)
 	woffsets := TracksWithOffset(ctx, improved)
 
-	metered := stream.MeterTicker(ctx, c.logger, "ProducerPipelines", 5*time.Second, woffsets)
-	areaPipeCh, vectorPipeCh := stream.Tee(ctx, metered)
+	areaPipeCh, vectorPipeCh := stream.Tee(ctx, woffsets)
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
 
 	errs := make(chan error, 2)

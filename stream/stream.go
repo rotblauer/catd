@@ -145,7 +145,7 @@ func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]
 // BatchSort is a batching function that can sort batches of elements
 // before forwarding them on the channel. The 'sorter' function is optional.
 func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
-	out := make(chan T)
+	out := make(chan T, batchSize)
 	go func() {
 		defer close(out)
 
@@ -180,32 +180,37 @@ func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) in
 }
 
 func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in <-chan T) <-chan T {
-	out := make(chan T)
+	out := make(chan T, size)
 	go func() {
 		defer close(out)
-		var ring []T
+		var ring = make([]T, size)
+		var write int
+		var count int
 		defer func() {
-			for _, r := range ring {
+			slices.SortFunc(ring, sorter)
+			for i := 0; i < count; i++ {
+				idx := (write + size - count + i) % size
 				select {
 				case <-ctx.Done():
 					return
-				case out <- r:
+				case out <- ring[idx]:
 				}
 			}
 		}()
 		for element := range in {
-			ring = append(ring, element)
-			if len(ring) > 1 {
+			ring[write] = element
+			write = (write + 1) % size
+			if count < size {
+				count++
+				continue
+			}
+			if !slices.IsSortedFunc([]T{ring[write-1], ring[write]}, sorter) {
 				slices.SortFunc(ring, sorter)
 			}
 			select {
 			case <-ctx.Done():
 				return
-			case out <- ring[0]:
-				ring = ring[1:]
-			}
-			for len(ring) > size {
-				ring = ring[1:]
+			case out <- ring[write-1]:
 			}
 		}
 	}()
@@ -409,6 +414,22 @@ func MeterTicker[T any](ctx context.Context, slogger *slog.Logger, label string,
 				return
 			case out <- el:
 				count++
+			}
+		}
+	}()
+	return out
+}
+
+func Buffered[T any](ctx context.Context, in <-chan T, size int) <-chan T {
+	out := make(chan T, size)
+	go func() {
+		defer close(out)
+		for element := range in {
+			el := element
+			select {
+			case <-ctx.Done():
+				return
+			case out <- el:
 			}
 		}
 	}()
