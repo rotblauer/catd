@@ -61,7 +61,13 @@ func NewDaemon(config *params.TileDaemonConfig) (*TileDaemon, error) {
 	if config == nil {
 		config = params.DefaultTileDaemonConfig()
 	}
+
 	f := flat.NewFlatWithRoot(config.RootDir)
+	if !f.Exists() {
+		if err := f.MkdirAll(); err != nil {
+			return nil, err
+		}
+	}
 
 	db, err := bbolt.Open(filepath.Join(config.RootDir, "tiled.db"), 0660, nil)
 	if err != nil {
