@@ -131,7 +131,7 @@ Missoula, Montana
 		// workersWG is used for clean up processing after the reader has finished.
 		workersWG := new(sync.WaitGroup)
 
-		quitScanner := make(chan struct{}, 1)
+		quitScanner := make(chan struct{}, 3)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
 			optWorkersN, params.DefaultBatchSize, params.RPCTrackBatchSize)

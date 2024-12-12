@@ -154,7 +154,12 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			})
 
 			readN++
-			met.mark(gjson.GetBytes(msg, "properties.Time"), msg)
+			t := gjson.GetBytes(msg, "properties.Time")
+			if !t.Exists() {
+				errs <- fmt.Errorf("missing properties.Time in line: %s", string(msg))
+				continue
+			}
+			met.mark(t.Time(), msg)
 
 			result := gjson.GetBytes(msg, "properties.Name")
 			if !result.Exists() {
@@ -258,12 +263,20 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 
-			met.mark(gjson.GetBytes(msg, "properties.Time").Time(), msg)
+			t := gjson.GetBytes(msg, "properties.Time")
+			if !t.Exists() {
+				sendErr(errs, fmt.Errorf("%s: properties.Time in line: %s", ErrMissingAttribute, string(msg)))
+				continue
+			}
+
+			met.mark(t.Time(), msg)
+
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
 				sendErr(errs, fmt.Errorf("%s: properties.Name in line: %s", ErrMissingAttribute, string(msg)))
-				return
+				continue
 			}
+
 			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
 
 			// Every once in bufferN, check to see if there are cats we haven't seen tracks from since last.
