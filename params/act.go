@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+// NapCentroidMaxPoints is when to stop calculating the centroid from all the slice tracks.
+// FIXME: This is performance optimization.
+var NapCentroidMaxPoints = int((10 * time.Minute).Seconds())
+
 // ActDiscretionConfig is a generic type for configuring
 // the discretion of cat acts.
 type ActDiscretionConfig struct {

@@ -61,9 +61,10 @@ func (c *Cat) SubscribeFancyLogs() {
 			c.logger.Info(fmt.Sprintf(
 				"%s Completed lap", a.Emoji()),
 				"time", lap.Properties.MustString("Time_Start_RFC3339", "XXX"),
-				"lap.duration", lap.Duration().Truncate(time.Second),
-				"lap.meters", humanize.SIWithDigits(lap.DistanceTraversed(), 2, "m"),
-				"lap.activity", a.String(),
+				"count", lap.Properties.MustInt("RawPointCount", -1),
+				"duration", lap.Duration().Truncate(time.Second),
+				"meters", humanize.SIWithDigits(lap.DistanceTraversed(), 2, "m"),
+				"activity", a.String(),
 			)
 		}
 	}()
@@ -79,9 +80,10 @@ func (c *Cat) SubscribeFancyLogs() {
 			duration := time.Duration(seconds * float64(time.Second))
 			c.logger.Info(fmt.Sprintf("%s Completed nap", activity.TrackerStateStationary.Emoji()),
 				"time", nap.Properties.MustString("Time_Start_RFC3339", "XXX"),
-				"nap.duration", duration.Round(time.Second),
-				"nap.area", humanize.SIWithDigits(area, 0, "m²"),
-				"nap.edge", humanize.SIWithDigits(edge, 0, "m"),
+				"count", nap.Properties.MustInt("RawPointCount", -1),
+				"duration", duration.Round(time.Second),
+				"area", humanize.SIWithDigits(area, 0, "m²"),
+				"edge", humanize.SIWithDigits(edge, 0, "m"),
 			)
 		}
 	}()
