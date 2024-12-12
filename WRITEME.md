@@ -1,3 +1,38 @@
+
+now best `dc475745690069b7928abf64b5376689ea735da9`
+
+2.5 
+
+```
+    PID USER      PRI  NI  VIRT   RES   SHR S CPU% MEM%   TIME+  Command                                                                 
+   5987 ia         20   0 22.6G 5378M 1213M S 559. 11.2  6h45:16 goland                                                                  
+   9453 ia         20   0 7559M 3750M  717M S  0.6  7.8 16:06.55 clion
+   6041 ia         20   0 20.8G 3658M  176M S  4.5  7.6  1h19:25 webstorm
+   6202 ia         20   0 60.8G 2008M 26140 S  2.6  4.2  5:06.97 copilot-language-server --stdio
+ 324115 ia         20   0 5276M 1223M  105M S 481.  2.6  1h58:16 catd populate --datadir /tmp/catd --verbosity 0 --batch-size 9000 --work
+  96329 ia         20   0 8789M 1191M  250M S  0.6  2.5 30:05.21 firefox -P default -new-window /home/ia/dev/awesomeWM/awesome/awesomei/m
+   8219 ia         20   0 8026M  805M 89384 S  0.6  1.7  7:48.86 jetbrains-toolbox --wait-for-pid 7758 --update-successful --minimize
+
+```
+
+```
+2024/12/11 22:14:16 INFO Read tracks n=7,699,325 read.last=2019-03-05T23:52:30Z tps=8376 bps="3.5 MB" total.bytes="3.2 GB" running=16m15s           [0/9488]
+2024/12/11 22:14:21 INFO Read tracks n=7,752,275 read.last=2019-03-06T07:17:19.001Z tps=8553 bps="3.6 MB" total.bytes="3.2 GB" running=16m20s
+2024/12/11 22:14:26 INFO Read tracks n=7,794,322 read.last=2019-03-06T14:24:55.996Z tps=8540 bps="3.6 MB" total.bytes="3.3 GB" running=16m25s
+2024/12/11 22:14:31 INFO Read tracks n=7,824,896 read.last=2019-03-07T00:41:36.999Z tps=8540 bps="3.5 MB" total.bytes="3.3 GB" running=16m30s
+2024/12/11 22:14:36 INFO Read tracks n=7,869,020 read.last=2019-03-07T07:46:10.999Z tps=8385 bps="3.5 MB" total.bytes="3.3 GB" running=16m35s
+2024/12/11 22:14:41 INFO Read tracks n=7,911,526 read.last=2019-03-07T13:52:05.158Z tps=8395 bps="3.5 MB" total.bytes="3.3 GB" running=16m40s
+2024/12/11 22:14:46 INFO Read tracks n=7,951,360 read.last=2019-03-07T23:37:32Z tps=8395 bps="3.5 MB" total.bytes="3.3 GB" running=16m45s
+2024/12/11 22:14:51 INFO Read tracks n=8,019,391 read.last=2019-03-08T16:46:25Z tps=8779 bps="3.7 MB" total.bytes="3.4 GB" running=16m50s
+2024/12/11 22:14:56 INFO Read tracks n=8,058,129 read.last=2019-03-09T02:10:00.256Z tps=8779 bps="3.7 MB" total.bytes="3.4 GB" running=16m55s
+2024/12/11 22:15:01 INFO Read tracks n=8,091,034 read.last=2019-03-09T16:50:24.999Z tps=8528 bps="3.6 MB" total.bytes="3.4 GB" running=17m0s
+2024/12/11 22:15:06 INFO Read tracks n=8,137,499 read.last=2019-03-10T00:09:11.998Z tps=8589 bps="3.6 MB" total.bytes="3.4 GB" running=17m5s
+2024/12/11 22:15:11 INFO Read tracks n=8,172,688 read.last=2019-03-10T05:56:40Z tps=8466 bps="3.6 MB" total.bytes="3.4 GB" running=17m10s
+2024/12/11 22:15:16 INFO Read tracks n=8,203,604 read.last=2019-03-10T14:31:33.001Z tps=8283 bps="3.5 MB" total.bytes="3.4 GB" running=17m15s
+2024/12/11 22:15:21 INFO Read tracks n=8,246,762 read.last=2019-03-11T00:46:53.991Z tps=8283 bps="3.5 MB" total.bytes="3.5 GB" running=17m20s
+```
+
+
 why so fast
 tps>9000
 2019-01*..-02-18 in 12m

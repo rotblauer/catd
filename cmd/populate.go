@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/paulmach/orb/geojson"
 	"github.com/rotblauer/catd/api"
@@ -171,6 +172,10 @@ Missoula, Montana
 					break readLoop
 				}
 				if err != nil {
+					if errors.Is(err, stream.ErrMissingAttribute) {
+						slog.Warn("CatScanner errored", "error", err)
+						continue
+					}
 					slog.Error("CatScanner errored", "error", err)
 					os.Exit(1)
 				}

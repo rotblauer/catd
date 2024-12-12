@@ -20,7 +20,7 @@ import (
 )
 
 type tickScanMeter struct {
-	logV       any // any value, eg track.time
+	label      time.Time // any value, eg track.time
 	interval   time.Duration
 	started    time.Time
 	ticker     *time.Ticker
@@ -63,8 +63,8 @@ func newTickScanMeter(interval time.Duration) *tickScanMeter {
 	return rl
 }
 
-func (rl *tickScanMeter) mark(val any, data []byte) {
-	rl.logV = val
+func (rl *tickScanMeter) mark(label time.Time, data []byte) {
+	rl.label = label
 	rl.nn.Add(1)
 	rl.count.Inc(1)
 	rl.size.Inc(int64(len(data)))
@@ -84,7 +84,8 @@ func (rl *tickScanMeter) log() {
 	countSnap := rl.countMeter.Snapshot()
 	sizeSnap := rl.sizeMeter.Snapshot()
 
-	slog.Info("Read tracks", "n", humanize.Comma(countSnap.Count()), "read.last", rl.logV,
+	slog.Info("Read tracks", "n", humanize.Comma(countSnap.Count()),
+		"read.last", rl.label.Format(time.DateTime),
 		"tps", common.DecimalToFixed(countSnap.Rate1(), 0),
 		"bps", humanize.Bytes(uint64(sizeSnap.Rate1())),
 		"total.bytes", humanize.Bytes(uint64(sizeSnap.Count())),
@@ -153,7 +154,7 @@ func ScanLinesBatchingCats(reader io.Reader, quit <-chan struct{}, batchSize int
 			})
 
 			readN++
-			met.mark(gjson.GetBytes(msg, "properties.Time").String(), msg)
+			met.mark(gjson.GetBytes(msg, "properties.Time"), msg)
 
 			result := gjson.GetBytes(msg, "properties.Name")
 			if !result.Exists() {
@@ -205,6 +206,8 @@ func sendErr(errs chan error, err error) {
 	}
 }
 
+var ErrMissingAttribute = errors.New("missing attribute in read line")
+
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN, closeCatAfterInt int) (chan chan []byte, chan error) {
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
@@ -234,7 +237,8 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 		catCount := 0
 		defer func() {
 			total := met.countMeter.Snapshot().Count()
-			slog.Info("Unbatcher done", "catCount", catCount, "lines", total)
+			slog.Info("Unbatcher done", "catCount", catCount,
+				"lines", humanize.Comma(total), "running", time.Since(met.started).Round(time.Second))
 		}()
 		for {
 			select {
@@ -254,11 +258,10 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 				return
 			}
 
-			met.mark(gjson.GetBytes(msg, "properties.Time").String(), msg)
-
+			met.mark(gjson.GetBytes(msg, "properties.Time").Time(), msg)
 			cat := gjson.GetBytes(msg, "properties.Name").String()
 			if cat == "" {
-				sendErr(errs, fmt.Errorf("[scanner] missing properties.Name in line: %s", string(msg)))
+				sendErr(errs, fmt.Errorf("%s: properties.Name in line: %s", ErrMissingAttribute, string(msg)))
 				return
 			}
 			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
@@ -283,6 +286,8 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 						panic("where is cat")
 					}
 					close(v.(chan []byte))
+
+					// This is the single most important line of code in the whole program.
 					v = nil
 					catLastMap.Delete(catID)
 				}
