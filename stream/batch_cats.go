@@ -84,7 +84,7 @@ func (rl *tickScanMeter) log() {
 	countSnap := rl.countMeter.Snapshot()
 	sizeSnap := rl.sizeMeter.Snapshot()
 
-	slog.Info("Read tracks", "n", countSnap.Count(), "read.last", rl.logV,
+	slog.Info("Read tracks", "n", humanize.Comma(countSnap.Count()), "read.last", rl.logV,
 		"tps", common.DecimalToFixed(countSnap.Rate1(), 0),
 		"bps", humanize.Bytes(uint64(sizeSnap.Rate1())),
 		"total.bytes", humanize.Bytes(uint64(sizeSnap.Count())),
