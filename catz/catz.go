@@ -85,10 +85,18 @@ func (g *GZFileWriter) Close() error {
 
 func (g *GZFileWriter) MustClose() error {
 	g.Unlock()
-	g.gzw.Flush()
-	g.gzw.Close()
-	g.f.Sync()
+	_ = g.gzw.Flush()
+	_ = g.gzw.Close()
+	_ = g.f.Sync()
 	return g.f.Close()
+}
+
+func (g *GZFileWriter) MaybeClose() {
+	g.Unlock()
+	_ = g.gzw.Flush()
+	_ = g.gzw.Close()
+	_ = g.f.Sync()
+	_ = g.f.Close()
 }
 
 func (g *GZFileWriter) Path() string {
@@ -183,8 +191,8 @@ func (g *GZFileReader) MustClose() error {
 	defer func() {
 		g.closed = true
 	}()
-	g.Unlock()
-	g.gzr.Close()
+	_ = g.Unlock()
+	_ = g.gzr.Close()
 	return g.f.Close()
 }
 
