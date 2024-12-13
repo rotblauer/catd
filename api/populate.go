@@ -200,7 +200,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	storeErrs := make(chan error, 1)
 	go func() {
 		defer close(storeErrs)
-		err := <-c.StoreTracks(ctx, storeCh)
+		err := <-c.StoreTracksYYYYMM(ctx, storeCh)
 		if err != nil {
 			c.logger.Error("Failed to store tracks", "error", err)
 			storeErrs <- err

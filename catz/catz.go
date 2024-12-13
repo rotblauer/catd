@@ -62,9 +62,7 @@ func (g *GZFileWriter) Write(p []byte) (int, error) {
 }
 
 func (g *GZFileWriter) Unlock() {
-	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
-		panic(err)
-	}
+	syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
 	g.locked = false
 }
 
@@ -188,4 +186,11 @@ func (g *GZFileReader) MustClose() error {
 	g.Unlock()
 	g.gzr.Close()
 	return g.f.Close()
+}
+
+func (g *GZFileReader) MaybeClose() {
+	if g.closed {
+		return
+	}
+	_ = g.Close()
 }

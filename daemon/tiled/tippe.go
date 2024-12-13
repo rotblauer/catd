@@ -39,13 +39,13 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 				}
 				return
 			}
-			defer reader.MustClose()
 
 			// Copy will not return an EOF as an error.
 			_, err = io.Copy(w, reader)
 
 			// Handle the copy errors.
 			if err != nil {
+				reader.MaybeClose()
 				d.logger.Error("tip failed to pipe source gz file", "source", source, "error", err)
 				select {
 				case pipeErrs <- err:
@@ -79,6 +79,8 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 	return nil
 }
 
+// tipFromReader call the tippecanoe command with the given reader as input,
+// piping the reader to the tippecanoe command stdin.
 func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) error {
 	tippe := exec.Command(params.TippecanoeCommand, args.cliArgs...)
 	stdin, err := tippe.StdinPipe()
@@ -113,16 +115,5 @@ func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) er
 	if err != nil {
 		return err
 	}
-
-	//slurp, err := io.ReadAll(tippeStderr)
-	//if err != nil {
-	//	return err
-	//}
-
-	//scanner := bufio.NewScanner(bytes.NewReader(slurp))
-	//for scanner.Scan() {
-	//	log.Println(fmt.Sprintf("%s %s", scanner.Text(), args.id()))
-	//}
-
 	return <-tippeErr
 }

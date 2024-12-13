@@ -45,6 +45,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/golang/geo/s2"
@@ -335,26 +336,41 @@ func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan 
 		defer close(out)
 		defer close(errs)
 
-		err := ci.DB.View(func(tx *bbolt.Tx) error {
+		gzipped := bytes.NewBuffer([]byte{})
+		ungzipped := bytes.NewBuffer([]byte{})
+		r, err := gzip.NewReader(ungzipped)
+		if err != nil {
+			errs <- err
+			return
+		}
+		defer func() {
+			if err := r.Close(); err != nil {
+				ci.logger.Error("Failed to close gzip reader", "error", err)
+			}
+		}()
+
+		err = ci.DB.View(func(tx *bbolt.Tx) error {
 			bucket := dbBucket(level)
 			b := tx.Bucket(bucket)
 			if b == nil {
 				return fmt.Errorf("bucket not found")
 			}
-
 			if err := b.ForEach(func(k, v []byte) error {
 
-				ungzipped := bytes.NewBuffer([]byte{})
-				r, err := gzip.NewReader(bytes.NewBuffer(v))
-				if err != nil {
+				gzipped.Reset()
+				ungzipped.Reset()
+
+				if _, err := gzipped.Read(v); err != nil {
+					return err
+				}
+				if err := r.Reset(gzipped); err != nil {
 					return err
 				}
 				if _, err := ungzipped.ReadFrom(r); err != nil {
-					if err != io.EOF {
+					if !errors.Is(err, io.EOF) {
 						return err
 					}
 				}
-				_ = r.Close()
 
 				ct := cattrack.CatTrack{}
 				if err := json.Unmarshal(ungzipped.Bytes(), &ct); err != nil {

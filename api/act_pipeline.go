@@ -70,7 +70,6 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 			errCh <- err
 			return
 		}
-
 		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
 	}()
 	go func() {
@@ -106,20 +105,18 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		c.completedNaps.Send(ct)
 	}, notifyNaps)
 
-	c.logger.Info("Act detection pipeline blocking")
-	defer func() {
-		c.logger.Info("Act detection pipeline unblocked")
-	}()
-
 	sinkWG := sync.WaitGroup{}
 	sinkWG.Add(1)
 	sinkErr := make(chan error, expectedErrsN)
 	go func() {
 		c.logger.Info("Act detection waiting on errors")
 		defer sinkWG.Done()
-		defer func() { close(sinkErr); sinkErr = nil }()
 		defer func() {
-			c.logger.Info("Act detection pipeline errors complete")
+			close(sinkErr)
+			sinkErr = nil
+		}()
+		defer func() {
+			c.logger.Debug("Act detection pipeline errors complete")
 		}()
 		for i := 0; i < expectedErrsN; i++ {
 			select {
@@ -132,7 +129,11 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		}
 	}()
 
-	// nBlocking.
+	// Blocking.
+	c.logger.Info("Act detection pipeline blocking")
+	defer func() {
+		c.logger.Info("Act detection pipeline unblocked")
+	}()
 	lastActiveTime := time.Time{}
 	for ct := range in {
 		select {

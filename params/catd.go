@@ -18,7 +18,7 @@ const (
 
 	MasterTracksGZFileName = "master.geojson.gz"
 	TracksGZFileName       = "tracks.geojson.gz"
-	TracksLastGZFileName   = "last_tracks.geojson.gz"
+	LastTracksGZFileName   = "last_tracks.geojson.gz"
 	SnapsGZFileName        = "snaps.geojson.gz"
 	LapsGZFileName         = "laps.geojson.gz"
 	NapsGZFileName         = "naps.geojson.gz"

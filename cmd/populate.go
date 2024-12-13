@@ -239,7 +239,7 @@ func catWorkerFn(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	var err error
 
 	first := <-catCh
-	slog.Info("First track", "cat", catN, "track", string(first))
+	slog.Debug("CatWorker first track", "cat", catN, "track", string(first))
 
 	catID := names.AliasOrSanitizedName(gjson.GetBytes(first, "properties.Name").String())
 	cat, err = api.NewCat(conceptual.CatID(catID), tiledConfig)

@@ -10,7 +10,7 @@ tdata() {
 #     zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2017"*.gz
-   zcat "${HOME}/tdata/local/yyyy-mm/2018"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2018"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2020"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2020-02"*.gz
@@ -28,6 +28,8 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+
+    zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
 
 #  shopt -s globstar;
@@ -58,7 +60,7 @@ tabula_rasa() {
 run() {
   set -e
   set -x
-  go install .
+  go install . || { echo "Install failed" && exit 1 ; }
   tabula_rasa
   tdata | catd populate \
     --datadir /tmp/catd \
@@ -68,7 +70,7 @@ run() {
     --sort true \
     --tiled.skip-edge
 
-  zcat /tmp/catd/cats/rye/tracks.geojson.gz | wc -l
+  zcat $(find /tmp/catd/cats/rye/tracks/*.gz | head -1) | wc -l
   { set +x ; } 2>/dev/null
 
   check=$?
