@@ -292,7 +292,7 @@ func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
 	// The cat is moving.
 	// A transition is when the cat stops moving.
 	if IsActivityActive(p.Cat.ActivityState) {
-		tx := 0
+		tx := float64(0)
 		if p.activityAccelerated(p.Cat.ActivityState, -1) {
 			tx++
 		}
@@ -386,7 +386,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	ct.AccelerationReported = accelerationReported
 	ct.AccelerationCalculated = accelerationCalculated
 	ct.HeadingCalculated = calculatedHeading
-	ct.HeadingDeltaReported = ctHeading - p.Cat.Last.Heading()
+	ct.HeadingDeltaReported = math.Abs(ctHeading - p.Cat.Last.Heading())
 
 	defer func() {
 		p.Cat.Last = ct
@@ -402,8 +402,10 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		p.Cat.setActivityState(activity.Mode{Activity: act}, ctTime)
 	}
 
-	// Do the maths.
+	// Do the math.
 	p.Cat.push(ct)
+
+	// The activity modes, by time, in descending order.
 	sortedActsKnown := p.Cat.SortedActsKnown()
 	sortedActsAll := p.Cat.SortedActsAll()
 
