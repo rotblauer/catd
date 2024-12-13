@@ -16,67 +16,118 @@ type Window struct {
 
 func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-chan cattrack.CatTrack, func() error) {
 
-	uuidWindowMap := sync.Map{}
+	// catUUIDWindowMap defines the time range of cat's tracks.
+	catUUIDWindowMap := sync.Map{}
+
+	// popUUIDWindowMap defines the time range of cat's tracks for this population.
+	popUUIDWindowMap := sync.Map{}
 
 	onClose := func() error {
+
+		// Extend the cat window map by the population window map.
+		popUUIDWindowMap.Range(func(k, v interface{}) bool {
+			pw := v.(Window)
+			catWindow, ok := catUUIDWindowMap.Load(k)
+			if !ok {
+				catUUIDWindowMap.Store(k, pw)
+				return true
+			}
+
+			cw := catWindow.(Window)
+			if pw.First.Before(cw.First) {
+				cw.First = pw.First
+			}
+			if pw.Last.After(cw.Last) {
+				cw.Last = pw.Last
+			}
+			catUUIDWindowMap.Store(k, cw)
+			return true
+		})
+
+		// Transform the catUUIDWindowMap to a map[string]Window for marshaling.
 		m := map[string]Window{}
-		uuidWindowMap.Range(func(key, value interface{}) bool {
+		catUUIDWindowMap.Range(func(key, value interface{}) bool {
 			m[key.(string)] = value.(Window)
 			return true
 		})
-		return c.State.StoreKVJSON(params.CatStateBucket, []byte("uuidWindowMap"), m)
+		for k, v := range m {
+			c.logger.Info("Storing cat window", "uuid", k, "first", v.First, "last", v.Last)
+		}
+		err := c.State.StoreKVJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), m)
+		if err != nil {
+			c.logger.Error("Failed to store UUID window map", "error", err)
+		}
+		return err
 	}
 
+	// Reload the cat's window map from the state.
 	m := map[string]Window{}
-	if err := c.State.ReadKVUnmarshal(params.CatStateBucket, []byte("uuidWindowMap"), &m); err != nil {
+	if err := c.State.ReadKVUnmarshal(params.CatStateBucket, []byte("catUUIDWindowMap"), &m); err != nil {
 		c.logger.Warn("Failed to read UUID window map (new cat?)", "error", err)
-	}
-	for k, v := range m {
-		uuidWindowMap.Store(k, v)
+	} else {
+		for k, v := range m {
+			c.logger.Info("Loaded cat window", "uuid", k, "first", v.First, "last", v.Last)
+			catUUIDWindowMap.Store(k, v)
+		}
 	}
 
-	// for logging
-	onceSkip := sync.Map{}
-	onceOK := sync.Map{}
+	onceDejavu := sync.Once{}
+	onceFresh := sync.Once{}
 
 	unbacktracked := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		uuid := ct.Properties.MustString("UUID", "")
 		t := ct.MustTime()
 
-		var w Window
-		wl, ok := uuidWindowMap.Load(uuid)
-		if !ok {
-			w = Window{
+		var popWindow Window
+		pwl, ok := popUUIDWindowMap.Load(uuid)
+		if ok {
+			popWindow = pwl.(Window)
+		} else {
+			popWindow = Window{
 				First: t,
 				Last:  t,
 			}
-			uuidWindowMap.Store(uuid, w)
-			return true
+			popUUIDWindowMap.Store(uuid, popWindow)
 		}
-		w = wl.(Window)
 
-		if t.Before(w.Last) && t.After(w.First) {
-			if _, ok := onceSkip.Load(uuid); !ok {
-				c.logger.Warn("Skipping backtracks", "track", ct.StringPretty(),
-					"uuid", uuid, "first", w.First, "last", w.Last)
-
-				onceSkip.Store(uuid, struct{}{})
-			}
-
-			c.logger.Debug("Track out of window", "track", ct.StringPretty(), "first", w.First, "last", w.Last)
+		if t.After(popWindow.First) && t.Before(popWindow.Last) {
+			c.logger.Warn("Track within pop window", "track", ct.StringPretty(), "first", popWindow.First, "last", popWindow.Last)
 			return false
 		}
-		if _, ok := onceOK.Load(uuid); !ok {
-			c.logger.Info("Found fresh tracks", "track", ct.StringPretty(),
-				"uuid", uuid, "first", w.First, "last", w.Last)
-			onceOK.Store(uuid, struct{}{})
+
+		// All tracks from here are outside the population window.
+
+		var catWindow Window
+		cwl, catWindowOK := catUUIDWindowMap.Load(uuid)
+		if !catWindowOK {
+			// There is no cat window for this track.
+			if t.After(popWindow.Last) {
+				popWindow.Last = t
+			} else if t.Before(popWindow.First) {
+				popWindow.First = t
+			}
+			popUUIDWindowMap.Store(uuid, popWindow)
+			return true
 		}
-		if t.After(w.Last) {
-			w.Last = t
-		} else if t.Before(w.First) {
-			w.First = t
+
+		catWindow = cwl.(Window)
+		spreadsCatWindow := t.Before(catWindow.First) || t.After(catWindow.Last)
+		if !spreadsCatWindow {
+			// Do not update the pop window if we're not populating this track.
+			onceDejavu.Do(func() {
+				c.logger.Warn("Track within cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
+			})
+			return false
 		}
-		uuidWindowMap.Store(uuid, w)
+		onceFresh.Do(func() {
+			c.logger.Info("Track outside cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
+		})
+		if t.After(popWindow.Last) {
+			popWindow.Last = t
+		} else if t.Before(popWindow.First) {
+			popWindow.First = t
+		}
+		popUUIDWindowMap.Store(uuid, popWindow)
 		return true
 	}, in)
 	return unbacktracked, onClose

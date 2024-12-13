@@ -115,6 +115,7 @@ func (s *State) readKV(bucket []byte, key []byte) ([]byte, error) {
 	}
 
 	buf := bytes.NewBuffer([]byte{})
+	//var got []byte
 	err := s.DB.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket(bucket)
 		if b == nil {
@@ -124,6 +125,9 @@ func (s *State) readKV(bucket []byte, key []byte) ([]byte, error) {
 		// Gotcha! The value returned by Get is only valid in the scope of the transaction.
 		_, err := buf.Write(b.Get(key))
 		return err
+		//got = b.Get(key)
+		//return nil
 	})
 	return buf.Bytes(), err
+	//return got, err
 }

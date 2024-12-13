@@ -144,7 +144,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	unbacktracked, onCloseBack := c.Unbacktrack(ctx, pipedLast)
 	defer func() {
 		if err := onCloseBack(); err != nil {
-			c.logger.Error("Failed to close unbacktrack", "error", err)
+			c.logger.Error("Failed to close cat window unbacktracker", "error", err)
 		}
 	}()
 
