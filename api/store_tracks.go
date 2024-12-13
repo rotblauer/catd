@@ -23,7 +23,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	// Cat pushes will be stored in cat push/populate-batches.
 	//c.logger.Info("Waiting on master locker...")
 	//gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
-	//	NamedGZWriter(params.MasterTracksGZFileName, nil)
+	//	NewGZFileWriter(params.MasterTracksGZFileName, nil)
 	//if err != nil {
 	//	c.logger.Error("Failed to create custom writer", "error", err)
 	//	select {
@@ -38,7 +38,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 
 	truncate := catz.DefaultGZFileWriterConfig()
 	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-	lastGZ, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
+	lastGZ, err := c.State.Flat.NewGZFileWriter(params.TracksLastGZFileName, truncate)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		errCh <- err
@@ -50,7 +50,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		}
 	}()
 
-	tracksGZ, err := c.State.NamedGZWriter(params.TracksGZFileName)
+	tracksGZ, err := c.State.Flat.NewGZFileWriter(params.TracksGZFileName, nil)
 	if err != nil {
 		c.logger.Error("Failed to create track writer", "error", err)
 		errCh <- err

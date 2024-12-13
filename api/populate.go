@@ -160,7 +160,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	sinkSnapErrs := make(chan error, 1)
 	go func() {
 		defer close(sinkSnapErrs)
-		gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
+		gzftwSnaps, err := c.State.Flat.NewGZFileWriter(params.SnapsGZFileName, nil)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
 			sinkSnapErrs <- err

@@ -30,7 +30,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 
 		// For each source, open the file and copy (pipe) it to the tippecanoe r/w.
 		for _, source := range sources {
-			reader, err := catz.NewFlatGZReader(source)
+			reader, err := catz.NewGZFileReader(source)
 			if err != nil {
 				d.logger.Error("tip open failed to open source file", "error", err)
 				select {
@@ -39,6 +39,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 				}
 				return
 			}
+			defer reader.MustClose()
 
 			// Copy will not return an EOF as an error.
 			_, err = io.Copy(w, reader)

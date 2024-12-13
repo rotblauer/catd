@@ -112,7 +112,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	uniqIndexFeeds := make(map[CellLevel]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
 
 	for _, level := range config.Levels {
-		//gzf, err := f.NamedGZWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
+		//gzf, err := f.NewGZFileWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
 		//if err != nil {
 		//	return nil, err
 		//}

@@ -322,6 +322,7 @@ func TeeMany[T any](ctx context.Context, in <-chan T, outs ...chan T) {
 		defer func() {
 			for _, out := range outs {
 				close(out)
+				out = nil
 			}
 		}()
 		for element := range in {

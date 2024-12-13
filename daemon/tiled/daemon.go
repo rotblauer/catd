@@ -462,7 +462,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 }
 
 func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jsonData []byte) (err error) {
-	gzftw, er := catz.NewFlatGZWriter(source, writeConfig)
+	gzftw, er := catz.NewGZFileWriter(source, writeConfig)
 	if er != nil {
 		return er
 	}

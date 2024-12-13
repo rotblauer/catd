@@ -61,14 +61,6 @@ func (s *State) Close() error {
 	return nil
 }
 
-func (s *State) NamedGZWriter(target string) (*catz.GZFileWriter, error) {
-	f, err := s.Flat.NamedGZWriter(target, nil)
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
 func (s *State) StoreKVJSON(bucket []byte, key []byte, v interface{}) error {
 	data, err := json.Marshal(v)
 	if err != nil {

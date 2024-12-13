@@ -39,13 +39,13 @@ func (f *Flat) Path() string {
 	return f.path
 }
 
-func (f *Flat) NamedGZWriter(name string, config *GZFileWriterConfig) (*GZFileWriter, error) {
+func (f *Flat) NewGZFileWriter(name string, config *GZFileWriterConfig) (*GZFileWriter, error) {
 	if config == nil {
 		config = DefaultGZFileWriterConfig()
 	}
-	return NewFlatGZWriter(filepath.Join(f.path, name), config)
+	return NewGZFileWriter(filepath.Join(f.path, name), config)
 }
 
 func (f *Flat) NamedGZReader(name string) (*GZFileReader, error) {
-	return NewFlatGZReader(filepath.Join(f.path, name))
+	return NewGZFileReader(filepath.Join(f.path, name))
 }

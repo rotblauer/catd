@@ -32,7 +32,7 @@ func DefaultGZFileWriterConfig() *GZFileWriterConfig {
 	}
 }
 
-func NewFlatGZWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, error) {
+func NewGZFileWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, error) {
 	if err := os.MkdirAll(filepath.Dir(path), config.DirPerm); err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func NewFlatGZWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, er
 func (g *GZFileWriter) Write(p []byte) (int, error) {
 	if !g.locked && g.f != nil {
 		if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
-			panic(err)
+			return 0, err
 		}
 		g.locked = true
 	}
@@ -85,6 +85,14 @@ func (g *GZFileWriter) Close() error {
 	return nil
 }
 
+func (g *GZFileWriter) MustClose() error {
+	g.Unlock()
+	g.gzw.Flush()
+	g.gzw.Close()
+	g.f.Sync()
+	return g.f.Close()
+}
+
 func (g *GZFileWriter) Path() string {
 	return g.f.Name()
 }
@@ -95,7 +103,7 @@ type GZFileReader struct {
 	closed bool
 }
 
-func NewFlatGZReader(path string) (*GZFileReader, error) {
+func NewGZFileReader(path string) (*GZFileReader, error) {
 	// If file/path does not exist, return error.
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
@@ -171,4 +179,13 @@ func (g *GZFileReader) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (g *GZFileReader) MustClose() error {
+	defer func() {
+		g.closed = true
+	}()
+	g.Unlock()
+	g.gzr.Close()
+	return g.f.Close()
 }

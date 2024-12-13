@@ -55,7 +55,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	expectedErrsN := 4
 	errCh := make(chan error, expectedErrsN)
 	go func() {
-		wr, err := c.State.Flat.NamedGZWriter(params.LapsGZFileName, nil)
+		wr, err := c.State.Flat.NewGZFileWriter(params.LapsGZFileName, nil)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
 			errCh <- err
@@ -64,7 +64,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
 	}()
 	go func() {
-		wr, err := c.State.Flat.NamedGZWriter(params.NapsGZFileName, nil)
+		wr, err := c.State.Flat.NewGZFileWriter(params.NapsGZFileName, nil)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
 			errCh <- err
@@ -117,7 +117,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	go func() {
 		c.logger.Info("Act detection waiting on errors")
 		defer sinkWG.Done()
-		defer close(sinkErr)
+		defer func() { close(sinkErr); sinkErr = nil }()
 		defer func() {
 			c.logger.Info("Act detection pipeline errors complete")
 		}()
@@ -168,6 +168,8 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	}
 	close(lapTracks)
 	close(napTracks)
+	lapTracks = nil
+	napTracks = nil
 	sinkWG.Wait()
 	return nil
 }
