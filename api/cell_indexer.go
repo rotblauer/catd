@@ -276,25 +276,22 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 
 	*/
 
-	// Batch dumped tracks to avoid sending too many at once.
-	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-		return len(s) == batchSize
-	}, dump)
-	didErr := atomic.Bool{} // Any error will cause the stream fn to noop.
-	sendErrCh := make(chan error, 30)
+	sendErrCh := make(chan error, 1)
 	go func() {
 		defer close(sendErrCh)
+
+		// Batch dumped tracks to avoid sending too many at once.
+		batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+			return len(s) == batchSize
+		}, dump)
+
 		sourceMode := tiled.SourceModeTrunc
-		stream.Sink(ctx, func(s []cattrack.CatTrack) {
-			// If any request errors, short circuit all subsequent requests.
-			if didErr.Load() {
-				return
-			}
+		for s := range batched {
 			if atomic.LoadInt32(&pushBatchN) > 0 {
 				sourceMode = tiled.SourceModeAppend
 			}
 			atomic.AddInt32(&pushBatchN, 1)
-			err := sendGZippedToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
 					SourceName: "s2_cells",
@@ -311,10 +308,10 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.Cel
 				return cp
 			}, stream.Slice(ctx, s)))
 			if err != nil {
-				didErr.Store(true)
 				sendErrCh <- err
+				return
 			}
-		}, batched)
+		}
 	}()
 
 	// Block on dump errors.

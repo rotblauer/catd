@@ -447,7 +447,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 		return fmt.Errorf("missing tippe config")
 	}
 	if len(a.JSONBytes) == 0 && len(a.GzippedJSONBytes) == 0 {
-		return fmt.Errorf("missing features")
+		return fmt.Errorf("no JSON or gzip data")
 	}
 	if len(a.Versions) == 0 {
 		return fmt.Errorf("missing versions")
@@ -494,7 +494,7 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 	return nil
 }
 
-func (d *TileDaemon) writeRawGZ(source string, writeConfig *flat.GZFileWriterConfig, gzipData []byte) error {
+func (d *TileDaemon) write(source string, writeConfig *flat.GZFileWriterConfig, gzipData []byte) error {
 	f, err := os.OpenFile(source, writeConfig.Flag, writeConfig.FilePerm)
 	if err != nil {
 		return err
@@ -505,6 +505,9 @@ func (d *TileDaemon) writeRawGZ(source string, writeConfig *flat.GZFileWriterCon
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	_, err = f.Write(gzipData)
+	if err != nil {
+		return err
+	}
 	if err != nil {
 		return err
 	}
@@ -615,7 +618,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 			writeConf.Flag = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
 		}
 		if args.GzippedJSONBytes != nil {
-			if err := d.writeRawGZ(source, writeConf, data); err != nil {
+			if err := d.write(source, writeConf, data); err != nil {
 				return err
 			}
 		} else {

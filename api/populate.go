@@ -367,6 +367,11 @@ func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.P
 		}
 	}
 
+	if err := gz.Flush(); err != nil {
+		c.logger.Error("Failed to flush gzip writer", "error", err)
+		return err
+	}
+
 	args.GzippedJSONBytes = buf.Bytes()
 
 	err = c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
