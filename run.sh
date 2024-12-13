@@ -61,7 +61,7 @@ run() {
   set -e
   set -x
   go install . || { echo "Install failed" && exit 1 ; }
-  tabula_rasa
+#   tabula_rasa
   tdata | catd populate \
     --datadir /tmp/catd \
     --verbosity 0 \

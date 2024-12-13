@@ -152,10 +152,10 @@ func (c *Cat) push(ct WrappedTrack) {
 }
 
 func (c *Cat) drop(ct WrappedTrack) {
-	c.WindowAccelerationReportedSum -= ct.AccelerationReported
-	c.WindowAccelerationCalculatedSum -= ct.AccelerationCalculated
-	c.WindowSpeedReportedSum -= ct.Speed() * ct.TimeOffset.Seconds()
 	c.WindowSpeedCalculatedSum -= ct.SpeedCalculated * ct.TimeOffset.Seconds()
+	c.WindowSpeedReportedSum -= ct.Speed() * ct.TimeOffset.Seconds()
+	c.WindowAccelerationCalculatedSum -= ct.AccelerationCalculated
+	c.WindowAccelerationReportedSum -= ct.AccelerationReported
 	c.dropActivityMode(ct)
 	c.WindowSpan -= ct.TimeOffset
 }

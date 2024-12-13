@@ -43,7 +43,7 @@ var DefaultLapConfig = &ActDiscretionConfig{
 
 var DefaultNapConfig = &ActDiscretionConfig{
 	Interval: 24 * time.Hour,
-	Distance: 100.0,
+	Distance: 500.0,
 }
 
 type LineStringSimplificationConfig struct {

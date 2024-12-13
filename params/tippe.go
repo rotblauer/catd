@@ -107,9 +107,9 @@ var (
 	TippeNapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "5000000",
 		"--cluster-densest-as-needed",
-		"--cluster-distance", "3",
+		"--cluster-distance", "1",
 		"--calculate-feature-density",
-		"--drop-rate", "2",
+		"--drop-rate", "1",
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
 		"--include", "Name",
