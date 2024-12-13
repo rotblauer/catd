@@ -331,41 +331,44 @@ func (ci *CellIndexer) Close() error {
 // Only non-nil errors are sent.
 func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan error) {
 	out := make(chan cattrack.CatTrack)
-	errs := make(chan error, 1)
+	errs := make(chan error, 2)
 	go func() {
 		defer close(out)
 		defer close(errs)
 
-		gzipped := bytes.NewBuffer([]byte{})
-		ungzipped := bytes.NewBuffer([]byte{})
-		r, err := gzip.NewReader(ungzipped)
-		if err != nil {
-			errs <- err
-			return
-		}
+		gzipped := bytes.NewBuffer([]byte("RESET ME"))
+		ungzipped := bytes.NewBuffer([]byte("RESET ME"))
+		var r *gzip.Reader
 		defer func() {
 			if err := r.Close(); err != nil {
 				ci.logger.Error("Failed to close gzip reader", "error", err)
+				errs <- err
 			}
 		}()
 
-		err = ci.DB.View(func(tx *bbolt.Tx) error {
+		err := ci.DB.View(func(tx *bbolt.Tx) error {
 			bucket := dbBucket(level)
 			b := tx.Bucket(bucket)
 			if b == nil {
 				return fmt.Errorf("bucket not found")
 			}
 			if err := b.ForEach(func(k, v []byte) error {
-
 				gzipped.Reset()
+				gzipped.Write(v)
+				if r == nil {
+					var err error
+					r, err = gzip.NewReader(gzipped) // throw away buf
+					if err != nil {
+						return err
+					}
+				} else {
+					if err := r.Reset(gzipped); err != nil {
+						if !errors.Is(err, io.EOF) {
+							return err
+						}
+					}
+				}
 				ungzipped.Reset()
-
-				if _, err := gzipped.Read(v); err != nil {
-					return err
-				}
-				if err := r.Reset(gzipped); err != nil {
-					return err
-				}
 				if _, err := ungzipped.ReadFrom(r); err != nil {
 					if !errors.Is(err, io.EOF) {
 						return err
@@ -374,7 +377,7 @@ func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan 
 
 				ct := cattrack.CatTrack{}
 				if err := json.Unmarshal(ungzipped.Bytes(), &ct); err != nil {
-					return err
+					return fmt.Errorf("failed to unmarshal JSON: %w", err)
 				}
 				out <- ct
 				return nil

@@ -133,10 +133,17 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return true
 	}, in)
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
-	pipedLast := sanitized
+
+	receivedAt := time.Now().Unix()
+	stamped := stream.Transform(ctx, func(ct cattrack.CatTrack) cattrack.CatTrack {
+		ct.SetPropertySafe("catdReceivedAt", receivedAt)
+		return ct
+	}, sanitized)
+
+	pipedLast := stamped
 	if sort {
 		// Sorting is blocking.
-		pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, sanitized)
+		pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
 		//pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 
