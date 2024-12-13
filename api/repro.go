@@ -34,6 +34,11 @@ func (c *Cat) ReproducePipelines() error {
 		c.logger.Error("Failed to create tracks reader", "error", err)
 		return err
 	}
+	defer func() {
+		if err := reader.Close(); err != nil {
+			c.logger.Error("Failed to close tracks reader", "error", err)
+		}
+	}()
 
 	// carefully rm -rf tiled/source
 	tiledSource := filepath.Join(c.tiledConf.RootDir, "source")
@@ -83,9 +88,7 @@ func (c *Cat) ReproducePipelines() error {
 	c.SubscribeFancyLogs()
 
 	ctx := context.Background()
-	gzr := reader.Reader()
-	defer gzr.Close()
-	if err := c.ProducerPipelines(ctx, stream.NDJSON[cattrack.CatTrack](ctx, gzr)); err != nil {
+	if err := c.ProducerPipelines(ctx, stream.NDJSON[cattrack.CatTrack](ctx, reader)); err != nil {
 		c.logger.Error("Failed to regenerate pipelines", "error", err)
 		return err
 	}

@@ -89,22 +89,21 @@ func NewFlatGZWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, er
 	if err != nil {
 		return nil, err
 	}
-	return &GZFileWriter{
+	g := &GZFileWriter{
 		f:   fi,
 		gzw: gzw,
-	}, nil
+	}
+	return g, nil
 }
 
-// Writer returns a gzip writer for the file.
-// While the writer is not closed, an exclusive lock is held on the file.
-func (g *GZFileWriter) Writer() *gzip.Writer {
+func (g *GZFileWriter) Write(p []byte) (int, error) {
 	if !g.locked && g.f != nil {
 		if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
 			panic(err)
 		}
 		g.locked = true
 	}
-	return g.gzw
+	return g.gzw.Write(p)
 }
 
 func (g *GZFileWriter) Unlock() {
@@ -143,9 +142,7 @@ type GZFileReader struct {
 
 func NewFlatGZReader(path string) (*GZFileReader, error) {
 	// If file/path does not exist, return error.
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, err
-	} else if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
 	fi, err := os.OpenFile(path, os.O_RDONLY, 0660)
@@ -157,6 +154,37 @@ func NewFlatGZReader(path string) (*GZFileReader, error) {
 		return nil, err
 	}
 	return &GZFileReader{f: fi, gzr: gzr}, nil
+}
+
+// LockEX locks a file for exclusive access.
+func (g *GZFileReader) LockEX() error {
+	if g.closed {
+		panic("closed")
+	}
+	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX)
+}
+
+// LockSH locks a file for shared access.
+func (g *GZFileReader) LockSH() error {
+	if g.closed {
+		panic("closed")
+	}
+	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH)
+}
+
+// Unlock unlocks a file.
+func (g *GZFileReader) Unlock() error {
+	if g.closed {
+		panic("closed")
+	}
+	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
+}
+
+func (g *GZFileReader) Read(p []byte) (int, error) {
+	if g.LockSH() != nil {
+		return 0, nil
+	}
+	return g.gzr.Read(p)
 }
 
 // Reader returns a gzip reader for the file.
@@ -178,11 +206,11 @@ func (g *GZFileReader) Close() error {
 	defer func() {
 		g.closed = true
 	}()
-	if err := g.gzr.Close(); err != nil {
+	if err := g.Unlock(); err != nil {
 		return err
 	}
-	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN); err != nil {
-		panic(err)
+	if err := g.gzr.Close(); err != nil {
+		return err
 	}
 	if err := g.f.Close(); err != nil {
 		return err

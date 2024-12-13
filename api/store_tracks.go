@@ -45,7 +45,6 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		return
 	}
 	defer lastGZ.Close()
-	last := lastGZ.Writer()
 
 	tracksGZ, err := c.State.NamedGZWriter(params.TracksGZFileName)
 	if err != nil {
@@ -54,12 +53,11 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		return
 	}
 	defer tracksGZ.Close()
-	tracks := tracksGZ.Writer()
 
 	writeAll := io.MultiWriter(
 		/* gzftwMaster.Writer(), */
-		last,
-		tracks,
+		lastGZ,
+		tracksGZ,
 	)
 	enc := json.NewEncoder(writeAll)
 

@@ -20,7 +20,7 @@ func TestAccelerationStuff(t *testing.T) {
 	}
 	defer gzftw.Close()
 
-	dec := json.NewDecoder(gzftw.Reader())
+	dec := json.NewDecoder(gzftw)
 	for {
 		ct := cattrack.CatTrack{}
 		err := dec.Decode(&ct)

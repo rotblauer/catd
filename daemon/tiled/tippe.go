@@ -40,10 +40,8 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 				return
 			}
 
-			rr := reader.Reader()
-
 			// Copy will not return an EOF as an error.
-			_, err = io.Copy(w, rr)
+			_, err = io.Copy(w, reader)
 
 			// Handle the copy errors.
 			if err != nil {
@@ -56,7 +54,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 			}
 
 			// Close the reader before handling Copy errors.
-			if err := rr.Close(); err != nil {
+			if err := reader.Close(); err != nil {
 				d.logger.Error("tip failed to close source file reader", "source", source, "error", err)
 				select {
 				case pipeErrs <- err:

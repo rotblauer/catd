@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/dustin/go-humanize"
-	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -282,17 +281,16 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return nil
 }
 
-func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr *flat.GZFileWriter, in <-chan T) error {
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr io.WriteCloser, in <-chan T) error {
 
-	defer c.logger.Info("Sunk stream to gz file", "path", wr.Path())
+	defer c.logger.Info("Sunk stream to gz file")
 	defer func() {
 		if err := wr.Close(); err != nil {
 			c.logger.Error("Failed to close writer", "error", err)
 		}
 	}()
 
-	w := wr.Writer()
-	enc := json.NewEncoder(w)
+	enc := json.NewEncoder(wr)
 
 	// Blocking.
 	for a := range in {

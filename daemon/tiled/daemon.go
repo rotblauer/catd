@@ -472,12 +472,11 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 			d.logger.Error("Failed to close gz writer", "error", err)
 		}
 	}(gzftw)
-	wr := gzftw.Writer()
 
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
 	dec := json.NewDecoder(bytes.NewReader(jsonData))
-	enc := json.NewEncoder(wr)
+	enc := json.NewEncoder(gzftw)
 
 	for {
 		var v json.RawMessage
