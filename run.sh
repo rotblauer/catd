@@ -10,7 +10,10 @@ tdata() {
 #     zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
-    zcat "${HOME}/tdata/local/yyyy-mm/2020-04"*.gz
+#     zcat "${HOME}/tdata/local/yyyy-mm/2021-04"*.gz
+#     zcat "${HOME}/tdata/local/yyyy-mm/2021-04"*.gz
+#     zcat "${HOME}/tdata/local/yyyy-mm/2021-05"*.gz
+    zcat "${HOME}/tdata/local/yyyy-mm/2021-07"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
@@ -31,7 +34,7 @@ run() {
   set -e
   go install .
   # This way you get to look at maps while catd (re-)runs, .mbtiles get overwritten with a mv.
-  rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
+  # rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
   # rm -rf /tmp/catd
 
   tdata | catd populate \
@@ -58,7 +61,7 @@ repro() {
 }
 
 time run |& tee --ignore-interrupt run.out
-#time repro |& tee - i run.out
+# time repro |& tee - i run.out
 
 
 

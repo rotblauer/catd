@@ -1,4 +1,9 @@
 
+```shell
+zcat ~/tdata/edge.json.gz | jq -r -c '.properties | { Name, Alias, UUID }' | sort | uniq -c
+  38928 {"Name":"ranga-moto-act3","Alias":null,"UUID":"76170e959f967f40"}
+ 112141 {"Name":"Rye16","Alias":"rye","UUID":"5D37B5DA-6E0B-41FE-8A72-2BB681D661DA"}
+```
 
 
 Up until this error, better than good.

@@ -141,11 +141,18 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		//pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 
+	unbacktracked, onCloseBack := c.Unbacktrack(ctx, pipedLast)
+	defer func() {
+		if err := onCloseBack(); err != nil {
+			c.logger.Error("Failed to close unbacktrack", "error", err)
+		}
+	}()
+
 	// Fork stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
-	}, pipedLast)
+	}, unbacktracked)
 
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)

@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/catdb/flat"
 	"github.com/rotblauer/catd/conceptual"
@@ -68,6 +69,14 @@ func (s *State) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
 	return f, nil
 }
 
+func (s *State) StoreKVJSON(bucket []byte, key []byte, v interface{}) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return s.storeKV(bucket, key, data)
+}
+
 func (s *State) StoreKV(bucket []byte, key []byte, value []byte) error {
 	return s.storeKV(bucket, key, value)
 }
@@ -86,6 +95,14 @@ func (s *State) storeKV(bucket []byte, key []byte, data []byte) error {
 		}
 		return b.Put(key, data)
 	})
+}
+
+func (s *State) ReadKVUnmarshal(bucket []byte, key []byte, v interface{}) error {
+	data, err := s.readKV(bucket, key)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
 }
 
 func (s *State) ReadKV(bucket []byte, key []byte) ([]byte, error) {

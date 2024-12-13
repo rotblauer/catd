@@ -79,6 +79,12 @@ func (ct *CatTrack) CatID() conceptual.CatID {
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {
+	ut, ok := ct.Properties["UnixTime"]
+	if ok {
+		if v, ok := ut.(float64); ok {
+			return time.Unix(int64(v), 0), nil
+		}
+	}
 	pt, ok := ct.Properties["Time"]
 	if !ok {
 		return time.Time{}, fmt.Errorf("missing Time property")
@@ -193,6 +199,14 @@ func (ct *CatTrack) Validate() error {
 // > cmp(a, b) should return a negative number when a < b,
 // > a positive number when a > b, and zero when a == b
 func SortFunc(a, b CatTrack) int {
+	aUUID := a.Properties.MustString("UUID", "a")
+	bUUID := b.Properties.MustString("UUID", "b")
+	if aUUID < bUUID {
+		return -1
+	} else if aUUID > bUUID {
+		return 1
+	}
+
 	ti, err := a.Time()
 	if err != nil {
 		return 0
