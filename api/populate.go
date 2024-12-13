@@ -153,6 +153,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	sinkSnapErrs := make(chan error, 1)
 	go func() {
+		defer close(sinkSnapErrs)
 		gzftwSnaps, err := c.State.Flat.NamedGZWriter(params.SnapsGZFileName, nil)
 		if err != nil {
 			c.logger.Error("Failed to create custom writer", "error", err)
@@ -163,11 +164,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			c.logger.Error("Failed to write snaps", "error", err)
 			sinkSnapErrs <- err
 		}
-		close(sinkSnapErrs)
 	}()
 
 	sendSnapErrs := make(chan error, 1)
 	go func() {
+		defer close(sendSnapErrs)
 		err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
 			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
@@ -182,7 +183,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			c.logger.Error("Failed to send snaps", "error", err)
 			sendSnapErrs <- err
 		}
-		close(sendSnapErrs)
 	}()
 
 	// All non-snaps flow to these channels.
@@ -307,6 +307,7 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeat
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 		go stream.Sink(ctx, nil, in)
+		return nil
 	}
 
 	all := stream.Collect(ctx, in)
@@ -342,6 +343,7 @@ func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.P
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 		go stream.Sink(ctx, nil, in)
+		return nil
 	}
 
 	all := stream.Collect(ctx, in)
@@ -359,8 +361,7 @@ func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.P
 	enc := json.NewEncoder(gz)
 
 	for _, el := range all {
-		cp := el
-		if err := enc.Encode(cp); err != nil {
+		if err := enc.Encode(el); err != nil {
 			c.logger.Error("Failed to encode feature", "error", err)
 			return err
 		}

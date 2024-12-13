@@ -171,15 +171,21 @@ Missoula, Montana
 				go catWorkerFn(ctx, catN, catCh, workersWG, d)
 
 			case err, open := <-errCh:
-				if err == io.EOF {
+				// out of tracks
+				if errors.Is(err, io.EOF) {
 					slog.Info("CatScanner EOF")
 					break readLoop
 				}
+				// user interrupt
+				if errors.Is(err, io.ErrUnexpectedEOF) {
+					slog.Warn("CatScanner unexpected EOF")
+					break readLoop
+				}
+				if errors.Is(err, stream.ErrMissingAttribute) {
+					slog.Warn("CatScanner found bad track", "error", err)
+					continue
+				}
 				if err != nil {
-					if errors.Is(err, stream.ErrMissingAttribute) {
-						slog.Warn("CatScanner errored", "error", err)
-						continue
-					}
 					slog.Error("CatScanner errored", "error", err)
 					os.Exit(1)
 				}

@@ -9,10 +9,16 @@ tdata() {
 #     zcat "${HOME}"/tdata/edge.json.gz
 #     zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
-    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz "${HOME}/tdata/local/yyyy-mm/2020"*.gz
+    zcat "${HOME}/tdata/local/yyyy-mm/2020-01"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz "${HOME}"/tdata/{devop,edge}.json.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
+
+#  shopt -s globstar;
+#  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
+#    (( RANDOM % 4 )) && zcat "$f"
+#  done
 }
 
 bump_tileservice() {
@@ -51,8 +57,8 @@ repro() {
   bump_tileservice &
 }
 
-run
-#repro
+time run |& tee --ignore-interrupt run.out
+#time repro |& tee - i run.out
 
 
 

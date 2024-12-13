@@ -21,7 +21,6 @@ require (
 	github.com/spf13/viper v1.19.0
 	github.com/tidwall/gjson v1.18.0
 	go.etcd.io/bbolt v1.3.11
-	gonum.org/v1/gonum v0.15.1
 )
 
 require (
@@ -29,6 +28,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/holiman/uint256 v1.3.1 // indirect
