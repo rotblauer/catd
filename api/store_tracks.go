@@ -11,7 +11,6 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"os"
-	"sync"
 )
 
 // StoreTracks stores incoming CatTracks for one cat to disk.
@@ -133,46 +132,56 @@ func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack
 	}()
 	lastEnc := json.NewEncoder(lastGZ)
 
-	writeClosers := sync.Map{}
-	defer writeClosers.Range(func(k, v interface{}) bool {
-		if err := v.(io.WriteCloser).Close(); err != nil {
-			c.logger.Error("Failed to close yyyymm writer", "error", err, "writer", k)
-		}
-		return true
-	})
-	encoders := map[string]*json.Encoder{}
+	var ymWriter *catz.GZFileWriter
+	var ymEnc *json.Encoder
 
 	count := metrics.NewCounter()
 	meter := metrics.NewMeter()
 	defer meter.Stop()
 
 	// Blocking.
+	lastYMPath := ""
 	for ct := range in {
 		if err := lastEnc.Encode(ct); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 			errCh <- err
 			return
 		}
-		yyyymmPath := fmt.Sprintf("tracks/%s.geojson.gz", ct.MustTime().Format("2006-01"))
-		yyyymmEnc, ok := encoders[yyyymmPath]
-		if !ok {
-			gz, err := c.State.Flat.NewGZFileWriter(yyyymmPath, nil)
+		ymPath := fmt.Sprintf("tracks/%s.geojson.gz", ct.MustTime().Format("2006-01"))
+		if lastYMPath != ymPath {
+			if ymWriter != nil {
+				if err := ymWriter.Close(); err != nil {
+					c.logger.Error("Failed to close last-tracks writer", "error", err)
+					errCh <- err
+					return
+				}
+			}
+			ymWriter, err = c.State.Flat.NewGZFileWriter(ymPath, nil)
 			if err != nil {
 				c.logger.Error("Failed to create track writer", "error", err)
 				errCh <- err
 				return
 			}
-			writeClosers.Store(yyyymmPath, gz)
-			yyyymmEnc = json.NewEncoder(gz)
-			encoders[yyyymmPath] = yyyymmEnc
+			ymEnc = json.NewEncoder(ymWriter)
 		}
-		if err := yyyymmEnc.Encode(ct); err != nil {
+		lastYMPath = ymPath
+		if ymEnc == nil {
+			panic("impossible")
+		}
+		if err := ymEnc.Encode(ct); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 			errCh <- err
 			return
 		}
 		count.Inc(1)
 		meter.Mark(1)
+	}
+	if ymWriter != nil {
+		if err := ymWriter.Close(); err != nil {
+			c.logger.Error("Failed to close last-tracks writer", "error", err)
+			errCh <- err
+			return
+		}
 	}
 
 	countSnap := count.Snapshot()
