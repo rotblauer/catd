@@ -38,25 +38,29 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 
 	truncate := flat.DefaultGZFileWriterConfig()
 	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
-	gzftwLast, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
+	lastGZ, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
 	if err != nil {
 		c.logger.Error("Failed to create custom writer", "error", err)
 		errCh <- err
 		return
 	}
-	rLast := gzftwLast.Writer()
-	defer gzftwLast.Close()
+	defer lastGZ.Close()
+	last := lastGZ.Writer()
 
-	cattracks, err := c.State.NamedGZWriter(params.TracksGZFileName)
+	tracksGZ, err := c.State.NamedGZWriter(params.TracksGZFileName)
 	if err != nil {
 		c.logger.Error("Failed to create track writer", "error", err)
 		errCh <- err
 		return
 	}
-	rTracks := cattracks.Writer()
-	defer cattracks.Close()
+	defer tracksGZ.Close()
+	tracks := tracksGZ.Writer()
 
-	writeAll := io.MultiWriter( /* gzftwMaster.Writer(), */ rTracks, rLast)
+	writeAll := io.MultiWriter(
+		/* gzftwMaster.Writer(), */
+		last,
+		tracks,
+	)
 	enc := json.NewEncoder(writeAll)
 
 	count := metrics.NewCounter()

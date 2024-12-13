@@ -21,7 +21,7 @@ var AliasesToMatchers = map[string]string{
 	"pr":          `(?i)(^Pam.*|^Rathbone.*)`, // ^iPhone$ ???
 	"chishiki":    `(?i)(^chishiki.*)`,
 	"mat":         `(?i)(^Twenty7.*)`,
-	"ric":         `(?i)(^Ric|.*A3_Pixel_XL.*|.*marlin-Pixel-222d.*)`,
+	"ric":         `(?i)(^Ric|QP1A_191005|.*marlin-Pixel-222d.*)`,
 	"jlc":         `(?i)(.*Carlomag.*|^JLC$|^jlc$)`,
 	TesterCatName: `(?)(^tester$)`,
 }

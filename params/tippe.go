@@ -77,7 +77,7 @@ var (
 		"--force",
 	}
 	TippeLapsArgs = CLIFlagsT{
-		"--maximum-tile-bytes", "750000",
+		"--maximum-tile-bytes", "500000",
 		"--drop-smallest-as-needed",
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
@@ -107,9 +107,9 @@ var (
 	TippeNapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "5000000",
 		"--cluster-densest-as-needed",
-		"--cluster-distance", "1",
+		"--cluster-distance", "3",
 		"--calculate-feature-density",
-		"--drop-rate", "1",
+		"--drop-rate", "2",
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
 		"--include", "Name",
@@ -118,10 +118,13 @@ var (
 		"--include", "Duration",
 		"-EDuration:sum",
 		"--include", "Accuracy_Mean",
+		"-EAccuracy_Mean:mean",
 		"--include", "Elevation_Mean",
-		"--include", "Area",
+		"-EElevation_Mean:mean",
 		"--include", "RawPointCount",
 		"-ERawPointCount:sum",
+		"--include", "Area",
+		"-EArea:mean",
 	}
 	// TippeTracksArgs taken from V1 CatTracks procedge, procmaster.
 	TippeTracksArgs = CLIFlagsT{

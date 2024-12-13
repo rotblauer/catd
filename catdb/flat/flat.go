@@ -115,6 +115,7 @@ func (g *GZFileWriter) Unlock() {
 }
 
 func (g *GZFileWriter) Close() error {
+	g.Unlock()
 	if err := g.gzw.Flush(); err != nil {
 		return err
 	}
@@ -124,7 +125,6 @@ func (g *GZFileWriter) Close() error {
 	if err := g.f.Sync(); err != nil {
 		return err
 	}
-	g.Unlock()
 	if err := g.f.Close(); err != nil {
 		return err
 	}

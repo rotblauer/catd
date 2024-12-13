@@ -14,12 +14,45 @@ type Window struct {
 	Last  time.Time
 }
 
+// Unbacktrack removes tracks that are within the cat's populated window.
+// The cat's window is only allowed to grow, and will grow to include the population window.
+// Since each cat can have more than one device, leading to more than "simultaneous" population windows,
+// the population window(s) are grouped per UUID.
+//
+// Be aware that gaps can be created if the population window/s is not contiguous.
+// For example: 1-3, then 5-8, yields 1-8; and cat will never back-fill the gap at 4.
+//
+// BTW ia cat has at least 2879 UUIDs, most with windows < 24hrs.
+/*
+
+For example, if a cat...
+- Starts cattracks _and another GPS tracker_, and heads on a bike ride,
+- and cattracks dies for some reason along the way,
+- when cat gets back and starts cattracks again (and pushes -- closing the window),
+- cat will be UNABLE to upload the other GPS tracks to backfill,
+- since they will fall within the already-populated window.
+
+...But wait! That's wrong!
+If the other GPS tracker has a different UUID, it will be allowed to populate,
+since the windows are cat/UUID specific.
+*/
 func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-chan cattrack.CatTrack, func() error) {
 
+	//	slog.Warn(`######### UNBACKTRACKING ENABLED #########
+	//
+	//Unbacktrack is a dangerous device.
+	//It prevents tracks from getting populated.
+	//
+	//It drops tracks that lie within a Cat:UUID's already-populated time window,
+	//enabling a kind of idempotency.
+	//`)
+	//time.Sleep(5 * time.Second)
+
 	// catUUIDWindowMap defines the time range of cat's tracks.
+	// This window is read-only until the end of the stream.
 	catUUIDWindowMap := sync.Map{}
 
-	// popUUIDWindowMap defines the time range of cat's tracks for this population.
+	// popUUIDWindowMap defines the time range of cat tracks for this population.
 	popUUIDWindowMap := sync.Map{}
 
 	onClose := func() error {
@@ -50,8 +83,16 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			m[key.(string)] = value.(Window)
 			return true
 		})
+		skiplog := 0
 		for k, v := range m {
-			c.logger.Info("Storing cat window", "uuid", k, "first", v.First, "last", v.Last)
+			if v.Last.Sub(v.First) > time.Hour*24 {
+				c.logger.Info("Storing cat window", "uuid", k, "first", v.First, "last", v.Last)
+			} else {
+				skiplog++
+			}
+		}
+		if skiplog > 0 {
+			c.logger.Warn("Skipped logging of short cat windows", "count", skiplog)
 		}
 		err := c.State.StoreKVJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), m)
 		if err != nil {
@@ -65,9 +106,17 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 	if err := c.State.ReadKVUnmarshal(params.CatStateBucket, []byte("catUUIDWindowMap"), &m); err != nil {
 		c.logger.Warn("Failed to read UUID window map (new cat?)", "error", err)
 	} else {
+		skiplog := 0
 		for k, v := range m {
-			c.logger.Info("Loaded cat window", "uuid", k, "first", v.First, "last", v.Last)
+			if v.Last.Sub(v.First) > time.Hour*24 {
+				c.logger.Info("Loaded cat window", "uuid", k, "first", v.First, "last", v.Last)
+			} else {
+				skiplog++
+			}
 			catUUIDWindowMap.Store(k, v)
+		}
+		if skiplog > 0 {
+			c.logger.Warn("Skipped logging of short cat windows", "count", skiplog)
 		}
 	}
 
@@ -78,6 +127,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		uuid := ct.Properties.MustString("UUID", "")
 		t := ct.MustTime()
 
+		// Get or init the population window.
 		var popWindow Window
 		pwl, ok := popUUIDWindowMap.Load(uuid)
 		if ok {
@@ -95,12 +145,14 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			return false
 		}
 
-		// All tracks from here are outside the population window.
+		// Track is validated to not be within the population window.
 
+		// Get or init the cat window (read only).
 		var catWindow Window
 		cwl, catWindowOK := catUUIDWindowMap.Load(uuid)
 		if !catWindowOK {
-			// There is no cat window for this track.
+			// There is no cat window for this track/uuid,
+			// so spread the pop window and return OK.
 			if t.After(popWindow.Last) {
 				popWindow.Last = t
 			} else if t.Before(popWindow.First) {
