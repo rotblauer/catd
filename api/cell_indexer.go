@@ -87,7 +87,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 		// This is less a concern for low cell levels (e.g. 6) than high ones (e.g. 18).
 		//
 		// One way to improve this might be to...
-		// - give tiled an indexing database option (opposed to only flat gz files),
+		// - give tiled an indexing database option (opposed to only lat gz files),
 		//   and then establish a convention for pushing indexed data (i.e. index on this level's cell id).
 		//   Tiled would also need to be able to dump all indexed data for some tiled-request config.
 		//   This would fix the amount of data going "over the wire" to tiled,

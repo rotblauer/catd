@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"go.etcd.io/bbolt"
@@ -25,7 +25,7 @@ type CatState struct {
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
-	flatCat := flat.NewFlatWithRoot(params.DatadirRoot).Joins(params.CatsDir, c.CatID.String())
+	flatCat := catz.NewFlatWithRoot(params.DatadirRoot).Joins(params.CatsDir, c.CatID.String())
 
 	if !readOnly {
 		if err := flatCat.MkdirAll(); err != nil {
@@ -61,7 +61,7 @@ func (s *State) Close() error {
 	return nil
 }
 
-func (s *State) NamedGZWriter(target string) (*flat.GZFileWriter, error) {
+func (s *State) NamedGZWriter(target string) (*catz.GZFileWriter, error) {
 	f, err := s.Flat.NamedGZWriter(target, nil)
 	if err != nil {
 		return nil, err

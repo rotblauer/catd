@@ -50,7 +50,7 @@ import (
 	"github.com/golang/geo/s2"
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/paulmach/orb"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -79,7 +79,7 @@ type CellIndexer struct {
 
 type CellIndexerConfig struct {
 	CatID     conceptual.CatID
-	Flat      *flat.Flat
+	Flat      *catz.Flat
 	Levels    []CellLevel
 	BatchSize int
 

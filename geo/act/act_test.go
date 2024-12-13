@@ -3,7 +3,7 @@ package act
 import (
 	"encoding/json"
 	"errors"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"testing"
@@ -14,7 +14,7 @@ func TestAccelerationStuff(t *testing.T) {
 	im := NewImprover()
 
 	testdataPathGZ := "../../testing/testdata/private/2024-09-0_rye.json.gz"
-	gzftw, err := flat.NewFlatGZReader(testdataPathGZ)
+	gzftw, err := catz.NewFlatGZReader(testdataPathGZ)
 	if err != nil {
 		t.Fatal(err)
 	}

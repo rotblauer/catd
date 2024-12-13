@@ -9,7 +9,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"go.etcd.io/bbolt"
@@ -39,7 +39,7 @@ type TileDaemon struct {
 	// This is because the tiling daemon is a separate process(es) from the main app
 	// and should not compete on file locks with the main app, which could quickly
 	// result in corrupted data.
-	flat *flat.Flat
+	flat *catz.Flat
 
 	// db is the bbolt database for the tiling daemon.
 	// It is used to persist pending tiling requests.
@@ -65,7 +65,7 @@ func NewDaemon(config *params.TileDaemonConfig) (*TileDaemon, error) {
 		config = params.DefaultTileDaemonConfig()
 	}
 
-	f := flat.NewFlatWithRoot(config.RootDir)
+	f := catz.NewFlatWithRoot(config.RootDir)
 	if !f.Exists() {
 		if err := f.MkdirAll(); err != nil {
 			return nil, err
@@ -461,17 +461,23 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	return nil
 }
 
-func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig, jsonData []byte) error {
-	gzftw, err := flat.NewFlatGZWriter(source, writeConfig)
-	if err != nil {
-		return err
+func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jsonData []byte) (err error) {
+	gzftw, er := catz.NewFlatGZWriter(source, writeConfig)
+	if er != nil {
+		return er
 	}
-	defer func(gzftw *flat.GZFileWriter) {
-		err := gzftw.Close()
+	defer func() {
+		// Check return param to see if gzftw has already been closed.
+		// Only a nil error returning will have seen a close.
+		// Any error occurring during write is returned immediately.
+		// This might log a double-close error, but worth it to ensure that it will always get closed.
 		if err != nil {
-			d.logger.Error("Failed to close gz writer", "error", err)
+			err := gzftw.Close()
+			if err != nil {
+				d.logger.Error("Failed to close gz writer", "error", err)
+			}
 		}
-	}(gzftw)
+	}()
 
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
@@ -490,10 +496,14 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *flat.GZFileWriterConfig
 			return err
 		}
 	}
+	er = gzftw.Close()
+	if er != nil {
+		return er
+	}
 	return nil
 }
 
-func (d *TileDaemon) write(source string, writeConfig *flat.GZFileWriterConfig, gzipData []byte) error {
+func (d *TileDaemon) write(source string, writeConfig *catz.GZFileWriterConfig, gzipData []byte) error {
 	f, err := os.OpenFile(source, writeConfig.Flag, writeConfig.FilePerm)
 	if err != nil {
 		return err
@@ -612,7 +622,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 		}
 
 		// Configure to truncate if truncate requested.
-		writeConf := flat.DefaultGZFileWriterConfig()
+		writeConf := catz.DefaultGZFileWriterConfig()
 		if args.SourceModes[vi] == SourceModeTrunc {
 			writeConf.Flag = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
 		}

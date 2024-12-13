@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/dustin/go-humanize"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/params"
 	"io"
 	"log"
@@ -30,7 +30,7 @@ func (d *TileDaemon) tip(args *TilingRequestArgs, sources ...string) error {
 
 		// For each source, open the file and copy (pipe) it to the tippecanoe r/w.
 		for _, source := range sources {
-			reader, err := flat.NewFlatGZReader(source)
+			reader, err := catz.NewFlatGZReader(source)
 			if err != nil {
 				d.logger.Error("tip open failed to open source file", "error", err)
 				select {

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"github.com/dustin/go-humanize"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/rotblauer/catd/catdb/flat"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
@@ -36,7 +36,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	errCh = make(chan error, 1)
 	defer close(errCh)
 
-	truncate := flat.DefaultGZFileWriterConfig()
+	truncate := catz.DefaultGZFileWriterConfig()
 	truncate.Flag = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
 	lastGZ, err := c.State.Flat.NamedGZWriter(params.TracksLastGZFileName, truncate)
 	if err != nil {
@@ -44,7 +44,11 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		errCh <- err
 		return
 	}
-	defer lastGZ.Close()
+	defer func() {
+		if err := lastGZ.Close(); err != nil {
+			c.logger.Error("Failed to close last-tracks writer", "error", err)
+		}
+	}()
 
 	tracksGZ, err := c.State.NamedGZWriter(params.TracksGZFileName)
 	if err != nil {
@@ -52,7 +56,11 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 		errCh <- err
 		return
 	}
-	defer tracksGZ.Close()
+	defer func() {
+		if err := tracksGZ.Close(); err != nil {
+			c.logger.Error("Failed to close tracks writer", "error", err)
+		}
+	}()
 
 	writeAll := io.MultiWriter(
 		/* gzftwMaster.Writer(), */
