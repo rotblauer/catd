@@ -3,10 +3,12 @@ package api
 import (
 	"context"
 	"github.com/dustin/go-humanize"
+	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/params"
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,25 +24,32 @@ import (
 func (c *Cat) ReproducePipelines() error {
 	// Dump all tracks from cat/tracks.gz to a transformer
 	// for JSON decoding then on to the CatActPipeline.
-	r := c.State.Flat.Path()
-	c.logger.Warn("Reproducing pipelines", "path", r)
-	tdata := filepath.Join(r, params.TracksGZFileName)
-	if _, err := os.Stat(tdata); err != nil {
-		c.logger.Error("Tracks file does not exist", "error", err)
+	catTDataPath := c.State.Flat.Path()
+	c.logger.Warn("Reproducing pipelines", "path", catTDataPath)
+	matches, err := filepath.Glob(filepath.Join(catTDataPath, "tracks", "*.geojson.gz"))
+	if err != nil {
 		return err
 	}
 
-	// FIXME YYYY-MM doesn't work. No tracks.geojson.gz, they're in cat/tracks/YYYY-MM.geojson.gz
-	reader, err := c.State.Flat.NamedGZReader(params.TracksGZFileName)
-	if err != nil {
-		c.logger.Error("Failed to create tracks reader", "error", err)
-		return err
+	readers := make([]io.Reader, 0, len(matches))
+	for _, match := range matches {
+		reader, err := c.State.Flat.NamedGZReader(match)
+		if err != nil {
+			c.logger.Error("Failed to create tracks reader", "error", err)
+			return err
+		}
+		readers = append(readers, reader)
 	}
 	defer func() {
-		if err := reader.Close(); err != nil {
-			c.logger.Error("Failed to close tracks reader", "error", err)
+		for _, reader := range readers {
+			r := reader.(*catz.GZFileReader)
+			if err := r.Close(); err != nil {
+				c.logger.Error("Failed to close tracks reader", "error", err)
+			}
 		}
 	}()
+
+	mr := io.MultiReader(readers...)
 
 	// carefully rm -rf tiled/source
 	tiledSource := filepath.Join(c.tiledConf.RootDir, "source")
@@ -90,7 +99,7 @@ func (c *Cat) ReproducePipelines() error {
 	c.SubscribeFancyLogs()
 
 	ctx := context.Background()
-	if err := c.ProducerPipelines(ctx, stream.NDJSON[cattrack.CatTrack](ctx, reader)); err != nil {
+	if err := c.ProducerPipelines(ctx, stream.NDJSON[cattrack.CatTrack](ctx, mr)); err != nil {
 		c.logger.Error("Failed to regenerate pipelines", "error", err)
 		return err
 	}

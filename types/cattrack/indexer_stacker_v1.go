@@ -74,7 +74,7 @@ func (*StackerV1) FromCatTrack(ct CatTrack) Indexer {
 	}
 
 	totalOffset := time.Duration(ct.Properties.MustFloat64("TotalTimeOffset", 0)) * time.Second
-	if totalOffset == 0 || totalOffset > time.Hour*24 {
+	if totalOffset == 0 {
 		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
 	}
 

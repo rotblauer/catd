@@ -47,5 +47,8 @@ func (f *Flat) NewGZFileWriter(name string, config *GZFileWriterConfig) (*GZFile
 }
 
 func (f *Flat) NamedGZReader(name string) (*GZFileReader, error) {
+	if filepath.IsAbs(name) {
+		return NewGZFileReader(name)
+	}
 	return NewGZFileReader(filepath.Join(f.path, name))
 }

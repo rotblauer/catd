@@ -88,8 +88,8 @@ repro() {
   bump_tileservice &
 }
 
-time run |& tee --ignore-interrupt run.out
-# time repro |& tee --ignore-interrupt run.out
+# time run |& tee --ignore-interrupt run.out
+time repro |& tee --ignore-interrupt run.out
 
 
 
