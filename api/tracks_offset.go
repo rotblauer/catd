@@ -12,20 +12,15 @@ func TracksWithOffset(ctx context.Context, in <-chan cattrack.CatTrack) chan cat
 		defer close(out)
 		last := cattrack.CatTrack{}
 		for track := range in {
+			offset := cattrack.MustContinuousTimeOffset(last, track)
 			t := &track
-			var offset time.Duration
-			if last.IsEmpty() {
-				offset = time.Second
-			} else {
-				offset = track.MustTime().Sub(last.MustTime())
-			}
 			t.SetPropertySafe("TimeOffset", offset.Round(time.Second).Seconds())
 			select {
 			case <-ctx.Done():
 				return
 			case out <- *t:
+				last = *t
 			}
-			last = *t
 		}
 	}()
 	return out

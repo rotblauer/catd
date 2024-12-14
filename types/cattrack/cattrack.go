@@ -114,6 +114,25 @@ func (ct *CatTrack) MustTime() time.Time {
 	return t
 }
 
+func MustTimeOffset(a, b CatTrack) time.Duration {
+	if a.IsEmpty() || b.IsEmpty() {
+		return time.Second
+	}
+	return b.MustTime().Sub(a.MustTime())
+}
+
+func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
+	offset := MustTimeOffset(a, b)
+	// If offset is more than 24 hours, reset to 1 second.
+	// This handles signal loss/missing data.
+	// If you start tracking on Monday, stop on Tuesday, and start again on Friday,
+	// you don't get offset points for Wednesday and Thursday.
+	if offset > time.Hour*24 {
+		return time.Second
+	}
+	return offset
+}
+
 func (ct *CatTrack) Point() orb.Point {
 	return ct.Geometry.Bound().Center()
 }
