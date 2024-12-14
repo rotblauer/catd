@@ -29,6 +29,8 @@ func (c *Cat) ReproducePipelines() error {
 		c.logger.Error("Tracks file does not exist", "error", err)
 		return err
 	}
+
+	// FIXME YYYY-MM doesn't work. No tracks.geojson.gz, they're in cat/tracks/YYYY-MM.geojson.gz
 	reader, err := c.State.Flat.NamedGZReader(params.TracksGZFileName)
 	if err != nil {
 		c.logger.Error("Failed to create tracks reader", "error", err)

@@ -1,16 +1,15 @@
-package s2
+package cattrack
 
 import (
 	"github.com/rotblauer/catd/types/activity"
-	"github.com/rotblauer/catd/types/cattrack"
 	"time"
 )
 
-// TrackStackerV1 is an Indexer implementation that tracks the number of times
+// StackerV1 is an Indexer implementation that tracks the number of times
 // a cat has entered and left a cell, as well as the total time spent in the cell.
 // It also tracks the activity mode of the cat while in the cell,
 // and the first and last times the cat was in the cell.
-type TrackStackerV1 struct {
+type StackerV1 struct {
 	Count int
 
 	// VisitCount is the number of times the cat has entered and left this cell.
@@ -38,13 +37,13 @@ type TrackStackerV1 struct {
 	AMFly        float64
 }
 
-func (ix *TrackStackerV1) IsEmpty() bool {
+func (ix *StackerV1) IsEmpty() bool {
 	return ix.Count == 0
 }
 
-func (*TrackStackerV1) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattrack.CatTrack {
+func (*StackerV1) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
 	pct := &ct
-	ixr := idxr.(*TrackStackerV1)
+	ixr := idxr.(*StackerV1)
 	props := map[string]interface{}{
 		"Count":                   ixr.Count,
 		"VisitCount":              ixr.VisitCount,
@@ -64,7 +63,7 @@ func (*TrackStackerV1) ApplyToCatTrack(idxr Indexer, ct cattrack.CatTrack) cattr
 	return *pct
 }
 
-func (*TrackStackerV1) FromCatTrack(ct cattrack.CatTrack) Indexer {
+func (*StackerV1) FromCatTrack(ct CatTrack) Indexer {
 	first, err := time.Parse(time.RFC3339, ct.Properties.MustString("FirstTime", ""))
 	if err != nil {
 		first = ct.MustTime()
@@ -75,11 +74,11 @@ func (*TrackStackerV1) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	}
 
 	totalOffset := time.Duration(ct.Properties.MustFloat64("TotalTimeOffset", 0)) * time.Second
-	if totalOffset == 0 {
+	if totalOffset == 0 || totalOffset > time.Hour*24 {
 		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
 	}
 
-	out := &TrackStackerV1{
+	out := &StackerV1{
 		Count:           ct.Properties.MustInt("Count", 1),
 		VisitCount:      ct.Properties.MustInt("VisitCount", 0),
 		FirstTime:       first,
@@ -133,18 +132,18 @@ func (*TrackStackerV1) FromCatTrack(ct cattrack.CatTrack) Indexer {
 	return out
 }
 
-func (ix *TrackStackerV1) Index(old, next Indexer) Indexer {
+func (ix *StackerV1) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		out := next.(*TrackStackerV1)
+		out := next.(*StackerV1)
 		if out.VisitCount == 0 {
 			out.VisitCount++
 		}
 		return out
 	}
 
-	oldT, nextT := old.(*TrackStackerV1), next.(*TrackStackerV1)
+	oldT, nextT := old.(*StackerV1), next.(*StackerV1)
 
-	out := &TrackStackerV1{
+	out := &StackerV1{
 		// Relatively sane defaults only for concision.
 		FirstTime: oldT.FirstTime,
 		LastTime:  nextT.LastTime,

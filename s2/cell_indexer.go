@@ -68,7 +68,7 @@ import (
 type CellIndexer struct {
 	Config *CellIndexerConfig
 
-	Caches map[CellLevel]*lru.Cache[string, Indexer]
+	Caches map[CellLevel]*lru.Cache[string, cattrack.Indexer]
 	DB     *bbolt.DB
 
 	Waiting sync.WaitGroup
@@ -87,8 +87,8 @@ type CellIndexerConfig struct {
 	// DefaultIndexerT is (a value of) the type of the Indexer implementation.
 	// The Indexer defines logic about how merge non-unique cat tracks.
 	// The default is used if no level-specific Indexer is provided.
-	DefaultIndexerT Indexer
-	LevelIndexerT   map[CellLevel]Indexer
+	DefaultIndexerT cattrack.Indexer
+	LevelIndexerT   map[CellLevel]cattrack.Indexer
 }
 
 func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
@@ -125,7 +125,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 	return &CellIndexer{
 		Config: config,
-		Caches: make(map[CellLevel]*lru.Cache[string, Indexer], len(config.Levels)),
+		Caches: make(map[CellLevel]*lru.Cache[string, cattrack.Indexer], len(config.Levels)),
 		DB:     db,
 
 		indexFeeds:     indexFeeds,
@@ -134,7 +134,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	}, nil
 }
 
-func (ci *CellIndexer) indexerTForLevel(level CellLevel) Indexer {
+func (ci *CellIndexer) indexerTForLevel(level CellLevel) cattrack.Indexer {
 	if ci.Config.LevelIndexerT != nil {
 		if v, ok := ci.Config.LevelIndexerT[level]; ok {
 			return v
@@ -191,7 +191,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
 	// Reinit the level's cache.
-	cache, err := lru.New[string, Indexer](ci.Config.BatchSize)
+	cache, err := lru.New[string, cattrack.Indexer](ci.Config.BatchSize)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 	for _, ct := range tracks {
 		cellID := CellIDForTrackLevel(ct, level)
 
-		var old, next Indexer
+		var old, next cattrack.Indexer
 
 		v, exists := cache.Get(cellID.ToToken())
 		if exists {
@@ -245,7 +245,7 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 
 			track := mapIDUnique[k]
 
-			var old Indexer
+			var old cattrack.Indexer
 			v := b.Get([]byte(k))
 
 			// Non-nil value means non-unique track/index.

@@ -3,13 +3,14 @@ package s2
 import (
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/types/cattrack"
 )
 
 const DBName = "s2.db"
 
 var DefaultVisitThreshold = params.S2DefaultVisitThreshold
 
-var DefaultIndexerT = &TrackStackerV1{
+var DefaultIndexerT = &cattrack.StackerV1{
 	VisitThreshold: DefaultVisitThreshold,
 }
 
@@ -42,7 +43,7 @@ var DefaultCellLevels = []CellLevel{
 	CellLevel15, //
 	CellLevel16, // Throwing distance
 	CellLevel17, //
-	CellLevel18, //
+	//CellLevel18, // Seeley Lake USPS Office
 	//s2.CellLevel19, //
 	//s2.CellLevel20, //
 	//s2.CellLevel23, // Human body

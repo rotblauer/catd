@@ -53,7 +53,7 @@ tabula_rasa() {
     # This way you get to look at maps while catd (re-)runs,
     # .mbtiles get overwritten with a mv, if all goes well.
     rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
-    # rm -rf /tmp/catd
+#     rm -rf /tmp/catd
     { set +x ;} 2>/dev/null
 }
 
@@ -89,7 +89,7 @@ repro() {
 }
 
 time run |& tee --ignore-interrupt run.out
-# time repro |& tee - i run.out
+# time repro |& tee --ignore-interrupt run.out
 
 
 
