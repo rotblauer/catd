@@ -42,9 +42,12 @@ tdata() {
 }
 
 bump_tileservice() {
-    if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
-    then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
-    fi
+#     if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
+#     then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
+#     fi
+
+    pkill -f 'mbtileserver --port 3001' || { echo "WARN: mbtileserver not running" ; }
+    nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
 }
 
 tabula_rasa() {
@@ -52,8 +55,8 @@ tabula_rasa() {
     set -x
     # This way you get to look at maps while catd (re-)runs,
     # .mbtiles get overwritten with a mv, if all goes well.
-    rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
-#     rm -rf /tmp/catd
+#     rm -rf /tmp/catd/cats /tmp/catd/tiled/source # /tmp/catd/tiled/tiles
+    rm -rf /tmp/catd
     { set +x ;} 2>/dev/null
 }
 
@@ -81,15 +84,7 @@ run() {
   bump_tileservice &
 }
 
-repro() {
-  set -e
-  go install .
-  catd --datadir /tmp/catd repro rye ia
-  bump_tileservice &
-}
-
-# time run |& tee --ignore-interrupt run.out
-time repro |& tee --ignore-interrupt run.out
+time run |& tee --ignore-interrupt run.out
 
 
 
