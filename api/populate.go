@@ -208,6 +208,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	go func() {
 		defer close(storeErrs)
 		err := <-c.StoreTracksYYYYMM(ctx, storeCh)
+		//err := <-c.StoreTracks(ctx, storeCh)
 		if err != nil {
 			c.logger.Error("Failed to store tracks", "error", err)
 			storeErrs <- err

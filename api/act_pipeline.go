@@ -16,8 +16,8 @@ import (
 
 func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) error {
 
-	lapTracks := make(chan cattrack.CatTrack)
-	napTracks := make(chan cattrack.CatTrack)
+	lapTracks := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	napTracks := make(chan cattrack.CatTrack, params.DefaultBatchSize)
 
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.
@@ -138,6 +138,8 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	for ct := range in {
 		select {
 		case <-ctx.Done():
+			close(lapTracks)
+			close(napTracks)
 			return nil
 		case err, open := <-sinkErr:
 			if !open {
@@ -145,6 +147,8 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 			}
 			if err != nil {
 				c.logger.Error("Act detection pipeline error (looper: in)", "error", err)
+				close(lapTracks)
+				close(napTracks)
 				return err
 			}
 		default:

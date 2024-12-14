@@ -38,7 +38,7 @@ var DefaultCleanConfig = &TrackCleaningConfig{
 	WangUrbanCanyonMinDistance:          200.0,
 	WangUrbanCanyonDistanceFromSpeedMul: 10.0,
 	WangUrbanCanyonWindow:               60 * time.Second,
-	TeleportSpeedFactor:                 10.0,
+	TeleportSpeedFactor:                 5.0,
 	TeleportWindow:                      60 * time.Second,
 	TeleportMinDistance:                 25.0,
 }

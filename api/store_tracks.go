@@ -99,21 +99,6 @@ func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack
 
 	c.logger.Info("Storing cat tracks gz yyyy-mm", "cat", c.CatID)
 
-	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
-	// Cat/thread safe because gz file locks.
-	// Cat pushes will be stored in cat push/populate-batches.
-	//c.logger.Info("Waiting on master locker...")
-	//gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
-	//	NewGZFileWriter(params.MasterTracksGZFileName, nil)
-	//if err != nil {
-	//	c.logger.Error("Failed to create custom writer", "error", err)
-	//	select {
-	//	case errCh <- err:
-	//	default:
-	//	}
-	//	return
-	//}
-
 	errCh = make(chan error, 1)
 	defer close(errCh)
 
@@ -142,13 +127,18 @@ func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack
 	// Blocking.
 	lastYMPath := ""
 	for ct := range in {
+		ct := ct
+
 		if err := lastEnc.Encode(ct); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 			errCh <- err
 			return
 		}
+
 		ymPath := fmt.Sprintf("tracks/%s.geojson.gz", ct.MustTime().Format("2006-01"))
-		if lastYMPath != ymPath {
+
+		if lastYMPath != ymPath || ymWriter == nil {
+			// close last writer
 			if ymWriter != nil {
 				if err := ymWriter.Close(); err != nil {
 					c.logger.Error("Failed to close last-tracks writer", "error", err)
@@ -165,9 +155,18 @@ func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack
 			ymEnc = json.NewEncoder(ymWriter)
 		}
 		lastYMPath = ymPath
-		if ymEnc == nil {
-			panic("impossible")
+
+		// Failsafe for nil writer?
+		if ymWriter == nil || ymEnc == nil {
+			ymWriter, err = c.State.Flat.NewGZFileWriter(ymPath, nil)
+			if err != nil {
+				c.logger.Error("Failed to create track writer", "error", err)
+				errCh <- err
+				return
+			}
+			ymEnc = json.NewEncoder(ymWriter)
 		}
+		
 		if err := ymEnc.Encode(ct); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 			errCh <- err
