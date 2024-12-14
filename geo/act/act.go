@@ -444,7 +444,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 		// Same state? Continuity preferred. Return early.
 		if act.Activity == p.Cat.ActivityState {
 			// Clear any alternate realities.
-			p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
+			//p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
 			return nil
 		}
 
@@ -460,8 +460,8 @@ func (p *Improver) improve(ct WrappedTrack) error {
 				p.Cat.setActivityState(p.Cat.Driving, ctTime)
 				return nil
 			} else if meanSpeed > common.SpeedOfCyclingMin {
-				p.Cat.setActivityState(p.Cat.Cycling, ctTime)
-				return nil
+				//p.Cat.setActivityState(p.Cat.Cycling, ctTime)
+				//return nil
 			}
 		}
 
