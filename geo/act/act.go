@@ -54,6 +54,9 @@ type Cat struct {
 	WindowSpeedReportedSum   float64
 	WindowSpeedCalculatedSum float64
 
+	WindowHeadingDeltaReportedSum   float64
+	WindowHeadingDeltaCalculatedSum float64
+
 	ActivityState          activity.Activity
 	ActivityStateStart     time.Time
 	ActivityStateLastCheck time.Time
@@ -145,6 +148,8 @@ func IsActivityActive(act activity.Activity) bool {
 func (c *Cat) push(ct WrappedTrack) {
 	c.WindowSpan += ct.TimeOffset
 	c.pushActivityMode(ct)
+	c.WindowHeadingDeltaReportedSum += ct.HeadingDeltaReported
+	c.WindowHeadingDeltaCalculatedSum += ct.HeadingDeltaCalculated
 	c.WindowAccelerationReportedSum += ct.AccelerationReported
 	c.WindowAccelerationCalculatedSum += ct.AccelerationCalculated
 	c.WindowSpeedReportedSum += ct.Speed() * ct.TimeOffset.Seconds()
@@ -156,6 +161,8 @@ func (c *Cat) drop(ct WrappedTrack) {
 	c.WindowSpeedReportedSum -= ct.Speed() * ct.TimeOffset.Seconds()
 	c.WindowAccelerationCalculatedSum -= ct.AccelerationCalculated
 	c.WindowAccelerationReportedSum -= ct.AccelerationReported
+	c.WindowHeadingDeltaCalculatedSum -= ct.HeadingDeltaCalculated
+	c.WindowHeadingDeltaReportedSum -= ct.HeadingDeltaReported
 	c.dropActivityMode(ct)
 	c.WindowSpan -= ct.TimeOffset
 }
@@ -296,6 +303,9 @@ func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
 		if p.activityAccelerated(p.Cat.ActivityState, -1) {
 			tx++
 		}
+		if diff := ct.SpeedCalculated / ct.Speed(); diff > 1.5 {
+			tx += diff - 1.5
+		}
 		if p.Cat.WindowSpeedCalculatedSum/p.Cat.WindowSpan.Seconds() < p.Config.SpeedThreshold &&
 			p.Cat.WindowSpeedReportedSum/p.Cat.WindowSpan.Seconds() < p.Config.SpeedThreshold {
 			tx++
@@ -312,7 +322,7 @@ func (p *Improver) isNapLapTransition(ct WrappedTrack) bool {
 		if ct.Speed() < 0 {
 			tx++
 		}
-		if tx >= 4 {
+		if tx > 4 {
 			return true
 		}
 		return false
@@ -387,6 +397,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	ct.AccelerationCalculated = accelerationCalculated
 	ct.HeadingCalculated = calculatedHeading
 	ct.HeadingDeltaReported = math.Abs(ctHeading - p.Cat.Last.Heading())
+	ct.HeadingDeltaCalculated = math.Abs(calculatedHeading - p.Cat.Last.HeadingCalculated)
 
 	defer func() {
 		p.Cat.Last = ct
