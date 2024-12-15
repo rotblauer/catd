@@ -41,6 +41,8 @@ we should tally the number of tracks in a cell, or some other metrics/aggregatio
 package reducer
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -268,10 +270,21 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 				ct := cattrack.CatTrack{}
 
-				err = json.Unmarshal(v, &ct)
+				in := bytes.NewBuffer(v)
+				r, err := gzip.NewReader(in)
+				if err != nil {
+					return fmt.Errorf("gzip reader: %w", err)
+				}
+
+				err = json.NewDecoder(r).Decode(&ct)
 				if err != nil {
 					return fmt.Errorf("json decode read: %w %d %s",
 						err, len(v), string(v))
+				}
+
+				err = r.Close()
+				if err != nil {
+					return fmt.Errorf("gzip reader close: %w", err)
 				}
 
 				old = indexT.FromCatTrack(ct)
@@ -286,7 +299,21 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				return fmt.Errorf("json marshal write: %w", err)
 			}
 
-			err = b.Put([]byte(k), encoded)
+			encBuf := bytes.NewBuffer(encoded)
+
+			gbuf := new(bytes.Buffer)
+			w := gzip.NewWriter(gbuf)
+
+			_, err = encBuf.WriteTo(w)
+			if err != nil {
+				return fmt.Errorf("gzip write: %w", err)
+			}
+			err = w.Close()
+			if err != nil {
+				return fmt.Errorf("gzip close: %w", err)
+			}
+
+			err = b.Put([]byte(k), gbuf.Bytes())
 			if err != nil {
 				return fmt.Errorf("bbolt put: %w", err)
 			}
@@ -340,7 +367,12 @@ func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan err
 			}
 			if err := b.ForEach(func(k, v []byte) error {
 				ct := cattrack.CatTrack{}
-				if err := json.Unmarshal(v, &ct); err != nil {
+				buf := bytes.NewBuffer(v)
+				r, err := gzip.NewReader(buf)
+				if err != nil {
+					return fmt.Errorf("failed to create gzip reader: %w", err)
+				}
+				if err := json.NewDecoder(r).Decode(&ct); err != nil {
 					return fmt.Errorf("failed to unmarshal JSON: %w", err)
 				}
 				out <- ct

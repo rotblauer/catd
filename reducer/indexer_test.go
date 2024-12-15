@@ -27,7 +27,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 			LevelIndexerT: nil,
 			BucketKeyFn: func(track cattrack.CatTrack, bucket Bucket) (string, error) {
 				b := track.MustTime().Unix() % 100
-				return fmt.Sprintf("%d", b), nil
+				return fmt.Sprintf("tmod100-%02d", b), nil
 			},
 			Logger: slog.With("reducer_test", "s2"),
 		})
@@ -61,6 +61,20 @@ func TestCellIndexerIndex(t *testing.T) {
 	err = reducer.Index(ctx, tracks)
 	if err != nil {
 		t.Fatal(err)
+	}
+	err = <-errs
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dump, errs := reducer.DumpLevel(reducer.Config.Buckets[0])
+	out := stream.Collect[cattrack.CatTrack](ctx, dump)
+	// expect 100 b/c %100 keyfn
+	if len(out) != 100 {
+		t.Errorf("expected 100, got %d", len(out))
+	}
+	if out[0].Properties.MustString("reducer_key", "") != "tmod100-00" {
+		t.Errorf("expected 00, got %s", out[0].Properties.MustString("reducer_key", ""))
 	}
 	err = <-errs
 	if err != nil {
