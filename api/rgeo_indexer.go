@@ -32,7 +32,7 @@ import (
 
 func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 	bucketLevels := []reducer.Bucket{}
-	for i := range rgeo.DatasetNamesStable() {
+	for i := range rgeo.DatasetNamesStable {
 		bucketLevels = append(bucketLevels, reducer.Bucket(i))
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
@@ -70,8 +70,8 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
-	sendErrs := make(chan error, len(rgeo.DatasetNamesStable()))
-	for dataI, dataset := range rgeo.DatasetNamesStable() {
+	sendErrs := make(chan error, len(rgeo.DatasetNamesStable))
+	for dataI, dataset := range rgeo.DatasetNamesStable {
 		if !c.IsRPCEnabled() {
 			c.logger.Warn("No RPC configuration, skipping Rgeo indexing", "bucket", dataset)
 			continue
@@ -152,9 +152,9 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 			return len(s) == batchSize
 		}, dump)
 
-		sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable()[bucket]+"_cells",
+		sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
 			string(filepath.Separator), "_")
-		layerName := strings.ReplaceAll(rgeo.DatasetNamesStable()[bucket]+"_cells",
+		layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
 			string(filepath.Separator), "_")
 
 		sourceMode := tiled.SourceModeTrunc
@@ -178,17 +178,26 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 				cp := track
 				cp.ID = track.MustTime().Unix()
-				props, g := rgeo.CellDataForPointAtDataset(cp.Point(), rgeo.DatasetNamesStable()[bucket])
-				if g == nil {
+				props, g := rgeo.CellDataForPointAtDataset(cp.Point(), rgeo.DatasetNamesStable[bucket])
+				if props == nil || g == nil {
 					c.logger.Debug("Failed to get geometry for track",
-						"track", cp, "bucket", bucket, "name", rgeo.DatasetNamesStable()[bucket])
+						"track", cp, "bucket", bucket, "name", rgeo.DatasetNamesStable[bucket])
 					return cattrack.CatTrack{}
 				}
 
-				cp.Geometry = g
-				for k, v := range props {
-					cp.SetPropertySafe(k, v)
+				// Re: (Fixed) Weirdly mismatched reducer keys.
+				// The rgeo package uses an *s2.ContainsPointQuery, which
+				// is not safe for concurrent use.
+				// It was sporadically returning a rye key for an ia track, and vice versa.
+				// See rgeo/rgeo_indexer.go for a comment with an example.
+				if props["reducer_key"] != cp.Properties["reducer_key"] {
+					c.logger.Error("Mismatched reducer keys",
+						"track", cp.StringPretty(), "bucket", bucket, "name", rgeo.DatasetNamesStable[bucket],
+						"reducer.key", cp.Properties["reducer_key"], "props.key", props["reducer_key"])
+					return cattrack.CatTrack{}
 				}
+				cp.Geometry = g
+				cp.SetPropertiesSafe(props)
 				return cp
 			}, stream.Slice(ctx, s))))
 			if err != nil {

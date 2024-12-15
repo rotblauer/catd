@@ -9,6 +9,6 @@ package common
 // - Temperature is in kelvin... wait? what?
 
 const ElevationOfEverest = 8848.0
-const ElevationCommercialFlightMean = 10668.0
+const ElevationCommercialFlightCruising = 10668.0
 const ElevationOfTroposphere = 11000.0
 const ElevationOfDeadSea = -430.0

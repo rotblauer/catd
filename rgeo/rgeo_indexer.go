@@ -9,21 +9,30 @@ import (
 	"github.com/sams96/rgeo"
 	"log/slog"
 	"regexp"
-	"slices"
 )
 
 var DBName = "rgeo.db"
+
+//var R_Cities *rgeo.Rgeo
+//var R_Countries *rgeo.Rgeo
+//var R_Provinces *rgeo.Rgeo
+//var R_US_Counties *rgeo.Rgeo
 
 var R *rgeo.Rgeo
 
 const dataSourcePre = "github.com/sams96/rgeo."
 
-var DatasetSources = map[string]func() []byte{
-	//stripPkg(common.ReflectFunctionName(rgeo.Countries110)): rgeo.Countries110,
-	dataSourcePre + "Cities10":      rgeo.Cities10,
-	dataSourcePre + "Countries10":   rgeo.Countries10,
-	dataSourcePre + "Provinces10":   rgeo.Provinces10,
-	dataSourcePre + "US_Counties10": rgeo.US_Counties10,
+func init() {}
+
+var DatasetNamesStable = []string{
+	dataSourcePre + "Cities10",
+	dataSourcePre + "Countries10",
+	dataSourcePre + "Provinces10",
+	dataSourcePre + "US_Counties10",
+}
+
+func getR(dataset string) *rgeo.Rgeo {
+	return R
 }
 
 var TilingZoomLevels = map[int][2]int{}
@@ -34,16 +43,6 @@ var TilingZoomLevelsRe = map[string][2]int{
 	"(?i)Cities":    [2]int{3, 10},
 }
 
-func init() {
-	for i, v := range DatasetNamesStable() {
-		for re, zooms := range TilingZoomLevelsRe {
-			if regexp.MustCompile(re).MatchString(v) {
-				TilingZoomLevels[i] = zooms
-			}
-		}
-	}
-}
-
 var ErrAlreadyInitialized = fmt.Errorf("rgeo already initialized")
 
 func DoInit() error {
@@ -51,38 +50,24 @@ func DoInit() error {
 		return ErrAlreadyInitialized
 	}
 	var err error
-	sources := []func() []byte{}
-	for _, v := range DatasetSources {
-		sources = append(sources, v)
-	}
-	slog.Info("Initializing rgeo", "datasets", len(sources), "names", DatasetNamesStable())
-	defer slog.Info("Initialized rgeo", "datasets", len(sources))
-	R, err = rgeo.New(sources...)
+	slog.Info("Initializing rgeo...")
+	R, err = rgeo.New(rgeo.Cities10, rgeo.Countries10, rgeo.Provinces10, rgeo.US_Counties10)
 	if err != nil {
 		return err
+	}
+	DatasetNamesStable = R.DatasetNames()
+	for i, v := range DatasetNamesStable {
+		for re, zooms := range TilingZoomLevelsRe {
+			if regexp.MustCompile(re).MatchString(v) {
+				TilingZoomLevels[i] = zooms
+			}
+		}
 	}
 	return nil
 }
 
-var datasetNamesStableMemo = []string{}
-
-func DatasetNamesStable() []string {
-	if datasetNamesStableMemo == nil {
-		return datasetNamesStableMemo
-	}
-	out := make([]string, 4)
-	i := 0
-	for k := range DatasetSources {
-		out[i] = k
-		i++
-	}
-	slices.Sort(out)
-	datasetNamesStableMemo = out
-	return datasetNamesStableMemo
-}
-
 func getIndexForStableName(name string) int {
-	for i, v := range DatasetNamesStable() {
+	for i, v := range DatasetNamesStable {
 		if v == name {
 			return i
 		}
@@ -94,43 +79,58 @@ var DefaultIndexerT = &cattrack.StackerV1{
 	VisitThreshold: params.S2DefaultVisitThreshold,
 }
 
+// TODO Meta cache me. Another shape index?
 func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
-	dataset := DatasetNamesStable()[bucket]
-	loc, err := R.ReverseGeocode(ct.Point())
+	dataset := DatasetNamesStable[bucket]
+
+	loc, err := getR(dataset).ReverseGeocode(ct.Point())
 	if err != nil {
 		// - Flying cat over bermuda triangle, over ocean = cat without a country, intl waters.
 		// - Country mouse, not city cat = no city rgeocode.
 		return "", reducer.ErrNoKeyFound
 	}
-	/*
-		var TilingZoomLevelsRe = map[string][2]int{
-			"(?i)Countries": [2]int{3, 5},
-			"(?i)Provinces": [2]int{3, 6},
-			"(?i)Counties":  [2]int{3, 8},
-			"(?i)Cities":    [2]int{3, 10},
-		}
-	*/
+	return getReducerKey(loc, dataset)
+}
+
+func getReducerKey(location rgeo.Location, dataset string) (string, error) {
 	switch dataset {
 	case dataSourcePre + "Countries10":
-		return loc.CountryCode3, nil
+		v := location.CountryCode3
+		if v == "" {
+			return v, reducer.ErrNoKeyFound
+		}
+		return v, nil
 	case dataSourcePre + "Provinces10":
-		return loc.CountryCode3 + "-" + loc.ProvinceCode, nil
+		v := location.CountryCode3 + "-" + location.ProvinceCode
+		if v == "-" {
+			return v, reducer.ErrNoKeyFound
+		}
+		return v, nil
 	case dataSourcePre + "US_Counties10":
-		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.County, nil
+		v := location.CountryCode3 + "-" + location.ProvinceCode + "-" + location.County
+		if v == "--" {
+			return v, reducer.ErrNoKeyFound
+		}
+		return v, nil
 	case dataSourcePre + "Cities10":
-		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.City, nil
+		v := location.CountryCode3 + "-" + location.ProvinceCode + "-" + location.City
+		if v == "--" {
+			return v, reducer.ErrNoKeyFound
+		}
+		return v, nil
 	default:
 		panic("unhandled dataset")
 	}
-	return "", reducer.ErrNoKeyFound
 }
 
 func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := R.ReverseGeocodeWithGeometry(pt, dataset)
+	loc, err := getR(dataset).ReverseGeocodeWithGeometry(pt, dataset)
 	if err != nil {
 		return nil, nil
 	}
+	key, _ := getReducerKey(loc.Location, dataset)
 	props := map[string]any{
+		"reducer_key":  key,
 		"Country":      loc.CountryLong,
 		"CountryCode3": loc.CountryCode3,
 		"Province":     loc.Province,
@@ -141,6 +141,9 @@ func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, or
 }
 
 /*
+BUG REPORT: Mismatched reducer keys.
+See the second track below with reducer_key "USA-US-MN-Minneapolis", but obviously in Missoula.
+
 cattracks-ia/Cities10_cells/Cities10_cells
 2 features
 

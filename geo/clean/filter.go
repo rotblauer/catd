@@ -23,7 +23,7 @@ func FilterWildElevation(ct cattrack.CatTrack) bool {
 	elevation := ct.Properties.MustFloat64("Elevation")
 	deepestDive := -100.0
 	return elevation > common.ElevationOfDeadSea-deepestDive &&
-		elevation < common.ElevationCommercialFlightMean*1.2
+		elevation < common.ElevationCommercialFlightCruising*1.2
 }
 
 var activityFlyRegex = regexp.MustCompile(`(?i)^fly`)
@@ -35,7 +35,10 @@ func FilterGrounded(ct cattrack.CatTrack) bool {
 		return false
 	}
 	speed := ct.Properties.MustFloat64("Speed", -1)
-	return speed < common.SpeedOfDrivingAutobahn
+	if speed > common.SpeedOfDrivingAutobahn {
+		return false
+	}
+	return ct.Properties.MustFloat64("Elevation", 0) < common.ElevationOfEverest
 }
 
 func FilterLaps(ct cattrack.CatLap) bool {

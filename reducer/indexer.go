@@ -215,14 +215,13 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	mapIDUnique := make(map[string]cattrack.CatTrack)
 
 	for _, ct := range tracks {
-
+		ct := ct
 		key, err := ci.Config.BucketKeyFn(ct, level)
-		if errors.Is(err, ErrNoKeyFound) {
+		if errors.Is(err, ErrNoKeyFound) || key == "" {
 			ci.logger.Debug("No indexer key for cattrack, skipping", "track", ct.StringPretty(), "level", level)
 			continue
 		}
-		//ct.SetPropertySafe("reducer_key", key)
-		ct.Properties["reducer_key"] = key
+		ct.SetPropertySafe("reducer_key", key)
 
 		var old, next cattrack.Indexer
 
