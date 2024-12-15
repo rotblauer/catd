@@ -247,6 +247,27 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	var outTracks []cattrack.CatTrack
 
+	var gzr *gzip.Reader
+	rgzipped := bytes.NewBuffer([]byte("RESET ME"))
+	rungzipped := bytes.NewBuffer([]byte("RESET ME"))
+
+	var gzw *gzip.Writer
+	wungzipped := bytes.NewBuffer([]byte("RESET ME"))
+	wgzipped := bytes.NewBuffer([]byte("RESET ME"))
+
+	defer func() {
+		if gzr != nil {
+			if err := gzr.Close(); err != nil {
+				ci.logger.Error("Failed to close gzip reader", "error", err)
+			}
+		}
+		if gzw != nil {
+			if err := gzw.Close(); err != nil {
+				ci.logger.Error("Failed to close gzip writer", "error", err)
+			}
+		}
+	}()
+
 	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
 		if err != nil {
@@ -262,6 +283,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 			var old cattrack.Indexer
 			v := b.Get([]byte(k))
+			rgzipped.Reset()
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
@@ -269,18 +291,31 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				// Strike this value from the unique map.
 				delete(mapIDUnique, k)
 
-				r, err := gzip.NewReader(bytes.NewBuffer(v))
-				if err != nil {
-					return err
+				rgzipped.Write(v)
+
+				if gzr == nil {
+					gzr, err = gzip.NewReader(rgzipped)
+					if err != nil {
+						return fmt.Errorf("gzreader new: %w", err)
+						//return err
+					}
+				} else {
+					if err := gzr.Reset(rgzipped); err != nil {
+						return fmt.Errorf("gzreader reset: %w", err)
+					}
 				}
-				ungzipped := bytes.NewBuffer([]byte{})
-				if _, err := ungzipped.ReadFrom(r); err != nil {
-					return err
+				rungzipped.Reset()
+				if _, err := rungzipped.ReadFrom(gzr); err != nil {
+					return fmt.Errorf("gzreader readfrom: %w", err)
+					//return err
 				}
-				_ = r.Close()
+				if err := gzr.Close(); err != nil {
+					return fmt.Errorf("gzreader close: %w", err)
+					//return err
+				}
 
 				ct := cattrack.CatTrack{}
-				err = json.Unmarshal(ungzipped.Bytes(), &ct)
+				err = json.Unmarshal(rungzipped.Bytes(), &ct)
 				if err != nil {
 					return err
 				}
@@ -296,16 +331,31 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 			if err != nil {
 				return err
 			}
-			buf := bytes.NewBuffer([]byte{})
-			w, err := gzip.NewWriterLevel(buf, params.DefaultGZipCompressionLevel)
-			if err != nil {
+			wungzipped.Reset()
+			wungzipped.Write(encoded)
+
+			wgzipped.Reset()
+			if gzw == nil {
+				gzw, err = gzip.NewWriterLevel(wgzipped, params.DefaultGZipCompressionLevel)
+				if err != nil {
+					return fmt.Errorf("gzwriter new: %w", err)
+					//return err
+				}
+			} else {
+				gzw.Reset(wgzipped)
+			}
+			if _, err := wungzipped.WriteTo(gzw); err != nil {
+				return fmt.Errorf("gzwriter writeto: %w", err)
 				return err
 			}
-			if _, err := w.Write(encoded); err != nil {
-				return err
+			//if _, err := gzw.Write(wungzipped.Bytes()); err != nil {
+			//	return err
+			//}
+			if err := gzw.Close(); err != nil {
+				return fmt.Errorf("gzwriter closer: %w", err)
+				//return err
 			}
-			_ = w.Close()
-			if err := b.Put([]byte(k), buf.Bytes()); err != nil {
+			if err := b.Put([]byte(k), wgzipped.Bytes()); err != nil {
 				return err
 			}
 		}
