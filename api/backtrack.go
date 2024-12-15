@@ -94,7 +94,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		if skiplog > 0 {
 			c.logger.Warn("Skipped logging of short cat windows", "count", skiplog)
 		}
-		err := c.State.StoreKVJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), m)
+		err := c.State.StoreKVMarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), m)
 		if err != nil {
 			c.logger.Error("Failed to store UUID window map", "error", err)
 		}
@@ -103,7 +103,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 
 	// Reload the cat's window map from the state.
 	m := map[string]Window{}
-	if err := c.State.ReadKVUnmarshal(params.CatStateBucket, []byte("catUUIDWindowMap"), &m); err != nil {
+	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), &m); err != nil {
 		c.logger.Warn("Failed to read UUID window map (new cat?)", "error", err)
 	} else {
 		skiplog := 0

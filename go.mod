@@ -17,11 +17,15 @@ require (
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe
 	github.com/olahol/melody v1.2.1
 	github.com/paulmach/orb v0.11.1
+	github.com/sams96/rgeo v1.2.0
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/viper v1.19.0
 	github.com/tidwall/gjson v1.18.0
 	go.etcd.io/bbolt v1.3.11
 )
+
+//replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-20241214182049-a129ff7481c9
+replace github.com/sams96/rgeo => /home/ia/dev/sams96/rgeo
 
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect

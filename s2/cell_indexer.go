@@ -58,7 +58,6 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
 	"io"
-	"log"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -162,7 +161,7 @@ func (ci *CellIndexer) FeedOfUniqueTracksForLevel(level CellLevel) (*event.FeedO
 // Index indexes the given CatTracks into the S2 cell index(es), appending
 // all unique tracks to flat files respective of cell level.
 // It will block until the in channel closes and all batches are processed.
-// It uses batches to minimize disk txes.
+// It uses batches to constrain disk txes, and to periodically flush data to disk.
 func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) error {
 	batches := stream.Batch(ctx, nil,
 		func(tracks []cattrack.CatTrack) bool {
@@ -216,16 +215,16 @@ func (ci *CellIndexer) index(level CellLevel, tracks []cattrack.CatTrack) error 
 		// be able to handle any Indexer interface implementation.
 		ict := indexT.FromCatTrack(ct)
 		next = indexT.Index(old, ict)
+		if next == nil {
+			panic("indexer method Index returned nil Indexer")
+		}
 
 		cache.Add(cellID.ToToken(), next)
 
-		if next == nil {
-			log.Fatalln("next is nil", ict.IsEmpty())
-		}
 		nextTrack := indexT.ApplyToCatTrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
-		// This will let us send the latest version of unique cells.
+		// This sends the latest version of unique cells.
 		mapIDUnique[cellID.ToToken()] = nextTrack
 	}
 
@@ -357,7 +356,7 @@ func (ci *CellIndexer) DumpLevel(level CellLevel) (chan cattrack.CatTrack, chan 
 				gzipped.Write(v)
 				if r == nil {
 					var err error
-					r, err = gzip.NewReader(gzipped) // throw away buf
+					r, err = gzip.NewReader(gzipped)
 					if err != nil {
 						return err
 					}

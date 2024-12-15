@@ -78,6 +78,26 @@ func lastKnown(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func getStackerIndex(w http.ResponseWriter, r *http.Request) {
+	catID := r.URL.Query().Get("cat")
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	if _, err := cat.WithState(true); err != nil {
+		slog.Warn("Failed to get cat state", "error", err)
+		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
+		return
+	}
+	indexed := cattrack.StackerV1{}
+	if err := cat.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), &indexed); err != nil {
+		slog.Warn("Failed to read stacker index", "error", err)
+		http.Error(w, "Failed to read stacker index", http.StatusInternalServerError)
+		return
+	}
+	ct := indexed.ApplyToCatTrack(&indexed, cattrack.CatTrack{})
+	if err := json.NewEncoder(w).Encode(ct); err != nil {
+		slog.Warn("Failed to write response", "error", err)
+	}
+}
+
 func getCatSnaps(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode([]byte("implement me")); err != nil {
 		slog.Warn("Failed to write response", "error", err)
