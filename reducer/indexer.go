@@ -120,20 +120,20 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	indexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Buckets))
 	uniqIndexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Buckets))
 
-	for _, level := range config.Buckets {
+	for _, bucket := range config.Buckets {
 		//gzf, err := f.NewGZFileWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
 		//if err != nil {
 		//	return nil, err
 		//}
 		//flatFileMap[level] = gzf
 
-		indexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
-		uniqIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
+		indexFeeds[bucket] = &event.FeedOf[[]cattrack.CatTrack]{}
+		uniqIndexFeeds[bucket] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
 
 	logger := slog.With("reducer", "a")
 	if config.Logger == nil {
-		logger = config.Logger
+		*logger = *config.Logger
 	}
 
 	return &CellIndexer{
@@ -247,26 +247,11 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	var outTracks []cattrack.CatTrack
 
-	var gzr *gzip.Reader
-	rgzipped := bytes.NewBuffer([]byte("RESET ME"))
-	rungzipped := bytes.NewBuffer([]byte("RESET ME"))
+	rb := new(bytes.Buffer)
+	gzr := new(gzip.Reader)
 
-	var gzw *gzip.Writer
-	wungzipped := bytes.NewBuffer([]byte("RESET ME"))
-	wgzipped := bytes.NewBuffer([]byte("RESET ME"))
-
-	defer func() {
-		if gzr != nil {
-			if err := gzr.Close(); err != nil {
-				ci.logger.Error("Failed to close gzip reader", "error", err)
-			}
-		}
-		if gzw != nil {
-			if err := gzw.Close(); err != nil {
-				ci.logger.Error("Failed to close gzip writer", "error", err)
-			}
-		}
-	}()
+	wb := new(bytes.Buffer)
+	gzw := gzip.NewWriter(wb)
 
 	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
@@ -283,7 +268,6 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 			var old cattrack.Indexer
 			v := b.Get([]byte(k))
-			rgzipped.Reset()
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
@@ -291,31 +275,34 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				// Strike this value from the unique map.
 				delete(mapIDUnique, k)
 
-				rgzipped.Write(v)
+				/*
+				 === RUN   TestCellIndexerIndex
+				    indexer_test.go:55: rye 2024-08-31 18:00:00 [47.82274,-92.0975]+/-5m 0.00m/s
+				    indexer_test.go:62: gzreader copy: unexpected EOF
+				*/
+				in := bytes.NewReader(v)
+				err := gzr.Reset(in)
+				if err != nil {
+					return fmt.Errorf("gzreader reset: %w", err)
+				}
+				rb.Reset()
+				_, err = io.Copy(rb, gzr)
+				if err != nil {
+					/*
+						2024/12/15 09:28:23 ERROR CellIndexer S2 errored cat=rye error="gzreader copy: unexpected EOF"
+						2024/12/15 09:28:23 ERROR Failed to dump level if unique cat=rye error="unexpected EOF"
+						2024/12/15 09:28:23 ERROR Failed to send unique tracks level cat=rye error="unexpected EOF"
 
-				if gzr == nil {
-					gzr, err = gzip.NewReader(rgzipped)
-					if err != nil {
-						return fmt.Errorf("gzreader new: %w", err)
-						//return err
-					}
-				} else {
-					if err := gzr.Reset(rgzipped); err != nil {
-						return fmt.Errorf("gzreader reset: %w", err)
-					}
+					*/
+					return fmt.Errorf("gzreader copy: %w - rb: %s", err, string(rb.Bytes()))
 				}
-				rungzipped.Reset()
-				if _, err := rungzipped.ReadFrom(gzr); err != nil {
-					return fmt.Errorf("gzreader readfrom: %w", err)
-					//return err
-				}
-				if err := gzr.Close(); err != nil {
+				err = gzr.Close()
+				if err != nil {
 					return fmt.Errorf("gzreader close: %w", err)
-					//return err
 				}
 
 				ct := cattrack.CatTrack{}
-				err = json.Unmarshal(rungzipped.Bytes(), &ct)
+				err = json.Unmarshal(rb.Bytes(), &ct)
 				if err != nil {
 					return err
 				}
@@ -329,34 +316,19 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 			encoded, err := json.Marshal(nextTrack)
 			if err != nil {
-				return err
+				return fmt.Errorf("json marshal write: %w", err)
 			}
-			wungzipped.Reset()
-			wungzipped.Write(encoded)
-
-			wgzipped.Reset()
-			if gzw == nil {
-				gzw, err = gzip.NewWriterLevel(wgzipped, params.DefaultGZipCompressionLevel)
-				if err != nil {
-					return fmt.Errorf("gzwriter new: %w", err)
-					//return err
-				}
-			} else {
-				gzw.Reset(wgzipped)
+			wb.Reset()
+			gzw.Reset(wb)
+			if _, err := gzw.Write(encoded); err != nil {
+				return fmt.Errorf("gzwriter write: %w", err)
 			}
-			if _, err := wungzipped.WriteTo(gzw); err != nil {
-				return fmt.Errorf("gzwriter writeto: %w", err)
-				return err
-			}
-			//if _, err := gzw.Write(wungzipped.Bytes()); err != nil {
-			//	return err
-			//}
 			if err := gzw.Close(); err != nil {
-				return fmt.Errorf("gzwriter closer: %w", err)
-				//return err
+				return fmt.Errorf("gzwriter close: %w", err)
 			}
-			if err := b.Put([]byte(k), wgzipped.Bytes()); err != nil {
-				return err
+
+			if err := b.Put([]byte(k), wb.Bytes()); err != nil {
+				return fmt.Errorf("bbolt put: %w", err)
 			}
 		}
 		return nil
