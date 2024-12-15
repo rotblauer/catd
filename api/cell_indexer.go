@@ -12,18 +12,31 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"log/slog"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 )
 
-func (c *Cat) GetDefaultCellIndexer() (*reducer.CellIndexer, error) {
+func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
+	bucketLevels := []reducer.Bucket{}
+	bucketKeyFns := map[reducer.Bucket]reducer.CatKeyFn{}
+	for _, level := range catS2.DefaultCellLevels {
+		bucketLevels = append(bucketLevels, reducer.Bucket(level))
+		bucketKeyFns[reducer.Bucket(level)] = func(track cattrack.CatTrack) string {
+			level := level
+			return catS2.CellIDForTrackLevel(track, level).ToToken()
+		}
+	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
-		Flat:            c.State.Flat,
-		Levels:          catS2.DefaultCellLevels,
+		DBPath:          filepath.Join(c.State.Flat.Path(), catS2.DBName),
+		Levels:          bucketLevels,
 		BatchSize:       params.DefaultBatchSize, // 10% of default batch size? Why? Reduce batch-y-ness.
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
+		BucketKeyFns:    bucketKeyFns,
+		Logger:          slog.With("reducer", "s2"),
 	})
 }
 
@@ -37,7 +50,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 		c.logger.Info("S2 Indexing complete", "elapsed", time.Since(start).Round(time.Second))
 	}()
 
-	cellIndexer, err := c.GetDefaultCellIndexer()
+	cellIndexer, err := c.GetDefaultS2CellIndexer()
 	if err != nil {
 		c.logger.Error("Failed to initialize indexer", "error", err)
 		return err
@@ -51,7 +64,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, 30)
-	for _, level := range cellIndexer.Config.Levels {
+	for _, level := range catS2.DefaultCellLevels {
 		if level < catS2.CellLevelTilingMinimum ||
 			level > catS2.CellLevelTilingMaximum {
 			continue
@@ -60,7 +73,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			c.logger.Warn("No tiled configuration, skipping S2 indexing", "level", level)
 			continue
 		}
-		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(level)
+		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(reducer.Bucket(level))
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 			return err
@@ -149,7 +162,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.C
 	// So now we need to send ALL unique tracks at this level to tiled,
 	// and tell tiled to use mode truncate.
 	// This will replace the existing map/level with the newest version of unique tracks.
-	dump, errs := cellIndexer.DumpLevel(level)
+	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
@@ -256,14 +269,14 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 func (c *Cat) S2CollectLevel(ctx context.Context, level catS2.CellLevel) ([]cattrack.CatTrack, error) {
 	c.getOrInitState(true)
 
-	cellIndexer, err := c.GetDefaultCellIndexer()
+	cellIndexer, err := c.GetDefaultS2CellIndexer()
 	if err != nil {
 		return nil, err
 	}
 	defer cellIndexer.Close()
 
 	out := []cattrack.CatTrack{}
-	dump, errs := cellIndexer.DumpLevel(level)
+	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 	out = stream.Collect(ctx, dump)
 	return out, <-errs
 }
@@ -272,14 +285,14 @@ func (c *Cat) S2CollectLevel(ctx context.Context, level catS2.CellLevel) ([]catt
 func (c *Cat) S2DumpLevel(wr io.Writer, level catS2.CellLevel) error {
 	c.getOrInitState(true)
 
-	cellIndexer, err := c.GetDefaultCellIndexer()
+	cellIndexer, err := c.GetDefaultS2CellIndexer()
 	if err != nil {
 		return err
 	}
 	defer cellIndexer.Close()
 
 	enc := json.NewEncoder(wr)
-	dump, errs := cellIndexer.DumpLevel(level)
+	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 	go func() {
 		for track := range dump {
 			if err := enc.Encode(track); err != nil {

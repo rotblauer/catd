@@ -51,7 +51,6 @@ import (
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
@@ -80,20 +79,22 @@ type CellIndexer struct {
 }
 
 type CellIndexerConfig struct {
-	CatID     conceptual.CatID // logging
-	DBPath    string
-	Levels    []Bucket
-	BatchSize int
+	CatID         conceptual.CatID // logging
+	DBPath        string
+	BatchSize     int
+	Levels        []Bucket
+	LevelIndexerT map[Bucket]cattrack.Indexer // TODO: Slices instead?
+	BucketKeyFns  map[Bucket]CatKeyFn
 
 	// DefaultIndexerT is (a value of) the type of the Indexer implementation.
 	// The Indexer defines logic about how merge non-unique cat tracks.
 	// The default is used if no level-specific Indexer is provided.
 	DefaultIndexerT cattrack.Indexer
-	LevelIndexerT   map[Bucket]cattrack.Indexer
-	BucketKeyFn     map[Bucket]func(ct cattrack.CatTrack) string
 
 	Logger *slog.Logger
 }
+
+type CatKeyFn func(track cattrack.CatTrack) string
 
 func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
@@ -101,7 +102,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		return nil, fmt.Errorf("no levels provided")
 	}
 	if config.DefaultIndexerT == nil {
-		config.DefaultIndexerT = s2.DefaultIndexerT
+		config.DefaultIndexerT = &cattrack.StackerV1{}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.DBPath), 0777); err != nil {
@@ -125,6 +126,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		indexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 		uniqIndexFeeds[level] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
+
 	logger := slog.With("reducer", "a")
 	if config.Logger == nil {
 		logger = config.Logger
@@ -209,7 +211,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	mapIDUnique := make(map[string]cattrack.CatTrack)
 
 	for _, ct := range tracks {
-		key := ci.Config.BucketKeyFn[level](ct)
+		key := ci.Config.BucketKeyFns[level](ct)
 
 		var old, next cattrack.Indexer
 
