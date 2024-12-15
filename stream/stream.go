@@ -6,7 +6,6 @@ import (
 	"errors"
 	"github.com/rotblauer/catd/common"
 	"io"
-	"log"
 	"log/slog"
 	"slices"
 	"sync"
@@ -479,7 +478,7 @@ func NDJSON[T any](ctx context.Context, in io.Reader) (<-chan T, chan error) {
 			var element T
 			if err := dec.Decode(&element); err != nil {
 				if errors.Is(err, io.EOF) {
-					log.Println(err)
+					//log.Println(err)
 					return
 				}
 				errs <- err

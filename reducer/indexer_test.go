@@ -69,7 +69,7 @@ func TestCellIndexerIndex(t *testing.T) {
 
 	dump, errs := reducer.DumpLevel(reducer.Config.Buckets[0])
 	out := stream.Collect[cattrack.CatTrack](ctx, dump)
-	// expect 100 b/c %100 keyfn
+	// expect 100 b/c %100 keyfn, and enough tracks to have at least one in each bucket
 	if len(out) != 100 {
 		t.Errorf("expected 100, got %d", len(out))
 	}

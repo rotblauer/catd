@@ -17,7 +17,7 @@ import (
 func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (errCh chan error) {
 	c.getOrInitState(false)
 
-	c.logger.Info("Storing cat tracks gz", "cat", c.CatID)
+	c.logger.Info("Storing cat tracks gz", "cat", c.CatID, "path", c.State.Flat.Path())
 
 	// Sink ALL tracks (from ALL CATS) to master.geojson.gz.
 	// Cat/thread safe because gz file locks.
@@ -97,7 +97,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack) (errCh chan error) {
 	c.getOrInitState(false)
 
-	c.logger.Info("Storing cat tracks gz yyyy-mm", "cat", c.CatID)
+	c.logger.Info("Storing cat tracks gz yyyy-mm", "cat", c.CatID, "path", c.State.Flat.Path())
 
 	errCh = make(chan error, 1)
 	defer close(errCh)
@@ -166,7 +166,7 @@ func (c *Cat) StoreTracksYYYYMM(ctx context.Context, in <-chan cattrack.CatTrack
 			}
 			ymEnc = json.NewEncoder(ymWriter)
 		}
-		
+
 		if err := ymEnc.Encode(ct); err != nil {
 			c.logger.Error("Failed to write", "error", err)
 			errCh <- err

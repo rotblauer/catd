@@ -79,6 +79,10 @@ func (ct *CatTrack) CatID() conceptual.CatID {
 }
 
 func (ct *CatTrack) Time() (time.Time, error) {
+	// Here's a big deal.
+	// CatTracks only deals in tracks with a granularity of 1 second.r
+	// Prefer the UnixTime property, but if it's not there, fall back to Time,
+	// which should be a string in RFC3339 format.
 	ut, ok := ct.Properties["UnixTime"]
 	if ok {
 		if v, ok := ut.(float64); ok {
@@ -166,13 +170,13 @@ func (ct *CatTrack) Validate() error {
 		return fmt.Errorf("not a point")
 	}
 
-	// Point is valid (lat, lng).
+	// Point is valid (x,y::lng,lat).
 	ptLng, ptLat := pt[0], pt[1]
 
-	if ptLat > 90 || ptLat < -90 {
+	if ptLat < -90 || ptLat > 90 {
 		return fmt.Errorf("invalid coordinate: lat=%.14f", ptLat)
 	}
-	if ptLng > 180 || ptLng < -180 {
+	if ptLng < -180 || ptLng > 180 {
 		return fmt.Errorf("invalid coordinate: lng=%.14f", ptLng)
 	}
 
@@ -180,22 +184,47 @@ func (ct *CatTrack) Validate() error {
 	if ct.Properties == nil {
 		return fmt.Errorf("nil properties")
 	}
+	if len(ct.Properties) == 0 {
+		return fmt.Errorf("empty properties")
+	}
 
+	// Conceptually, CatID.
 	if ct.Properties["Name"] == nil {
 		return fmt.Errorf("nil name")
 	}
-	if _, ok := ct.Properties["Name"].(string); !ok {
+	if n, ok := ct.Properties["Name"].(string); !ok {
 		return fmt.Errorf("name not a string")
+	} else if n == "" {
+		return fmt.Errorf("empty name")
 	}
+
+	// Note: some historic tracks UUIDs are "".
+	// Otherwise, effectively cat/device uuids.
 	if ct.Properties["UUID"] == nil {
 		return fmt.Errorf("nil uuid")
 	}
 	if _, ok := ct.Properties["UUID"].(string); !ok {
 		return fmt.Errorf("uuid not a string")
 	}
+
+	// If the track has both Time and UnixTime properties,
+	// they must be within 1 second of each other.
+	if tTime := ct.Properties.MustString("Time", ""); tTime != "" {
+		if uTime := ct.Properties.MustInt("UnixTime", 0); uTime != 0 {
+			tTimeT, err := time.Parse(time.RFC3339, tTime)
+			if err != nil {
+				return fmt.Errorf("invalid time: %v", err)
+			}
+			uTimeT := time.Unix(int64(uTime), 0)
+			if tTimeT.Sub(uTimeT) > time.Second || uTimeT.Sub(tTimeT) > time.Second {
+				return fmt.Errorf("time and unixtime mismatch")
+			}
+		}
+	}
 	if _, err := ct.Time(); err != nil {
 		return fmt.Errorf("invalid time: %v", err)
 	}
+
 	if v, ok := ct.Properties["Accuracy"]; !ok {
 		return fmt.Errorf("missing field: Accuracy")
 	} else if _, ok := v.(float64); !ok {
@@ -208,7 +237,7 @@ func (ct *CatTrack) Validate() error {
 			}
 		}
 	}
-	// TODO: Validate more. Expected/required types.
+	// TODO: Validate more. Expected/required types. JSON Schema?
 	return nil
 }
 

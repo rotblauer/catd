@@ -132,7 +132,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 	logger := slog.With("reducer", "a")
 	if config.Logger == nil {
-		*logger = *config.Logger
+		logger = config.Logger
 	}
 
 	return &CellIndexer{
@@ -311,7 +311,6 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 			if err != nil {
 				return fmt.Errorf("bbolt put: %w", err)
 			}
-
 		}
 		return nil
 	})
