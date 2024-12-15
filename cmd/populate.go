@@ -26,6 +26,7 @@ import (
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/names"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/rgeo"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/spf13/cobra"
@@ -108,6 +109,12 @@ Missoula, Montana
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
+
+		if err := rgeo.DoInit(); err != nil {
+			if !errors.Is(err, rgeo.ErrAlreadyInitialized) {
+				log.Fatalln("Failed to initialize rgeo", "error", err)
+			}
+		}
 
 		//defer profile.Start(profile.MemProfile).Stop()
 

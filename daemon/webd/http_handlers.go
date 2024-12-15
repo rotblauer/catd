@@ -158,6 +158,31 @@ func s2Collect(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func rGeoCollect(w http.ResponseWriter, r *http.Request) {
+	catID := r.URL.Query().Get("cat")
+	if catID == "" {
+		http.Error(w, "Missing cat", http.StatusBadRequest)
+		return
+	}
+	level := r.URL.Query().Get("dataset")
+	l, err := strconv.ParseInt(level, 10, 64)
+	if err != nil {
+		slog.Warn("Failed to parse level", "error", err)
+		http.Error(w, "Failed to parse level", http.StatusBadRequest)
+		return
+	}
+	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+	indexedTracks, err := cat.RgeoCollectLevel(context.Background(), int(l))
+	if err != nil {
+		slog.Warn("Failed to get rgeo index dump", "error", err)
+		http.Error(w, "Failed to get rgeo index dump", http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(indexedTracks); err != nil {
+		slog.Warn("Failed to write response", "error", err)
+	}
+}
+
 // populate is a handler for the /populate endpoint.
 // It is where Cat Tracks get posted and persisted for-ev-er.
 // Due to legacy support requirements it supports a variety of

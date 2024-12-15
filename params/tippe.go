@@ -10,6 +10,7 @@ const (
 	TippeConfigNameLaps   TippeConfigName = "laps"
 	TippeConfigNameNaps   TippeConfigName = "naps"
 	TippeConfigNameCells  TippeConfigName = "cells"
+	TippeConfigNamePlats  TippeConfigName = "plats"
 	//TippeConfigNameTripDetected TippeConfigName = "tripdetected"
 )
 
@@ -25,6 +26,8 @@ func LookupTippeConfig(name TippeConfigName, raw CLIFlagsT) (config CLIFlagsT, o
 		return DefaultTippeConfigs.Naps(), true
 	case TippeConfigNameCells:
 		return DefaultTippeConfigs.Cells(), true
+	case TippeConfigNamePlats:
+		return DefaultTippeConfigs.Plats(), true
 	}
 	if raw != nil {
 		return raw, true
@@ -40,6 +43,7 @@ var DefaultTippeConfigs = &struct {
 	Laps   func() CLIFlagsT
 	Naps   func() CLIFlagsT
 	Cells  func() CLIFlagsT
+	Plats  func() CLIFlagsT
 }{
 	Tracks: func() CLIFlagsT {
 		return append(TippeTracksArgs, TippeCommonArgs...)
@@ -55,6 +59,9 @@ var DefaultTippeConfigs = &struct {
 	},
 	Cells: func() CLIFlagsT {
 		return append(TippeCellsArgs, TippeCommonArgs...)
+	},
+	Plats: func() CLIFlagsT {
+		return append(TippePlatsArgs, TippeCommonArgs...)
 	},
 }
 
@@ -191,6 +198,70 @@ var (
 		// --drop-rate: Drop a fixed fraction of features at each zoom level.
 		// This is useful if you have more detail than can be shown at low zoom levels.
 		"--drop-rate", "1",
+
+		//--extend-zooms-if-still-dropping: If even the tiles at high zoom levels are too big,
+		// keep adding zoom levels until one is reached that can represent all the features.
+		"--extend-zooms-if-still-dropping",
+
+		// Don't simplify away nodes at which LineStrings or Polygon rings converge, diverge, or cross.
+		// (This will not be effective if you also use --coalesce.)
+		// In between intersection nodes, LineString segments or polygon edges will be simplified identically in each feature if possible.
+		// Use this instead of --detect-shared-borders.
+		// https://felt.com/blog/tippecanoe-polygons-shard-gaps
+		"--no-simplification-of-shared-nodes",
+
+		// Multiply the tolerance for line and polygon simplification by _scale_ (the value).
+		// The standard tolerance tries to keep the line or polygon within one tile unit of its proper location.
+		// You can probably go up to about 10 without too much visible difference.
+		"--simplification", "10",
+
+		"--include", "Alias",
+		"--include", "UUID",
+		"--include", "Name",
+		"--include", "Activity",
+		"--include", "Elevation",
+		"--include", "Speed",
+		"--include", "Accuracy",
+		"--include", "Time",
+
+		"--include", "Count",
+		"--include", "VisitCount",
+		"--include", "FirstTime",
+		"--include", "LastTime",
+		"--include", "TotalTimeOffset",
+		"--include", "ActivityMode.Unknown",
+		"--include", "ActivityMode.Stationary",
+		"--include", "ActivityMode.Walking",
+		"--include", "ActivityMode.Running",
+		"--include", "ActivityMode.Bike",
+		"--include", "ActivityMode.Automotive",
+		"--include", "ActivityMode.Fly",
+	}
+	/*
+		https://github.com/felt/tippecanoe/?tab=readme-ov-file#continuous-polygon-features-states-and-provinces-visible-at-all-zoom-levels
+		## Continuous polygon features (states and provinces), visible at all zoom levels
+
+		curl -L -O https://www.naturalearthdata.com/http//www.naturalearthdata.com/download/10m/cultural/ne_10m_admin_1_states_provinces.zip
+		unzip -o ne_10m_admin_1_states_provinces.zip
+		ogr2ogr -f GeoJSON ne_10m_admin_1_states_provinces.geojson ne_10m_admin_1_states_provinces.shp
+
+		tippecanoe -zg -o ne_10m_admin_1_states_provinces.mbtiles --coalesce-densest-as-needed --extend-zooms-if-still-dropping ne_10m_admin_1_states_provinces.geojson
+	*/
+	TippePlatsArgs = CLIFlagsT{
+		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
+
+		// -zg: Automatically choose a maxzoom that should be sufficient to clearly distinguish the features and the detail within each feature
+		//"--maximum-zoom", "g", // guess
+		"--minimum-zoom", "3",
+		"--maximum-zoom", "14",
+
+		// --coalesce-densest-as-needed: If the tiles are too big at low or medium zoom levels,
+		// merge as many features together as are necessary to allow tiles to be created with those features that are still distinguished
+		"--coalesce-densest-as-needed",
+
+		// --drop-rate: Drop a fixed fraction of features at each zoom level.
+		// This is useful if you have more detail than can be shown at low zoom levels.
+		//"--drop-rate", "1",
 
 		//--extend-zooms-if-still-dropping: If even the tiles at high zoom levels are too big,
 		// keep adding zoom levels until one is reached that can represent all the features.

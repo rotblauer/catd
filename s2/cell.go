@@ -3,6 +3,7 @@ package s2
 import (
 	"github.com/golang/geo/s2"
 	"github.com/paulmach/orb"
+	"github.com/rotblauer/catd/reducer"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
@@ -10,6 +11,13 @@ import (
 	cellID := s2.CellIDForTrackLevel(ct, level)
 	return cellID.ToToken()
 */
+
+func CatKeyFnFn(bucket reducer.Bucket) reducer.CatKeyFn {
+	return func(track cattrack.CatTrack) string {
+		level := CellLevel(bucket)
+		return CellIDForTrackLevel(track, level).ToToken()
+	}
+}
 
 // CellIDWithLevel returns the cellID truncated to the given level.
 // https://docs.s2cell.aliddell.com/en/stable/s2_concepts.html#truncation
@@ -27,7 +35,7 @@ func CellIDForTrackLevel(ct cattrack.CatTrack, level CellLevel) s2.CellID {
 
 func dbBucket(level CellLevel) []byte { return []byte{byte(level)} }
 
-func CellPolygonForPointAtLevel(pt orb.Point, level CellLevel) orb.Polygon {
+func CellGeometryForPointAtLevel(pt orb.Point, level CellLevel) orb.Polygon {
 	leaf := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
 	leveledCellID := CellIDWithLevel(leaf, level)
 

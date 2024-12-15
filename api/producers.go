@@ -24,10 +24,12 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	stream.TeeMany(ctx, woffsets, areaPipeCh, vectorPipeCh, simpleIndexerCh)
 
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
+	g1, g2 := stream.Tee(ctx, groundedArea)
 
-	nPipes := 3
+	nPipes := 4
 	errs := make(chan error, nPipes)
-	go func() { errs <- c.S2IndexTracks(ctx, groundedArea) }()
+	go func() { errs <- c.S2IndexTracks(ctx, g1) }()
+	go func() { errs <- c.RGeoIndexTracks(ctx, g2) }()
 	go func() { errs <- c.CatActPipeline(ctx, vectorPipeCh) }()
 	go func() { errs <- c.SimpleIndexer(ctx, simpleIndexerCh) }()
 
@@ -55,7 +57,7 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	indexer := &cattrack.StackerV1{}
 	old := &cattrack.StackerV1{}
 	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), old); err != nil {
-		c.logger.Error("Failed to read stacker state (new cat?)", "error", err)
+		c.logger.Warn("Failed to read stacker state (new cat?)", "error", err)
 	}
 
 	for track := range in {

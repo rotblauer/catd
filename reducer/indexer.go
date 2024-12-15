@@ -79,17 +79,18 @@ type CellIndexer struct {
 }
 
 type CellIndexerConfig struct {
-	CatID         conceptual.CatID // logging
-	DBPath        string
-	BatchSize     int
-	Levels        []Bucket
-	LevelIndexerT map[Bucket]cattrack.Indexer // TODO: Slices instead?
-	BucketKeyFns  map[Bucket]CatKeyFn
+	CatID     conceptual.CatID // logging
+	DBPath    string
+	BatchSize int
+
+	Buckets []Bucket
 
 	// DefaultIndexerT is (a value of) the type of the Indexer implementation.
 	// The Indexer defines logic about how merge non-unique cat tracks.
 	// The default is used if no level-specific Indexer is provided.
 	DefaultIndexerT cattrack.Indexer
+	LevelIndexerT   map[Bucket]cattrack.Indexer // TODO: Slices instead?
+	BucketKeyFns    map[Bucket]CatKeyFn
 
 	Logger *slog.Logger
 }
@@ -98,8 +99,8 @@ type CatKeyFn func(track cattrack.CatTrack) string
 
 func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
-	if len(config.Levels) == 0 {
-		return nil, fmt.Errorf("no levels provided")
+	if len(config.Buckets) == 0 {
+		return nil, fmt.Errorf("no buckets provided")
 	}
 	if config.DefaultIndexerT == nil {
 		config.DefaultIndexerT = &cattrack.StackerV1{}
@@ -113,10 +114,10 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		return nil, err
 	}
 
-	indexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
-	uniqIndexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Levels))
+	indexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Buckets))
+	uniqIndexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Buckets))
 
-	for _, level := range config.Levels {
+	for _, level := range config.Buckets {
 		//gzf, err := f.NewGZFileWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
 		//if err != nil {
 		//	return nil, err
@@ -134,7 +135,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 	return &CellIndexer{
 		Config: config,
-		Caches: make(map[Bucket]*lru.Cache[string, cattrack.Indexer], len(config.Levels)),
+		Caches: make(map[Bucket]*lru.Cache[string, cattrack.Indexer], len(config.Buckets)),
 		DB:     db,
 
 		indexFeeds:     indexFeeds,
@@ -182,10 +183,10 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	for batch := range batches {
 		if batchIndex%n == 0 {
 			ci.logger.Debug("Reducer indexing batch", "cat", ci.Config.CatID, "batch.index", batchIndex,
-				"size", len(batch), "buckets", len(ci.Config.Levels))
+				"size", len(batch), "buckets", len(ci.Config.Buckets))
 		}
 		batchIndex++
-		for _, level := range ci.Config.Levels {
+		for _, level := range ci.Config.Buckets {
 			if err := ci.index(level, batch); err != nil {
 				return err
 			}
@@ -197,7 +198,7 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	start := time.Now()
 	defer slog.Debug("Reducer batch", "cat", ci.Config.CatID,
-		"level", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
+		"bucket", level, "size", len(tracks), "elapsed", time.Since(start).Round(time.Millisecond))
 
 	// Reinit the level's cache.
 	cache, err := lru.New[string, cattrack.Indexer](ci.Config.BatchSize)
@@ -212,6 +213,10 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	for _, ct := range tracks {
 		key := ci.Config.BucketKeyFns[level](ct)
+		if key == "" {
+			ci.logger.Debug("No indexer key for cattrack, skipping", "track", ct.StringPretty(), "level", level)
+			continue
+		}
 
 		var old, next cattrack.Indexer
 

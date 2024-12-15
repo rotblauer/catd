@@ -23,16 +23,13 @@ func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
 	bucketKeyFns := map[reducer.Bucket]reducer.CatKeyFn{}
 	for _, level := range catS2.DefaultCellLevels {
 		bucketLevels = append(bucketLevels, reducer.Bucket(level))
-		bucketKeyFns[reducer.Bucket(level)] = func(track cattrack.CatTrack) string {
-			level := level
-			return catS2.CellIDForTrackLevel(track, level).ToToken()
-		}
+		bucketKeyFns[reducer.Bucket(level)] = catS2.CatKeyFnFn(reducer.Bucket(level))
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
 		DBPath:          filepath.Join(c.State.Flat.Path(), catS2.DBName),
-		Levels:          bucketLevels,
 		BatchSize:       params.DefaultBatchSize, // 10% of default batch size? Why? Reduce batch-y-ness.
+		Buckets:         bucketLevels,
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
 		BucketKeyFns:    bucketKeyFns,
@@ -44,15 +41,15 @@ func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
 func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) error {
 	c.getOrInitState(false)
 
-	c.logger.Info("S2 Indexing cat tracks")
+	c.logger.Info("Indexing S2 cat tracks")
 	start := time.Now()
 	defer func() {
-		c.logger.Info("S2 Indexing complete", "elapsed", time.Since(start).Round(time.Second))
+		c.logger.Info("Indexing S2 complete", "elapsed", time.Since(start).Round(time.Second))
 	}()
 
 	cellIndexer, err := c.GetDefaultS2CellIndexer()
 	if err != nil {
-		c.logger.Error("Failed to initialize indexer", "error", err)
+		c.logger.Error("Failed to initialize S2 indexer", "error", err)
 		return err
 	}
 	defer func() {
@@ -63,14 +60,14 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
-	sendErrs := make(chan error, 30)
+	sendErrs := make(chan error, len(catS2.DefaultCellLevels))
 	for _, level := range catS2.DefaultCellLevels {
 		if level < catS2.CellLevelTilingMinimum ||
 			level > catS2.CellLevelTilingMaximum {
 			continue
 		}
 		if !c.IsRPCEnabled() {
-			c.logger.Warn("No tiled configuration, skipping S2 indexing", "level", level)
+			c.logger.Warn("No RPC configuration, skipping S2 indexing", "level", level)
 			continue
 		}
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(reducer.Bucket(level))
@@ -79,51 +76,19 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			return err
 		}
 
-		// First paradigm: send unique tracks to tiled, with source mode appending.
-		// This builds maps with unique tracks, but where each track is the FIRST "track" seen
-		// (this FIRST track can be a "small" Indexed track, though, if multiples were cached).
-		// This pattern was used by CatTracksV1 to build point-based maps of unique cells for level 23.
-		// The problem with this is that the first track is not as useful as the last track,
-		// nor as useful a latest-state index value.
-		//u1 := make(chan []cattrack.CatTrack)
-		//chans = append(chans, u1)
-		//u1Sub := uniqLevelFeed.Subscribe(u1)
-		//subs = append(subs, u1Sub)
-		//go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
-
-		// Second paradigm: in the event of a (any) unique cell for the level,
-		// send ALL indexed tracks/index-values from that level to tiled, mode truncate.
-		//
-		// This might be crazy because when a cat goes wandering in fresh powder,
-		// every time they push (a batch of unique tracks) there'll be a lot of redundant data
-		// being constantly (or, with each batch) sent to tiled.
-		// Big asymmetry between some fresh powder and the avalanche.
-		// This is less a concern for low cell levels (e.g. 6) than high ones (e.g. 18).
-		//
-		// One way to improve this might be to...
-		// - give tiled an indexing database option (opposed to only lat gz files),
-		//   and then establish a convention for pushing indexed data (i.e. index on this level's cell id).
-		//   Tiled would also need to be able to dump all indexed data for some tiled-request config.
-		//   This would fix the amount of data going "over the wire" to tiled,
-		//   but that's not really the major concern since, for now at least,
-		//   since I expect the services to be co-located.
-		// ...
-		//
-		// The major constraint here is that in order to produce an updated tileset (.mbtiles),
-		// tippecanoe needs to read ALL the data for that tileset; it doesn't do "updates".
 		u2 := make(chan []cattrack.CatTrack)
 		chans = append(chans, u2)
 		u2Sub := uniqLevelFeed.Subscribe(u2)
 		subs = append(subs, u2Sub)
 		go func() {
-			sendErrs <- c.tiledDumpLevelIfUnique(ctx, cellIndexer, level, u2)
+			sendErrs <- c.tiledDumpS2LevelIfUnique(ctx, cellIndexer, reducer.Bucket(level), u2)
 		}()
 	}
 
 	// Blocking.
-	c.logger.Info("S2 Indexing blocking")
+	c.logger.Info("Indexing S2 blocking")
 	if err := cellIndexer.Index(ctx, in); err != nil {
-		c.logger.Error("CellIndexer errored", "error", err)
+		c.logger.Error("CellIndexer S2 errored", "error", err)
 	}
 	for i, sub := range subs {
 		sub.Unsubscribe()
@@ -138,8 +103,8 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	return nil
 }
 
-// tiledDumpLevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
-func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
+// tiledDumpS2LevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
+func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, level reducer.Bucket, in <-chan []cattrack.CatTrack) error {
 	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
 	// Block, waiting to see if any unique tracks are sent.
@@ -153,9 +118,9 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.C
 	// There were some unique tracks at this level.
 	batchSize := params.RPCTrackBatchSize
 	pushBatchN := int32(0)
-	c.logger.Info("S2 Unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
+	c.logger.Info("S2 unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
 	defer func() {
-		c.logger.Info("S2 Unique tracks dumped", "level", level, "count", uniqs,
+		c.logger.Info("S2 unique tracks dumped", "level", level, "count", uniqs,
 			"push.batch_size", batchSize, "pushed.batches", pushBatchN)
 	}()
 
@@ -164,8 +129,8 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.C
 	// This will replace the existing map/level with the newest version of unique tracks.
 	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 
-	levelZoomMin := catS2.TilingDefaultCellZoomLevels[level][0]
-	levelZoomMax := catS2.TilingDefaultCellZoomLevels[level][1]
+	levelZoomMin := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][0]
+	levelZoomMax := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][1]
 
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
@@ -200,7 +165,7 @@ func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.C
 			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 				cp := track
 				cp.ID = track.MustTime().Unix()
-				cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
+				cp.Geometry = catS2.CellGeometryForPointAtLevel(cp.Point(), catS2.CellLevel(level))
 				return cp
 			}, stream.Slice(ctx, s)))
 			if err != nil {
@@ -231,7 +196,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		cp := track
 
 		cp.ID = track.MustTime().Unix()
-		cp.Geometry = catS2.CellPolygonForPointAtLevel(cp.Point(), level)
+		cp.Geometry = catS2.CellGeometryForPointAtLevel(cp.Point(), level)
 
 		return cp
 	}, stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
@@ -265,6 +230,43 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 	}
 }
 
+/*
+	RE: Above
+
+	// First paradigm: send unique tracks to tiled, with source mode appending.
+	// This builds maps with unique tracks, but where each track is the FIRST "track" seen
+	// (this FIRST track can be a "small" Indexed track, though, if multiples were cached).
+	// This pattern was used by CatTracksV1 to build point-based maps of unique cells for level 23.
+	// The problem with this is that the first track is not as useful as the last track,
+	// nor as useful a latest-state index value.
+	//u1 := make(chan []cattrack.CatTrack)
+	//chans = append(chans, u1)
+	//u1Sub := uniqLevelFeed.Subscribe(u1)
+	//subs = append(subs, u1Sub)
+	//go c.sendUniqueTracksLevelAppending(ctx, level, u1, u1Sub.Err())
+
+	// Second paradigm: in the event of a (any) unique cell for the level,
+	// send ALL indexed tracks/index-values from that level to tiled, mode truncate.
+	//
+	// This might be crazy because when a cat goes wandering in fresh powder,
+	// every time they push (a batch of unique tracks) there'll be a lot of redundant data
+	// being constantly (or, with each batch) sent to tiled.
+	// Big asymmetry between some fresh powder and the avalanche.
+	// This is less a concern for low cell levels (e.g. 6) than high ones (e.g. 18).
+	//
+	// One way to improve this might be to...
+	// - give tiled an indexing database option (opposed to only lat gz files),
+	//   and then establish a convention for pushing indexed data (i.e. index on this level's cell id).
+	//   Tiled would also need to be able to dump all indexed data for some tiled-request config.
+	//   This would fix the amount of data going "over the wire" to tiled,
+	//   but that's not really the major concern since, for now at least,
+	//   since I expect the services to be co-located.
+	// ...
+	//
+	// The major constraint here is that in order to produce an updated tileset (.mbtiles),
+	// tippecanoe needs to read ALL the data for that tileset; it doesn't do "updates".
+*/
+
 // S2CollectLevel returns all indexed tracks for a given S2 cell level.
 func (c *Cat) S2CollectLevel(ctx context.Context, level catS2.CellLevel) ([]cattrack.CatTrack, error) {
 	c.getOrInitState(true)
@@ -281,7 +283,7 @@ func (c *Cat) S2CollectLevel(ctx context.Context, level catS2.CellLevel) ([]catt
 	return out, <-errs
 }
 
-// S2CollectLevel returns all indexed tracks for a given S2 cell level.
+// S2CollectLevel writes all indexed tracks for a given S2 cell level.
 func (c *Cat) S2DumpLevel(wr io.Writer, level catS2.CellLevel) error {
 	c.getOrInitState(true)
 
