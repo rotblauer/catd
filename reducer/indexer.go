@@ -246,6 +246,9 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	var outTracks []cattrack.CatTrack
 
+	gzr := new(gzip.Reader)
+	gzw := gzip.NewWriter(new(bytes.Buffer))
+
 	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
 		if err != nil {
@@ -271,18 +274,16 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				ct := cattrack.CatTrack{}
 
 				in := bytes.NewBuffer(v)
-				r, err := gzip.NewReader(in)
+				err := gzr.Reset(in)
 				if err != nil {
 					return fmt.Errorf("gzip reader: %w", err)
 				}
-
-				err = json.NewDecoder(r).Decode(&ct)
+				err = json.NewDecoder(gzr).Decode(&ct)
 				if err != nil {
 					return fmt.Errorf("json decode read: %w %d %s",
 						err, len(v), string(v))
 				}
-
-				err = r.Close()
+				err = gzr.Close()
 				if err != nil {
 					return fmt.Errorf("gzip reader close: %w", err)
 				}
@@ -299,24 +300,18 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				return fmt.Errorf("json marshal write: %w", err)
 			}
 
-			encBuf := bytes.NewBuffer(encoded)
-
-			gbuf := new(bytes.Buffer)
-			w := gzip.NewWriter(gbuf)
-
-			_, err = encBuf.WriteTo(w)
-			if err != nil {
-				return fmt.Errorf("gzip write: %w", err)
-			}
-			err = w.Close()
+			out := new(bytes.Buffer)
+			gzw.Reset(out)
+			gzw.Write(encoded)
+			err = gzw.Close()
 			if err != nil {
 				return fmt.Errorf("gzip close: %w", err)
 			}
-
-			err = b.Put([]byte(k), gbuf.Bytes())
+			err = b.Put([]byte(k), out.Bytes())
 			if err != nil {
 				return fmt.Errorf("bbolt put: %w", err)
 			}
+
 		}
 		return nil
 	})
@@ -360,6 +355,8 @@ func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan err
 		defer close(out)
 		defer close(errs)
 
+		r1 := new(gzip.Reader)
+
 		err := ci.DB.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte{byte(level)})
 			if b == nil {
@@ -368,12 +365,16 @@ func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan err
 			if err := b.ForEach(func(k, v []byte) error {
 				ct := cattrack.CatTrack{}
 				buf := bytes.NewBuffer(v)
-				r, err := gzip.NewReader(buf)
+				err := r1.Reset(buf)
 				if err != nil {
 					return fmt.Errorf("failed to create gzip reader: %w", err)
 				}
-				if err := json.NewDecoder(r).Decode(&ct); err != nil {
+				if err := json.NewDecoder(r1).Decode(&ct); err != nil {
 					return fmt.Errorf("failed to unmarshal JSON: %w", err)
+				}
+				err = r1.Close()
+				if err != nil {
+					return fmt.Errorf("failed to close gzip reader: %w", err)
 				}
 				out <- ct
 				return nil
