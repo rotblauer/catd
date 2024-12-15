@@ -91,7 +91,7 @@ func (g *GZFileWriter) Close() error {
 
 func (g *GZFileWriter) MustClose() error {
 	g.Unlock()
-	_ = g.gzw.Flush()
+	//_ = g.gzw.Flush()
 	_ = g.gzw.Close()
 	_ = g.f.Sync()
 	return g.f.Close()
@@ -99,7 +99,7 @@ func (g *GZFileWriter) MustClose() error {
 
 func (g *GZFileWriter) MaybeClose() {
 	g.Unlock()
-	_ = g.gzw.Flush()
+	//_ = g.gzw.Flush()
 	_ = g.gzw.Close()
 	_ = g.f.Sync()
 	_ = g.f.Close()

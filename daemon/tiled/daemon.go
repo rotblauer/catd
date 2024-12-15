@@ -462,17 +462,17 @@ func (a *PushFeaturesRequestArgs) validate() error {
 }
 
 func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jsonData []byte) (err error) {
-	gzftw, er := catz.NewGZFileWriter(source, writeConfig)
+	gzw, er := catz.NewGZFileWriter(source, writeConfig)
 	if er != nil {
 		return er
 	}
 	defer func() {
-		// Check return param to see if gzftw has already been closed.
+		// Check return param to see if gzw has already been closed.
 		// Only a nil error returning will have seen a close.
 		// Any error occurring during write is returned immediately.
 		// This might log a double-close error, but worth it to ensure that it will always get closed.
 		if err != nil {
-			err := gzftw.MustClose()
+			err := gzw.MustClose()
 			if err != nil {
 				d.logger.Error("Failed to close gz writer", "error", err)
 			}
@@ -482,7 +482,7 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig
 	// Decode JSON-lines data as a data-integrity validation,
 	// then encode JSON lines gzipped to file.
 	dec := json.NewDecoder(bytes.NewReader(jsonData))
-	enc := json.NewEncoder(gzftw)
+	enc := json.NewEncoder(gzw)
 
 	for {
 		var v json.RawMessage
@@ -496,7 +496,7 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig
 			return err
 		}
 	}
-	er = gzftw.Close()
+	er = gzw.Close()
 	if er != nil {
 		return er
 	}

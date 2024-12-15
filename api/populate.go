@@ -315,11 +315,11 @@ func (c *Cat) IsRPCEnabled() bool {
 }
 
 // sendToCatRPCClient sends a batch of features to the Cat RPC client.
-// It is a non-blocking function, and registers itself with the Cat Waiting state.
+// It is a blocking function, and registers itself with the Cat Waiting state.
 func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		go stream.Sink(ctx, nil, in)
+		stream.Sink(ctx, nil, in)
 		return nil
 	}
 
@@ -341,6 +341,7 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeat
 	}
 
 	args.JSONBytes = buf.Bytes()
+	defer buf.Reset()
 
 	err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
 	if err != nil {

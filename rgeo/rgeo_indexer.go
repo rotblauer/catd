@@ -113,26 +113,33 @@ func getReducerKey(location rgeo.Location, dataset string) (string, error) {
 	switch dataset {
 	case dataSourcePre + "Countries10":
 		v := location.CountryCode3
-		if v == "" {
-			return v, reducer.ErrNoKeyFound
+		if location.CountryCode3 == "" {
+			return "", reducer.ErrNoKeyFound
 		}
 		return v, nil
 	case dataSourcePre + "Provinces10":
 		v := location.CountryCode3 + "-" + location.ProvinceCode
-		if v == "-" {
-			return v, reducer.ErrNoKeyFound
+		if location.CountryCode3 == "" || location.ProvinceCode == "" {
+			return "", reducer.ErrNoKeyFound
 		}
 		return v, nil
 	case dataSourcePre + "US_Counties10":
 		v := location.CountryCode3 + "-" + location.ProvinceCode + "-" + location.County
-		if v == "--" {
-			return v, reducer.ErrNoKeyFound
+		if location.CountryCode3 == "" || location.ProvinceCode == "" || location.County == "" {
+			return "", reducer.ErrNoKeyFound
+		}
+		if location.CountryCode3 != "USA" {
+			// US Counties can only be in the US.
+			/*
+				2024/12/15 12:56:47 ERROR Failed to get geometry for track cat=jr track="{ID:1486412613 Type:Feature BBox:[] Geometry:[13.4454 52.48462] Properties:map[Accuracy:65 Activity:Stationary ActivityMode:Stationary ActivityMode.Automotive:0 ActivityMode.Bike:0 ActivityMode.Fly:0 ActivityMode.Running:0 ActivityMode.Stationary:288904 ActivityMode.Unknown:0 ActivityMode.Walking:6036 Alias:jr Count:2378 Elevation:35.46441 FirstTime:2017-01-20T09:35:50-07:00 Heading:-1 LastTime:2017-02-06T13:23:33-07:00 Name:Big Mamma Speed:-1 Time:2017-02-06T20:23:33.348Z TimeOffset:1 TotalTimeOffset:294940 UUID: UnixTime:1.486412613e+09 Version: VisitCount:7 catdReceivedAt:1.734292584e+09 reducer_key:DEU-DE-BE-]}" bucket=3 name=github.com/sams96/rgeo.US_Counties10
+			*/
+			return "", reducer.ErrNoKeyFound
 		}
 		return v, nil
 	case dataSourcePre + "Cities10":
 		v := location.CountryCode3 + "-" + location.ProvinceCode + "-" + location.City
-		if v == "--" {
-			return v, reducer.ErrNoKeyFound
+		if location.CountryCode3 == "" || location.ProvinceCode == "" || location.City == "" {
+			return "", reducer.ErrNoKeyFound
 		}
 		return v, nil
 	default:

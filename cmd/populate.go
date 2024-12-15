@@ -34,7 +34,8 @@ import (
 	"io"
 	"log"
 	"log/slog"
-	//_ "net/http/pprof"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"sync"
@@ -110,13 +111,17 @@ Missoula, Montana
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 
+		// we need a webserver to get the pprof webserver
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+		//defer profile.Start(profile.MemProfile).Stop()
+
 		if err := rgeo.DoInit(); err != nil {
 			if !errors.Is(err, rgeo.ErrAlreadyInitialized) {
 				log.Fatalln("Failed to initialize rgeo", "error", err)
 			}
 		}
-
-		//defer profile.Start(profile.MemProfile).Stop()
 
 		ctx, ctxCanceler := context.WithCancel(context.Background())
 		interrupt := common.Interrupted()

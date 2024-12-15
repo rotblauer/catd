@@ -248,6 +248,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	gzr := new(gzip.Reader)
 	gzw := gzip.NewWriter(new(bytes.Buffer))
+	defer gzw.Close()
 
 	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
@@ -348,13 +349,14 @@ func (ci *CellIndexer) Close() error {
 // It returns a channel of CatTracks and a channel of errors.
 // Only non-nil errors are sent.
 func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan error) {
-	out := make(chan cattrack.CatTrack)
+	out := make(chan cattrack.CatTrack, params.DefaultBatchSize)
 	errs := make(chan error, 2)
 	go func() {
 		defer close(out)
 		defer close(errs)
 
 		r1 := new(gzip.Reader)
+		defer r1.Close()
 
 		err := ci.DB.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte{byte(level)})

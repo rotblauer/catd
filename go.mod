@@ -8,6 +8,7 @@ require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
+	github.com/google/pprof v0.0.0-20230207041349-798e818bf904
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/golang-lru/v2 v2.0.7

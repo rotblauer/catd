@@ -128,7 +128,7 @@ func (cl *CatLap) Duration() time.Duration {
 func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
 	activities := []float64{}
 	for _, f := range list {
-		act := activity.FromAny(f.Properties["Activity"])
+		act := activity.FromAny(f.Properties.MustString("Activity", "Unknown"))
 		if act > activity.TrackerStateStationary {
 			activities = append(activities, float64(act))
 		}
@@ -146,7 +146,7 @@ func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
 	// So instead we'll use reported speed.
 	speeds := []float64{}
 	for _, f := range list {
-		speeds = append(speeds, f.Properties.MustFloat64("Speed"))
+		speeds = append(speeds, f.Properties.MustFloat64("Speed", -1))
 	}
 	speedsStats := stats.Float64Data(speeds)
 

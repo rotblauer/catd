@@ -103,11 +103,11 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 
 // tiledDumpS2LevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
 func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, level reducer.Bucket, in <-chan []cattrack.CatTrack) error {
-	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
-
 	// Block, waiting to see if any unique tracks are sent.
 	uniqs := 0
-	stream.Sink(ctx, func(track cattrack.CatTrack) { uniqs++ }, unsliced)
+	for i := range in {
+		uniqs += len(i)
+	}
 	if uniqs == 0 {
 		c.logger.Debug("No unique tracks for level", "level", level)
 		return nil
@@ -136,13 +136,13 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
 	sendErrCh := make(chan error, 1)
-	go func() {
+	go func(ch chan cattrack.CatTrack) {
 		defer close(sendErrCh)
 
 		// Batch dumped tracks to avoid sending too many at once.
 		batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
 			return len(s) == batchSize
-		}, dump)
+		}, ch)
 
 		sourceMode := tiled.SourceModeTrunc
 		for s := range batched {
@@ -161,17 +161,16 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
 				SourceModes:     []tiled.SourceMode{sourceMode},
 			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-				cp := track
-				cp.ID = track.MustTime().Unix()
-				cp.Geometry = catS2.CellGeometryForPointAtLevel(cp.Point(), catS2.CellLevel(level))
-				return cp
+				track.ID = track.MustTime().Unix()
+				track.Geometry = catS2.CellGeometryForPointAtLevel(track.Point(), catS2.CellLevel(level))
+				return track
 			}, stream.Slice(ctx, s)))
 			if err != nil {
 				sendErrCh <- err
 				return
 			}
 		}
-	}()
+	}(dump)
 
 	// Block on dump errors.
 	for err := range errs {

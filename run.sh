@@ -29,8 +29,8 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
-#     zcat "${HOME}"/tdata/master.json.gz
-   zcat "${HOME}"/tdata/{devop,edge}.json.gz
+    zcat "${HOME}"/tdata/master.json.gz
+#    zcat "${HOME}"/tdata/{devop,edge}.json.gz
 
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -61,6 +61,10 @@ tabula_rasa() {
 }
 
 run() {
+  # go tool pprof -http localhost:8001 http://localhost:6060/debug/pprof/heap
+  # for i in $(seq 1 120); do curl -sK -v http://localhost:6060/debug/pprof/heap > heap.${i}.pprof; sleep 60; done
+  # go tool pprof -http localhost:8001 heap.5.pprof
+
   set -e
   set -x
   go install . || { echo "Install failed" && exit 1 ; }
