@@ -29,8 +29,8 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
-    zcat "${HOME}"/tdata/master.json.gz
-#    zcat "${HOME}"/tdata/{devop,edge}.json.gz
+#     zcat "${HOME}"/tdata/master.json.gz
+   zcat "${HOME}"/tdata/{devop,edge}.json.gz
 
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -42,12 +42,12 @@ tdata() {
 }
 
 bump_tileservice() {
-#     if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
-#     then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
-#     fi
+    if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
+    then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
+    fi
 
-    pkill -f 'mbtileserver --port 3001' || { echo "WARN: mbtileserver not running" ; }
-    nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
+#     pkill -f 'mbtileserver --port 3001' || { echo "WARN: mbtileserver not running" ; }
+#     nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
 }
 
 tabula_rasa() {

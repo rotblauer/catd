@@ -32,10 +32,8 @@ import (
 
 func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 	bucketLevels := []reducer.Bucket{}
-	bucketKeyFns := map[reducer.Bucket]reducer.CatKeyFn{}
 	for i := range rgeo.DatasetNamesStable() {
 		bucketLevels = append(bucketLevels, reducer.Bucket(i))
-		bucketKeyFns[reducer.Bucket(i)] = rgeo.CatKeyFnFn(reducer.Bucket(i))
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
@@ -44,7 +42,7 @@ func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 		Buckets:         bucketLevels,
 		DefaultIndexerT: rgeo.DefaultIndexerT,
 		LevelIndexerT:   nil,
-		BucketKeyFns:    bucketKeyFns,
+		BucketKeyFn:     rgeo.CatKeyFn,
 		Logger:          slog.With("reducer", "rgeo"),
 	})
 }

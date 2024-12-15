@@ -3,7 +3,6 @@ package rgeo
 import (
 	"fmt"
 	"github.com/paulmach/orb"
-	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/reducer"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -11,34 +10,27 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
-	"strings"
 )
 
 var DBName = "rgeo.db"
 
 var R *rgeo.Rgeo
 
-func stripPkg(name string) string {
-	return strings.TrimPrefix(name, "github.com/sams96/rgeo.")
-}
-
-func unstripPkg(name string) string {
-	return "github.com/sams96/rgeo." + name
-}
+const dataSourcePre = "github.com/sams96/rgeo."
 
 var DatasetSources = map[string]func() []byte{
 	//stripPkg(common.ReflectFunctionName(rgeo.Countries110)): rgeo.Countries110,
-	stripPkg(common.ReflectFunctionName(rgeo.Cities10)):      rgeo.Cities10,
-	stripPkg(common.ReflectFunctionName(rgeo.Countries10)):   rgeo.Countries10,
-	stripPkg(common.ReflectFunctionName(rgeo.Provinces10)):   rgeo.Provinces10,
-	stripPkg(common.ReflectFunctionName(rgeo.US_Counties10)): rgeo.US_Counties10,
+	dataSourcePre + "Cities10":      rgeo.Cities10,
+	dataSourcePre + "Countries10":   rgeo.Countries10,
+	dataSourcePre + "Provinces10":   rgeo.Provinces10,
+	dataSourcePre + "US_Counties10": rgeo.US_Counties10,
 }
 
 var TilingZoomLevels = map[int][2]int{}
 var TilingZoomLevelsRe = map[string][2]int{
-	"(?i)Countries": [2]int{3, 6},
-	"(?i)Provinces": [2]int{3, 8},
-	"(?i)Counties":  [2]int{3, 10},
+	"(?i)Countries": [2]int{3, 5},
+	"(?i)Provinces": [2]int{3, 6},
+	"(?i)Counties":  [2]int{3, 8},
 	"(?i)Cities":    [2]int{3, 10},
 }
 
@@ -72,33 +64,15 @@ func DoInit() error {
 	return nil
 }
 
-var DatasetKeyFns = map[string]func(loc rgeo.Location) string{
-	//stripPkg(common.ReflectFunctionName(rgeo.Countries110)): func(loc rgeo.Location) string {
-	//	return loc.CountryCode3
-	//},
-	stripPkg(common.ReflectFunctionName(rgeo.Countries10)): func(loc rgeo.Location) string {
-		return loc.CountryCode3
-	},
-	stripPkg(common.ReflectFunctionName(rgeo.US_Counties10)): func(loc rgeo.Location) string {
-		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.County
-	},
-	stripPkg(common.ReflectFunctionName(rgeo.Provinces10)): func(loc rgeo.Location) string {
-		return loc.CountryCode3 + "-" + loc.ProvinceCode
-	},
-	stripPkg(common.ReflectFunctionName(rgeo.Cities10)): func(loc rgeo.Location) string {
-		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.City
-	},
-}
-
 var datasetNamesStableMemo = []string{}
 
 func DatasetNamesStable() []string {
 	if datasetNamesStableMemo == nil {
 		return datasetNamesStableMemo
 	}
-	out := make([]string, len(DatasetKeyFns))
+	out := make([]string, 4)
 	i := 0
-	for k := range DatasetKeyFns {
+	for k := range DatasetSources {
 		out[i] = k
 		i++
 	}
@@ -120,44 +94,110 @@ var DefaultIndexerT = &cattrack.StackerV1{
 	VisitThreshold: params.S2DefaultVisitThreshold,
 }
 
-func CatKeyFnFn(bucket reducer.Bucket) func(cattrack.CatTrack) string {
+func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 	dataset := DatasetNamesStable()[bucket]
-	return func(ct cattrack.CatTrack) string {
-		// FIXME No need for geometry, but need dataset param.
-		loc, err := R.ReverseGeocodeWithGeometry(ct.Point(), unstripPkg(dataset))
-		if err != nil {
-			/*
-				2024/12/14 20:57:27 rgeo.DatasetNames [github.com/sams96/rgeo.Cities10 github.com/sams96/rgeo.Countries10 github.com/sams96/rgeo.Provinces10 github.com/sams96/rgeo.US_Counties10]
-				2024/12/14 20:57:27 INFO Rgeo Indexing complete cat=rye elapsed=6s
-				panic: no geometry found for dataset "github.com/sams96/rgeo.Cities10"
-			*/
-
-			//log.Println("rgeo.DatasetNames", R.DatasetNames())
-			//panic(err)
-
-			// So maybe the cat is not in a city.
-			// Yea, definitely.
-			// - Flying cat over bermuda triangle, over ocean = cat without a country.
-			// - Country mouse, not city cat = no city rgeocode.
-			// TODO morgen
-			// - handle these no-shows better
-			// - get the Location data in the cattrack on the map
-			return ""
-		}
-		return DatasetKeyFns[dataset](loc.Location)
+	loc, err := R.ReverseGeocode(ct.Point())
+	if err != nil {
+		// - Flying cat over bermuda triangle, over ocean = cat without a country, intl waters.
+		// - Country mouse, not city cat = no city rgeocode.
+		return "", reducer.ErrNoKeyFound
 	}
+	/*
+		var TilingZoomLevelsRe = map[string][2]int{
+			"(?i)Countries": [2]int{3, 5},
+			"(?i)Provinces": [2]int{3, 6},
+			"(?i)Counties":  [2]int{3, 8},
+			"(?i)Cities":    [2]int{3, 10},
+		}
+	*/
+	switch dataset {
+	case dataSourcePre + "Countries10":
+		return loc.CountryCode3, nil
+	case dataSourcePre + "Provinces10":
+		return loc.CountryCode3 + "-" + loc.ProvinceCode, nil
+	case dataSourcePre + "US_Counties10":
+		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.County, nil
+	case dataSourcePre + "Cities10":
+		return loc.CountryCode3 + "-" + loc.ProvinceCode + "-" + loc.City, nil
+	default:
+		panic("unhandled dataset")
+	}
+	return "", reducer.ErrNoKeyFound
 }
 
 func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := R.ReverseGeocodeWithGeometry(pt, unstripPkg(dataset))
+	loc, err := R.ReverseGeocodeWithGeometry(pt, dataset)
 	if err != nil {
 		return nil, nil
 	}
 	props := map[string]any{
-		"Country":  loc.CountryLong,
-		"Province": loc.Province,
-		"County":   loc.County,
-		"City":     loc.City,
+		"Country":      loc.CountryLong,
+		"CountryCode3": loc.CountryCode3,
+		"Province":     loc.Province,
+		"County":       loc.County,
+		"City":         loc.City,
 	}
 	return props, loc.Geometry
 }
+
+/*
+cattracks-ia/Cities10_cells/Cities10_cells
+2 features
+
+  {
+  "Accuracy": 2.4000000953674316,
+  "Activity": "Automotive",
+  "ActivityMode.Automotive": 2274,
+  "ActivityMode.Bike": 6784,
+  "ActivityMode.Fly": 0,
+  "ActivityMode.Running": 5467,
+  "ActivityMode.Stationary": 738057,
+  "ActivityMode.Unknown": 0,
+  "ActivityMode.Walking": 10237,
+  "Alias": "ia",
+  "City": "Missoula",
+  "Count": 85380,
+  "Country": "United States of America",
+  "County": "Missoula",
+  "Elevation": 972.5,
+  "FirstTime": "2024-12-02T13:40:06-07:00",
+  "LastTime": "2024-12-11T10:18:37-07:00",
+  "Name": "ranga-moto-act3",
+  "Province": "Montana",
+  "Speed": 24.020000457763672,
+  "Time": "2024-12-11T17:18:37.927Z",
+  "TotalTimeOffset": 762819,
+  "UUID": "76170e959f967f40",
+  "VisitCount": 1,
+  "reducer_key": "USA-US-MT-Missoula",
+  "id": 1733937517
+}
+{
+  "Accuracy": 4.199999809265137,
+  "Activity": "Running",
+  "ActivityMode.Automotive": 2,
+  "ActivityMode.Bike": 0,
+  "ActivityMode.Fly": 0,
+  "ActivityMode.Running": 1,
+  "ActivityMode.Stationary": 0,
+  "ActivityMode.Unknown": 0,
+  "ActivityMode.Walking": 5,
+  "Alias": "ia",
+  "City": "Missoula",
+  "Count": 6,
+  "Country": "United States of America",
+  "County": "Missoula",
+  "Elevation": 961.7999877929688,
+  "FirstTime": "2024-12-01T07:10:32-07:00",
+  "LastTime": "2024-12-06T13:29:39-07:00",
+  "Name": "ranga-moto-act3",
+  "Province": "Montana",
+  "Speed": 3.2200000286102295,
+  "Time": "2024-12-06T20:29:39.096Z",
+  "TotalTimeOffset": 8,
+  "UUID": "76170e959f967f40",
+  "VisitCount": 3,
+  "reducer_key": "USA-US-MN-Minneapolis",
+  "id": 1733516979
+}
+*/

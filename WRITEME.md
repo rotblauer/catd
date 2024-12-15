@@ -1,3 +1,49 @@
+```shell
+2024/12/14 22:32:04 INFO 🚶 Completed lap cat=rye time=2018-08-23T14:19:45-06:00 count=170 duration=8m13s meters="337 m" activity=Walking                                                                       
+SIGSEGV: segmentation violation                                                                                                                                                                                 
+PC=0x430002 m=17 sigcode=1 addr=0x64                                                                                                                                                                            
+                                                                                                                                                                                                                
+goroutine 0 gp=0xc070178a80 m=17 mp=0xc000680808 [idle]:                                                                                                                                                        
+runtime.(*mheap).freeManual(0x37d0620, 0x0, 0x2)                                                                                                                                                                
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mheap.go:1584 +0x22 fp=0x7fb52e649e48 sp=0x7fb52e649e20 pc=0x430002                                                                                        
+runtime.(*sweepLocked).sweep.func2()                                                                                                                                                                            
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgcsweep.go:798 +0x70 fp=0x7fb52e649e70 sp=0x7fb52e649e48 pc=0x42ce90                                                                                      
+runtime.systemstack(0x800000)
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/asm_amd64.s:509 +0x4a fp=0x7fb52e649e80 sp=0x7fb52e649e70 pc=0x472fea
+
+goroutine 3 gp=0xc000007180 m=17 mp=0xc000680808 [running]:
+runtime.systemstack_switch()
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/asm_amd64.s:474 +0x8 fp=0xc000093618 sp=0xc000093608 pc=0x472f88
+runtime.(*sweepLocked).sweep(0x37d0620?, 0x0)
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgcsweep.go:796 +0x8ef fp=0xc000093730 sp=0xc000093618 pc=0x42c88f
+runtime.sweepone()
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgcsweep.go:390 +0xdd fp=0xc000093780 sp=0xc000093730 pc=0x42bcdd
+runtime.bgsweep(0xc000050380)
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgcsweep.go:299 +0xff fp=0xc0000937c8 sp=0xc000093780 pc=0x42babf
+runtime.gcenable.gowrap1()
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgc.go:203 +0x25 fp=0xc0000937e0 sp=0xc0000937c8 pc=0x4203a5
+runtime.goexit({})
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/asm_amd64.s:1695 +0x1 fp=0xc0000937e8 sp=0xc0000937e0 pc=0x474fa1
+created by runtime.gcenable in goroutine 1
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/mgc.go:203 +0x66
+
+goroutine 1 gp=0xc0000061c0 m=nil [select]:
+runtime.gopark(0xc06e5cbbd0?, 0x2?, 0x58?, 0xbd?, 0xc06e5cbae4?)
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/proc.go:402 +0xce fp=0xc06e5cb970 sp=0xc06e5cb950 pc=0x441e4e
+runtime.selectgo(0xc06e5cbbd0, 0xc06e5cbae0, 0x38273c0?, 0x0, 0xe87900?, 0x1)
+        /home/ia/go1.22.2.linux-amd64/go/src/runtime/select.go:327 +0x725 fp=0xc06e5cba90 sp=0xc06e5cb970 pc=0x453405
+github.com/rotblauer/catd/cmd.init.func1(0xc000191000?, {0xc00014ce70?, 0x4?, 0xe7adc7?})
+        /home/ia/dev/rotblauer/catd/cmd/populate.go:169 +0x465 fp=0xc06e5cbc98 sp=0xc06e5cba90 pc=0xca2345
+github.com/spf13/cobra.(*Command).execute(0x37b9620, {0xc00014cdc0, 0xb, 0xb})
+        /home/ia/go/pkg/mod/github.com/spf13/cobra@v1.8.1/command.go:989 +0xab1 fp=0xc06e5cbe20 sp=0xc06e5cbc98 pc=0xbce111
+github.com/spf13/cobra.(*Command).ExecuteC(0x37b9900)
+        /home/ia/go/pkg/mod/github.com/spf13/cobra@v1.8.1/command.go:1117 +0x3ff fp=0xc06e5cbef8 sp=0xc06e5cbe20 pc=0xbce9ff
+github.com/spf13/cobra.(*Command).Execute(...)
+        /home/ia/go/pkg/mod/github.com/spf13/cobra@v1.8.1/command.go:1041
+github.com/rotblauer/catd/cmd.Execute()
+
+```
+
 
 ```shell
 zcat ~/tdata/edge.json.gz | jq -r -c '.properties | { Name, Alias, UUID }' | sort | uniq -c

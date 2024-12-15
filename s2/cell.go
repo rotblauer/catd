@@ -12,11 +12,9 @@ import (
 	return cellID.ToToken()
 */
 
-func CatKeyFnFn(bucket reducer.Bucket) reducer.CatKeyFn {
-	return func(track cattrack.CatTrack) string {
-		level := CellLevel(bucket)
-		return CellIDForTrackLevel(track, level).ToToken()
-	}
+func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
+	level := CellLevel(bucket)
+	return CellIDForTrackLevel(ct, level).ToToken(), nil
 }
 
 // CellIDWithLevel returns the cellID truncated to the given level.

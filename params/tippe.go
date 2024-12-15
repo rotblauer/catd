@@ -236,6 +236,8 @@ var (
 		"--include", "ActivityMode.Bike",
 		"--include", "ActivityMode.Automotive",
 		"--include", "ActivityMode.Fly",
+
+		"--include", "reducer_key",
 	}
 	/*
 		https://github.com/felt/tippecanoe/?tab=readme-ov-file#continuous-polygon-features-states-and-provinces-visible-at-all-zoom-levels
@@ -288,6 +290,7 @@ var (
 		"--include", "Accuracy",
 		"--include", "Time",
 
+		// Indexer/reducer/StackerV1 fields.
 		"--include", "Count",
 		"--include", "VisitCount",
 		"--include", "FirstTime",
@@ -300,6 +303,13 @@ var (
 		"--include", "ActivityMode.Bike",
 		"--include", "ActivityMode.Automotive",
 		"--include", "ActivityMode.Fly",
+
+		"--include", "Country",
+		"--include", "Province",
+		"--include", "County",
+		"--include", "City",
+
+		"--include", "reducer_key",
 	}
 )
 

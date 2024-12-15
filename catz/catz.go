@@ -5,13 +5,13 @@ import (
 	"github.com/rotblauer/catd/params"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 type GZFileWriter struct {
 	f      *os.File
 	gzw    *gzip.Writer
 	locked bool
+	closed bool
 
 	GZFileWriterConfig
 }
@@ -52,22 +52,27 @@ func NewGZFileWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, er
 }
 
 func (g *GZFileWriter) Write(p []byte) (int, error) {
-	if !g.locked && g.f != nil {
-		if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX); err != nil {
-			return 0, err
-		}
+	f := g.f
+	if !g.locked && f != nil {
+		//if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		//	return 0, err
+		//}
 		g.locked = true
 	}
 	return g.gzw.Write(p)
 }
 
 func (g *GZFileWriter) Unlock() {
-	_ = syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
+	//f := g.f
+	//if f == nil {
+	//	return
+	//}
+	//rc, err := f.SyscallConn()
+	//_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	g.locked = false
 }
 
 func (g *GZFileWriter) Close() error {
-	defer g.f.Close()
 	g.Unlock()
 	//if err := g.gzw.Flush(); err != nil {
 	//	return err
@@ -81,7 +86,7 @@ func (g *GZFileWriter) Close() error {
 	//if err := g.f.Close(); err != nil {
 	//	return err
 	//}
-	return nil
+	return g.f.Close()
 }
 
 func (g *GZFileWriter) MustClose() error {
@@ -128,44 +133,44 @@ func NewGZFileReader(path string) (*GZFileReader, error) {
 
 // LockEX locks a file for exclusive access.
 func (g *GZFileReader) LockEX() error {
-	if g.closed {
-		panic("closed")
-	}
-	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX)
+	//if g.closed {
+	//	panic("closed")
+	//}
+	return nil // syscall.Flock(int(g.f.Fd()), syscall.LOCK_EX)
 }
 
 // LockSH locks a file for shared access.
 func (g *GZFileReader) LockSH() error {
-	if g.closed {
-		panic("closed")
-	}
-	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH)
+	//if g.closed {
+	//	panic("closed")
+	//}
+	return nil // syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH)
 }
 
 // Unlock unlocks a file.
 func (g *GZFileReader) Unlock() error {
-	if g.closed {
-		panic("closed")
-	}
-	return syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
+	//if g.closed {
+	//	panic("closed")
+	//}
+	return nil // syscall.Flock(int(g.f.Fd()), syscall.LOCK_UN)
 }
 
 func (g *GZFileReader) Read(p []byte) (int, error) {
-	if g.LockSH() != nil {
-		return 0, nil
-	}
+	//if g.LockSH() != nil {
+	//	return 0, nil
+	//}
 	return g.gzr.Read(p)
 }
 
 // Reader returns a gzip reader for the file.
 // While the reader is not closed, a shared lock is held on the file.
 func (g *GZFileReader) Reader() *gzip.Reader {
-	if g.closed {
-		panic("closed")
-	}
-	if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH); err != nil {
-		panic(err)
-	}
+	//if g.closed {
+	//	panic("closed")
+	//}
+	//if err := syscall.Flock(int(g.f.Fd()), syscall.LOCK_SH); err != nil {
+	//	panic(err)
+	//}
 	return g.gzr
 }
 

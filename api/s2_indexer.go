@@ -20,10 +20,8 @@ import (
 
 func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
 	bucketLevels := []reducer.Bucket{}
-	bucketKeyFns := map[reducer.Bucket]reducer.CatKeyFn{}
 	for _, level := range catS2.DefaultCellLevels {
 		bucketLevels = append(bucketLevels, reducer.Bucket(level))
-		bucketKeyFns[reducer.Bucket(level)] = catS2.CatKeyFnFn(reducer.Bucket(level))
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
@@ -32,7 +30,7 @@ func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
 		Buckets:         bucketLevels,
 		DefaultIndexerT: catS2.DefaultIndexerT,
 		LevelIndexerT:   nil,
-		BucketKeyFns:    bucketKeyFns,
+		BucketKeyFn:     catS2.CatKeyFn,
 		Logger:          slog.With("reducer", "s2"),
 	})
 }

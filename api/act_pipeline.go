@@ -97,27 +97,29 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		}, sendNaps)
 	}()
 
-	go stream.Sink(ctx, func(ct cattrack.CatLap) {
-		c.completedLaps.Send(ct)
-	}, notifyLaps)
-
-	go stream.Sink(ctx, func(ct cattrack.CatNap) {
-		c.completedNaps.Send(ct)
-	}, notifyNaps)
+	notifyWG := sync.WaitGroup{}
+	notifyWG.Add(2)
+	go func() {
+		defer notifyWG.Done()
+		stream.Sink(ctx, func(ct cattrack.CatLap) {
+			c.completedLaps.Send(ct)
+		}, notifyLaps)
+	}()
+	go func() {
+		defer notifyWG.Done()
+		stream.Sink(ctx, func(ct cattrack.CatNap) {
+			c.completedNaps.Send(ct)
+		}, notifyNaps)
+	}()
 
 	sinkWG := sync.WaitGroup{}
 	sinkWG.Add(1)
 	sinkErr := make(chan error, expectedErrsN)
 	go func() {
 		c.logger.Info("Act detection waiting on errors")
+		defer c.logger.Debug("Act detection pipeline errors complete")
 		defer sinkWG.Done()
-		defer func() {
-			close(sinkErr)
-			sinkErr = nil
-		}()
-		defer func() {
-			c.logger.Debug("Act detection pipeline errors complete")
-		}()
+		defer close(sinkErr)
 		for i := 0; i < expectedErrsN; i++ {
 			select {
 			case err := <-errCh:
@@ -173,8 +175,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	}
 	close(lapTracks)
 	close(napTracks)
-	lapTracks = nil
-	napTracks = nil
 	sinkWG.Wait()
+	notifyWG.Wait()
 	return nil
 }

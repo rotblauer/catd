@@ -90,12 +90,15 @@ type CellIndexerConfig struct {
 	// The default is used if no level-specific Indexer is provided.
 	DefaultIndexerT cattrack.Indexer
 	LevelIndexerT   map[Bucket]cattrack.Indexer // TODO: Slices instead?
-	BucketKeyFns    map[Bucket]CatKeyFn
+	BucketKeyFn     CatKeyFn
 
 	Logger *slog.Logger
 }
 
-type CatKeyFn func(track cattrack.CatTrack) string
+// ErrNoKeyFound should be returned by a CatKeyFn if no key is found.
+var ErrNoKeyFound = errors.New("no key found")
+
+type CatKeyFn func(track cattrack.CatTrack, bucket Bucket) (string, error)
 
 func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
@@ -212,11 +215,14 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	mapIDUnique := make(map[string]cattrack.CatTrack)
 
 	for _, ct := range tracks {
-		key := ci.Config.BucketKeyFns[level](ct)
-		if key == "" {
+
+		key, err := ci.Config.BucketKeyFn(ct, level)
+		if errors.Is(err, ErrNoKeyFound) {
 			ci.logger.Debug("No indexer key for cattrack, skipping", "track", ct.StringPretty(), "level", level)
 			continue
 		}
+		//ct.SetPropertySafe("reducer_key", key)
+		ct.Properties["reducer_key"] = key
 
 		var old, next cattrack.Indexer
 
