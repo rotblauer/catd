@@ -179,21 +179,10 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 				cp := track
 				cp.ID = track.MustTime().Unix()
 				props, g := rgeo.CellDataForPointAtDataset(cp.Point(), rgeo.DatasetNamesStable[bucket])
+				// This should not happen, since we just dumped these tracks indexed on the same data.
 				if props == nil || g == nil {
-					c.logger.Debug("Failed to get geometry for track",
+					c.logger.Error("Failed to get geometry for track",
 						"track", cp, "bucket", bucket, "name", rgeo.DatasetNamesStable[bucket])
-					return cattrack.CatTrack{}
-				}
-
-				// Re: (Fixed) Weirdly mismatched reducer keys.
-				// The rgeo package uses an *s2.ContainsPointQuery, which
-				// is not safe for concurrent use.
-				// It was sporadically returning a rye key for an ia track, and vice versa.
-				// See rgeo/rgeo_indexer.go for a comment with an example.
-				if props["reducer_key"] != cp.Properties["reducer_key"] {
-					c.logger.Error("Mismatched reducer keys",
-						"track", cp.StringPretty(), "bucket", bucket, "name", rgeo.DatasetNamesStable[bucket],
-						"reducer.key", cp.Properties["reducer_key"], "props.key", props["reducer_key"])
 					return cattrack.CatTrack{}
 				}
 				cp.Geometry = g

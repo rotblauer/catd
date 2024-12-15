@@ -76,7 +76,7 @@ func getIndexForStableName(name string) int {
 }
 
 var DefaultIndexerT = &cattrack.StackerV1{
-	VisitThreshold: params.S2DefaultVisitThreshold,
+	VisitThreshold: params.RgeoDefaultVisitThreshold,
 }
 
 // TODO Meta cache me. Another shape index?
@@ -90,6 +90,23 @@ func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 		return "", reducer.ErrNoKeyFound
 	}
 	return getReducerKey(loc, dataset)
+}
+
+func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
+	loc, err := getR(dataset).ReverseGeocodeWithGeometry(pt, dataset)
+	if err != nil {
+		return nil, nil
+	}
+	key, _ := getReducerKey(loc.Location, dataset)
+	props := map[string]any{
+		"reducer_key":  key,
+		"Country":      loc.CountryLong,
+		"CountryCode3": loc.CountryCode3,
+		"Province":     loc.Province,
+		"County":       loc.County,
+		"City":         loc.City,
+	}
+	return props, loc.Geometry
 }
 
 func getReducerKey(location rgeo.Location, dataset string) (string, error) {
@@ -121,23 +138,6 @@ func getReducerKey(location rgeo.Location, dataset string) (string, error) {
 	default:
 		panic("unhandled dataset")
 	}
-}
-
-func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := getR(dataset).ReverseGeocodeWithGeometry(pt, dataset)
-	if err != nil {
-		return nil, nil
-	}
-	key, _ := getReducerKey(loc.Location, dataset)
-	props := map[string]any{
-		"reducer_key":  key,
-		"Country":      loc.CountryLong,
-		"CountryCode3": loc.CountryCode3,
-		"Province":     loc.Province,
-		"County":       loc.County,
-		"City":         loc.City,
-	}
-	return props, loc.Geometry
 }
 
 /*

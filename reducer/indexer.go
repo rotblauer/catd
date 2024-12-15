@@ -230,9 +230,6 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 			old = v
 		}
 
-		// FIXME Converting and asserting the Indexer type makes this non-generic.
-		// Use reflect or tags or something to
-		// be able to handle any Indexer interface implementation.
 		ict := indexT.FromCatTrack(ct)
 		next = indexT.Index(old, ict)
 		if next == nil {
