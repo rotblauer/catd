@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/params"
+	"github.com/rotblauer/catd/reducer"
 	catS2 "github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -15,8 +16,8 @@ import (
 	"time"
 )
 
-func (c *Cat) GetDefaultCellIndexer() (*catS2.CellIndexer, error) {
-	return catS2.NewCellIndexer(&catS2.CellIndexerConfig{
+func (c *Cat) GetDefaultCellIndexer() (*reducer.CellIndexer, error) {
+	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
 		Flat:            c.State.Flat,
 		Levels:          catS2.DefaultCellLevels,
@@ -59,7 +60,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			c.logger.Warn("No tiled configuration, skipping S2 indexing", "level", level)
 			continue
 		}
-		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForLevel(level)
+		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(level)
 		if err != nil {
 			c.logger.Error("Failed to get S2 feed", "level", level, "error", err)
 			return err
@@ -125,7 +126,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 }
 
 // tiledDumpLevelIfUnique sends all unique tracks at a given level to tiled, with mode truncate.
-func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *catS2.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
+func (c *Cat) tiledDumpLevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, level catS2.CellLevel, in <-chan []cattrack.CatTrack) error {
 	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
 
 	// Block, waiting to see if any unique tracks are sent.
