@@ -468,10 +468,12 @@ func TeeManyN[T any](ctx context.Context, in <-chan T, n int) []<-chan T {
 	return out
 }
 
-func NDJSON[T any](ctx context.Context, in io.Reader) <-chan T {
+func NDJSON[T any](ctx context.Context, in io.Reader) (<-chan T, chan error) {
 	out := make(chan T)
+	errs := make(chan error, 1)
 	go func() {
 		defer close(out)
+		defer close(errs)
 		dec := json.NewDecoder(in)
 		for {
 			var element T
@@ -480,7 +482,7 @@ func NDJSON[T any](ctx context.Context, in io.Reader) <-chan T {
 					log.Println(err)
 					return
 				}
-				log.Println("NDJSON error", err)
+				errs <- err
 				return
 			}
 			select {
@@ -490,5 +492,5 @@ func NDJSON[T any](ctx context.Context, in io.Reader) <-chan T {
 			}
 		}
 	}()
-	return out
+	return out, errs
 }

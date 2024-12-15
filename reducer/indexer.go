@@ -41,8 +41,6 @@ we should tally the number of tracks in a cell, or some other metrics/aggregatio
 package reducer
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -54,7 +52,6 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
 	bbolt "go.etcd.io/bbolt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -247,12 +244,6 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 	var outTracks []cattrack.CatTrack
 
-	rb := new(bytes.Buffer)
-	gzr := new(gzip.Reader)
-
-	wb := new(bytes.Buffer)
-	gzw := gzip.NewWriter(wb)
-
 	err = ci.DB.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
 		if err != nil {
@@ -275,36 +266,12 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				// Strike this value from the unique map.
 				delete(mapIDUnique, k)
 
-				/*
-				 === RUN   TestCellIndexerIndex
-				    indexer_test.go:55: rye 2024-08-31 18:00:00 [47.82274,-92.0975]+/-5m 0.00m/s
-				    indexer_test.go:62: gzreader copy: unexpected EOF
-				*/
-				in := bytes.NewReader(v)
-				err := gzr.Reset(in)
-				if err != nil {
-					return fmt.Errorf("gzreader reset: %w", err)
-				}
-				rb.Reset()
-				_, err = io.Copy(rb, gzr)
-				if err != nil {
-					/*
-						2024/12/15 09:28:23 ERROR CellIndexer S2 errored cat=rye error="gzreader copy: unexpected EOF"
-						2024/12/15 09:28:23 ERROR Failed to dump level if unique cat=rye error="unexpected EOF"
-						2024/12/15 09:28:23 ERROR Failed to send unique tracks level cat=rye error="unexpected EOF"
-
-					*/
-					return fmt.Errorf("gzreader copy: %w - rb: %s", err, string(rb.Bytes()))
-				}
-				err = gzr.Close()
-				if err != nil {
-					return fmt.Errorf("gzreader close: %w", err)
-				}
-
 				ct := cattrack.CatTrack{}
-				err = json.Unmarshal(rb.Bytes(), &ct)
+
+				err = json.Unmarshal(v, &ct)
 				if err != nil {
-					return err
+					return fmt.Errorf("json decode read: %w %d %s",
+						err, len(v), string(v))
 				}
 
 				old = indexT.FromCatTrack(ct)
@@ -318,16 +285,9 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 			if err != nil {
 				return fmt.Errorf("json marshal write: %w", err)
 			}
-			wb.Reset()
-			gzw.Reset(wb)
-			if _, err := gzw.Write(encoded); err != nil {
-				return fmt.Errorf("gzwriter write: %w", err)
-			}
-			if err := gzw.Close(); err != nil {
-				return fmt.Errorf("gzwriter close: %w", err)
-			}
 
-			if err := b.Put([]byte(k), wb.Bytes()); err != nil {
+			err = b.Put([]byte(k), encoded)
+			if err != nil {
 				return fmt.Errorf("bbolt put: %w", err)
 			}
 		}
@@ -373,46 +333,14 @@ func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan err
 		defer close(out)
 		defer close(errs)
 
-		gzipped := bytes.NewBuffer([]byte("RESET ME"))
-		ungzipped := bytes.NewBuffer([]byte("RESET ME"))
-		var r *gzip.Reader
-		defer func() {
-			if err := r.Close(); err != nil {
-				ci.logger.Error("Failed to close gzip reader", "error", err)
-				errs <- err
-			}
-		}()
-
 		err := ci.DB.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte{byte(level)})
 			if b == nil {
 				return fmt.Errorf("bucket not found")
 			}
 			if err := b.ForEach(func(k, v []byte) error {
-				gzipped.Reset()
-				gzipped.Write(v)
-				if r == nil {
-					var err error
-					r, err = gzip.NewReader(gzipped)
-					if err != nil {
-						return err
-					}
-				} else {
-					if err := r.Reset(gzipped); err != nil {
-						if !errors.Is(err, io.EOF) {
-							return err
-						}
-					}
-				}
-				ungzipped.Reset()
-				if _, err := ungzipped.ReadFrom(r); err != nil {
-					if !errors.Is(err, io.EOF) {
-						return err
-					}
-				}
-
 				ct := cattrack.CatTrack{}
-				if err := json.Unmarshal(ungzipped.Bytes(), &ct); err != nil {
+				if err := json.Unmarshal(v, &ct); err != nil {
 					return fmt.Errorf("failed to unmarshal JSON: %w", err)
 				}
 				out <- ct

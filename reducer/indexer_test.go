@@ -38,7 +38,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 }
 
 func TestCellIndexerIndex(t *testing.T) {
-	testdataPathGZ := "../testing/testdata/private/2024-09-0_rye.json.gz"
+	testdataPathGZ := "../testing/testdata/private/rye_2024-12.geojson.gz"
 	gzr, err := catz.NewGZFileReader(testdataPathGZ)
 	if err != nil {
 		t.Fatal(err)
@@ -46,18 +46,23 @@ func TestCellIndexerIndex(t *testing.T) {
 	defer gzr.Close()
 
 	ctx := context.Background()
-	tracks := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
 
 	first := <-tracks
 	if first.IsEmpty() {
 		t.Fatal("no tracks")
 	}
-	t.Log(first.StringPretty())
+	t.Log("stream ok", first.StringPretty())
 
 	reducer := NewTestCellIndexer(t)
+	defer os.Remove(reducer.Config.DBPath)
 	defer reducer.Close()
 
 	err = reducer.Index(ctx, tracks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = <-errs
 	if err != nil {
 		t.Fatal(err)
 	}
