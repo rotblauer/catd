@@ -37,7 +37,7 @@ func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
-		DBPath:          filepath.Join(c.State.Flat.Path(), rgeo.DBName),
+		DBPath:          filepath.Join(c.State.Flat.Path(), params.RgeoDBName),
 		BatchSize:       params.DefaultBatchSize,
 		Buckets:         bucketLevels,
 		DefaultIndexerT: rgeo.DefaultIndexerT,
@@ -72,7 +72,7 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(rgeo.DatasetNamesStable))
 	for dataI, dataset := range rgeo.DatasetNamesStable {
-		if !c.IsRPCEnabled() {
+		if !c.IsTilingEnabled() {
 			c.logger.Warn("No RPC configuration, skipping Rgeo indexing", "bucket", dataset)
 			continue
 		}
@@ -152,6 +152,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 			return len(s) == batchSize
 		}, dump)
 
+		// TileD is sensitive to file paths. Sanitize.
 		sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
 			string(filepath.Separator), "_")
 		layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
@@ -175,20 +176,10 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 				SourceModes:     []tiled.SourceMode{sourceMode},
 			}, stream.Filter(ctx, func(t cattrack.CatTrack) bool {
 				return !t.IsEmpty()
-			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-				cp := track
-				cp.ID = track.MustTime().Unix()
-				props, g := rgeo.CellDataForPointAtDataset(cp.Point(), rgeo.DatasetNamesStable[bucket])
-				// This should not happen, since we just dumped these tracks indexed on the same data.
-				if props == nil || g == nil {
-					c.logger.Error("Failed to get geometry for track",
-						"track", cp, "bucket", bucket, "name", rgeo.DatasetNamesStable[bucket])
-					return cattrack.CatTrack{}
-				}
-				cp.Geometry = g
-				cp.SetPropertiesSafe(props)
-				return cp
-			}, stream.Slice(ctx, s))))
+			},
+				stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
+					rgeo.TransformCatTrackFn(int(bucket)),
+					stream.Slice(ctx, s))))
 			if err != nil {
 				sendErrCh <- err
 				return

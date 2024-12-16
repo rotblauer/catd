@@ -1,3 +1,44 @@
+
+```shell
+catd \
+    --datadir "${HOME}/tdata" \
+    --verbosity 0 \
+    --batch-size 9000 \
+    --rgeo.net unix \
+    --rgeo.address /tmp/catd-rgeo.sock \
+    --tiled.net http \
+    --tiled.address localhost:1234 \
+    webd
+```
+
+```shell
+catd \
+  tiled
+```
+
+```shell
+tdata | catd \
+    --datadir "/tmp/tdata" \
+    --verbosity 0 \
+    --batch-size 9000 \
+    --rgeo.net unix \
+    --rgeo.address /tmp/catd-rgeo.sock \
+    --tiled.net http \
+    --tiled.address localhost:1234 \
+    populate \
+      --sort true \
+      --workers 0 \
+      --tiled.skip-edge \
+      --tiled.pending-after 99h99m \
+      --tiled.await-pending true
+```
+
+
+the answer to SIGSEGV below is dont keep `*rpc.Client`s around for long
+use and lose, else Gob attack
+
+---
+
 ```shell
 2024/12/14 22:32:04 INFO 🚶 Completed lap cat=rye time=2018-08-23T14:19:45-06:00 count=170 duration=8m13s meters="337 m" activity=Walking                                                                       
 SIGSEGV: segmentation violation                                                                                                                                                                                 

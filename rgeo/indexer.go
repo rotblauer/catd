@@ -9,34 +9,25 @@ import (
 	"regexp"
 )
 
-const dataSourcePre = "github.com/sams96/rgeo."
-
-var DatasetNamesStable = []string{
-	dataSourcePre + "Cities10",
-	dataSourcePre + "Countries10",
-	dataSourcePre + "Provinces10",
-	dataSourcePre + "US_Counties10",
-}
-
 var TilingZoomLevels = map[int][2]int{}
 var TilingZoomLevelsRe = map[string][2]int{
-	"(?i)Countries": [2]int{3, 5},
-	"(?i)Provinces": [2]int{3, 6},
+	"(?i)Countries": [2]int{1, 5},
+	"(?i)Provinces": [2]int{1, 6},
 	"(?i)Counties":  [2]int{3, 8},
 	"(?i)Cities":    [2]int{3, 10},
 }
 
-func init() {
-	for i, v := range DatasetNamesStable {
-		for re, zooms := range TilingZoomLevelsRe {
-			if regexp.MustCompile(re).MatchString(v) {
-				TilingZoomLevels[i] = zooms
+func initTilingZoomLevels() {
+	for i, datasetName := range DatasetNamesStable {
+		for re, zoomLevels := range TilingZoomLevelsRe {
+			if regexp.MustCompile(re).MatchString(datasetName) {
+				TilingZoomLevels[i] = zoomLevels
 			}
 		}
 	}
 }
 
-func getIndexForStableName(name string) int {
+func getStableIndexForDataset(name string) int {
 	for i, v := range DatasetNamesStable {
 		if v == name {
 			return i
@@ -53,7 +44,7 @@ var DefaultIndexerT = &cattrack.StackerV1{
 func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 	dataset := DatasetNamesStable[bucket]
 
-	loc, err := R(dataset).ReverseGeocode(ct.Point())
+	loc, err := R(dataset).GetLocation(ct.Point())
 	if err != nil {
 		// - Flying cat over bermuda triangle, over ocean = cat without a country, intl waters.
 		// - Country mouse, not city cat = no city rgeocode.
@@ -62,12 +53,33 @@ func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 	return getReducerKey(loc, dataset)
 }
 
+func TransformCatTrackFn(bucket int) func(ct cattrack.CatTrack) cattrack.CatTrack {
+	return func(ct cattrack.CatTrack) cattrack.CatTrack {
+		cp := ct
+		cp.ID = cp.MustTime().Unix()
+		dataset := DatasetNamesStable[bucket]
+		cp.Geometry, _ = R(dataset).GetGeometry(cp.Point(), dataset)
+		loc, _ := R(dataset).GetLocation(cp.Point())
+		key, _ := getReducerKey(loc, dataset)
+		props := map[string]any{
+			"reducer_key":  key,
+			"Country":      loc.CountryLong,
+			"CountryCode3": loc.CountryCode3,
+			"Province":     loc.Province,
+			"County":       loc.County,
+			"City":         loc.City,
+		}
+		cp.SetPropertiesSafe(props)
+		return cp
+	}
+}
+
 func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := R(dataset).ReverseGeocodeWithGeometry(pt, dataset)
+	loc, err := R(dataset).GetLocation(pt)
 	if err != nil {
 		return nil, nil
 	}
-	key, _ := getReducerKey(loc.Location, dataset)
+	key, _ := getReducerKey(loc, dataset)
 	props := map[string]any{
 		"reducer_key":  key,
 		"Country":      loc.CountryLong,
@@ -76,7 +88,11 @@ func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, or
 		"County":       loc.County,
 		"City":         loc.City,
 	}
-	return props, loc.Geometry
+	g, err := R(dataset).GetGeometry(pt, dataset)
+	if err != nil {
+		return props, nil
+	}
+	return props, g
 }
 
 func getReducerKey(location rgeo.Location, dataset string) (string, error) {

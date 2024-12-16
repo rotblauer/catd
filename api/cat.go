@@ -24,28 +24,36 @@ type Cat struct {
 	// and they might want to share a state conn.
 	State *state.CatState
 
+	// backend hooks the cat up with tiled and rgeod services.
+	backend *params.CatBackendConfig
+
 	// logger logs lines with the cat name attached.
-	logger *slog.Logger
-
-	tiledConf *params.TileDaemonConfig
-
+	logger        *slog.Logger
 	completedLaps event.FeedOf[cattrack.CatLap]
 	completedNaps event.FeedOf[cattrack.CatNap]
 }
 
-func NewCat(catID conceptual.CatID, daemonConf *params.TileDaemonConfig) (*Cat, error) {
+func NewCat(catID conceptual.CatID, backing *params.CatBackendConfig) (*Cat, error) {
 	c := &Cat{
 		CatID:         catID,
+		backend:       backing,
 		logger:        slog.With("cat", catID),
-		tiledConf:     daemonConf,
 		completedLaps: event.FeedOf[cattrack.CatLap]{},
 		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
 
-	if c.tiledConf != nil {
-		c.logger.Info("Tiled RPC client configured", "network", c.tiledConf.RPCNetwork, "address", c.tiledConf.RPCAddress)
+	if c.backend.TileD != nil {
+		c.logger.Info("Tiled RPC client configured",
+			"network", c.backend.TileD.Network, "address", c.backend.TileD.Address)
 	} else {
 		c.logger.Debug("No Tiled RPC client configured")
+	}
+
+	if c.backend.RgeoD != nil {
+		c.logger.Info("Rgeo RPC client configured",
+			"network", c.backend.RgeoD.Network, "address", c.backend.RgeoD.Address)
+	} else {
+		c.logger.Debug("No Rgeo RPC client configured")
 	}
 
 	return c, nil
@@ -66,6 +74,8 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	return c.State, nil
 }
 
+// getOrInitState gets the state if it exists, or initializes it if it doesn't.
+// It is a way for API methods to idempotently declare if and how they need persistent cat resources.
 func (c *Cat) getOrInitState(readOnly bool) {
 	if c.State == nil {
 		_, err := c.WithState(readOnly)
@@ -76,12 +86,30 @@ func (c *Cat) getOrInitState(readOnly bool) {
 	}
 }
 
-func (c *Cat) Close() {
-	if err := c.State.Close(); err != nil {
-		c.logger.Error("Failed to close cat state", "error", err)
+func (c *Cat) Close() error {
+	err := c.State.Close()
+	if err != nil {
+		return err
 	}
+	return nil
 }
 
-func (c *Cat) dialTiledHTTPRPC() (*rpc.Client, error) {
-	return rpc.DialHTTP(c.tiledConf.RPCNetwork, c.tiledConf.RPCAddress)
+func getRPCClient(config params.ListenerConfig) (*rpc.Client, error) {
+	switch config.Network {
+	case "unix", "unixpacket":
+		return rpc.Dial(config.Network, config.Address)
+	case "tcp", "tcp4", "tcp6":
+		return rpc.DialHTTP(config.Network, config.Address)
+	default:
+		panic("unsupported network type")
+	}
+	return nil, nil
+}
+
+func (c *Cat) dialTiledRPC() (*rpc.Client, error) {
+	return getRPCClient(c.backend.TileD.ListenerConfig)
+}
+
+func (c *Cat) dialRgeo() (*rpc.Client, error) {
+	return getRPCClient(c.backend.RgeoD.ListenerConfig)
 }

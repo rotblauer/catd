@@ -27,9 +27,8 @@ type TileDaemonConfig struct {
 	// a tiling request for the canonical version will be triggered.
 	EdgeTilingRunThreshold time.Duration
 
-	RPCPath    string
-	RPCNetwork string
-	RPCAddress string
+	RPCPath string
+	ListenerConfig
 
 	// TilingTmpDir is the parent directory for temporary source and tile files.
 	// Cleanup not guaranteed. Probably best somewhere in /tmp.
@@ -60,9 +59,11 @@ func DefaultTileDaemonConfig() *TileDaemonConfig {
 		// e.g. 1 / 100 seconds.
 		EdgeTilingRunThreshold: 1 * time.Minute,
 
-		RPCPath:                "/tiler_rpc",
-		RPCNetwork:             "tcp",
-		RPCAddress:             "localhost:1234",
+		RPCPath: "/tiler_rpc",
+		ListenerConfig: ListenerConfig{
+			Network: "tcp",
+			Address: "localhost:1234",
+		},
 		AwaitPendingOnShutdown: false,
 	}
 }

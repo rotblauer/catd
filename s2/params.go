@@ -6,8 +6,6 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
-const DBName = "s2.db"
-
 var DefaultVisitThreshold = params.S2DefaultVisitThreshold
 
 var DefaultIndexerT = &cattrack.StackerV1{

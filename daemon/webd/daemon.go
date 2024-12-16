@@ -1,7 +1,6 @@
 package webd
 
 import (
-	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/gorilla/mux"
 	"github.com/olahol/melody"
@@ -20,13 +19,14 @@ type WebDaemon struct {
 }
 
 func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
+	logger := slog.With("daemon", "web")
 	if config == nil {
+		logger.Warn("No config provided, using default")
 		config = params.DefaultWebDaemonConfig()
 	}
 	return &WebDaemon{
-		Config: config,
-
-		logger:        slog.With("d", "web"),
+		Config:        config,
+		logger:        logger,
 		feedPopulated: event.FeedOf[[]*cattrack.CatTrack]{},
 	}
 }
@@ -36,9 +36,8 @@ func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 func (s *WebDaemon) Run() error {
 	router := s.NewRouter()
 	http.Handle("/", router)
-	listeningOn := fmt.Sprintf("%s:%d", s.Config.NetAddr, s.Config.NetPort)
-	log.Printf("Starting web daemon on %s", listeningOn)
-	return http.ListenAndServe(listeningOn, nil)
+	log.Printf("Starting web daemon on %s", s.Config.Address)
+	return http.ListenAndServe(s.Config.Address, nil)
 }
 
 func (s *WebDaemon) NewRouter() *mux.Router {
@@ -66,6 +65,7 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 
 	// /ping is a simple server healthcheck endpoint
 	apiRoutes.Path("/ping").HandlerFunc(pingPong)
+	apiRoutes.Path("/healthcheck").HandlerFunc(s.healthcheck)
 
 	// TODO Ideally maybe move API URIs to /v2/paths.
 

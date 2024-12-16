@@ -41,7 +41,7 @@ func setDefaultSlog(cmd *cobra.Command, args []string) {
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "catd",
-	Short: "The cat daemon",
+	Short: "The cat tracking daemon",
 	Long:  `Meow`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
@@ -70,10 +70,11 @@ func init() {
 
 	pFlags.StringVar(&params.DatadirRoot, "datadir", "/tmp/catd",
 		`Root directory for data storage`)
-	
+
 	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", params.DefaultBatchSize,
 		`Number of tracks per cat-batch.
 This value is used for buffering incoming tracks, for sorting, and for indexing.
+Bigger is not better. Less is not more.
 `)
 
 	pFlags.Int("verbosity", 0,

@@ -107,8 +107,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	started := time.Now()
 	defer func() {
-		c.Close()
-		c.logger.Info("Populate done",
+		l := c.logger.Info
+		if err := c.Close(); err != nil {
+			c.logger.Error("Failed to close cat state", "error", err)
+			l = c.logger.Error
+		}
+		l("Populate done",
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
@@ -293,14 +297,14 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return nil
 }
 
-func (c *Cat) IsRPCEnabled() bool {
-	return c.tiledConf != nil
+func (c *Cat) IsTilingEnabled() bool {
+	return c.backend.TileD != nil
 }
 
 // sendToCatTileD sends a batch of features to the Cat RPC client.
 // It is a blocking function, and registers itself with the Cat Waiting state.
 func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
-	if !c.IsRPCEnabled() {
+	if !c.IsTilingEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 		go stream.Sink(ctx, nil, in) // Black hole, does not block.
 		return nil
@@ -322,13 +326,13 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 	c.logger.Info("Sending features to tiled RPC client", "source", args.SourceName,
 		"count", n, "gz.len", humanize.Bytes(uint64(buf.Len())))
 	args.GzippedJSONBytes = buf.Bytes()
-	client, err := c.dialTiledHTTPRPC()
+	client, err := c.dialTiledRPC()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	reply := &tiled.PushFeaturesResponse{}
-	err = client.Call("TileDaemon.PushFeatures", args, reply)
+	err = client.Call("TileD.PushFeatures", args, reply)
 	if err != nil {
 		c.logger.Error("Failed to call RPC client",
 			"method", "PushFeatures", "source", args.SourceName, "count", n, "error", err)
@@ -380,7 +384,7 @@ func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan 
 // sendGZippedToCatRPCClient sends a batch of gzipped features to the Cat RPC client.
 // It is a non-blocking function, and registers itself with the Cat Waiting state.
 //func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
-//	if !c.IsRPCEnabled() {
+//	if !c.IsTilingEnabled() {
 //		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 //		stream.Sink(ctx, nil, in)
 //		return nil
@@ -414,7 +418,7 @@ func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan 
 //
 //	args.GzippedJSONBytes = buf.Bytes()
 //
-//	client, err := c.dialTiledHTTPRPC()
+//	client, err := c.dialTiledRPC()
 //	if err != nil {
 //		return err
 //	}

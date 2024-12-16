@@ -22,6 +22,21 @@ func pingPong(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("pong"))
 }
 
+func (s *WebDaemon) healthcheck(w http.ResponseWriter, r *http.Request) {
+	j, err := json.MarshalIndent(s.Config, "", "  ")
+	if err != nil {
+		s.logger.Error("Failed to marshal config", "error", err)
+		http.Error(w, "Failed to marshal config", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(j)
+	if err != nil {
+		s.logger.Error("Failed to write response", "error", err)
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+	}
+}
+
 func lastKnown(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
@@ -221,9 +236,9 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Assert/ensure WHICH CAT better.
+	// TODO: Assert/ensure WHICH CAT, ie. conceptual cat.
 	catID := features[0].CatID()
-	cat, err := api.NewCat(catID, s.Config.TileDaemonConfig)
+	cat, err := api.NewCat(catID, s.Config.CatBackendConfig)
 	if err != nil {
 		s.logger.Error("Failed to create cat", "error", err)
 		http.Error(w, "Failed to create cat", http.StatusInternalServerError)

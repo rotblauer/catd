@@ -13,6 +13,10 @@ func init() {
 }
 
 const (
+	RgeoDBName  = "rgeo.db"
+	S2DBName    = "s2.db"
+	TiledDBName = "tile.db"
+
 	CatsDir        = "cats"
 	CatSnapsSubdir = "snaps"
 

@@ -18,7 +18,9 @@ package cmd
 import (
 	"github.com/rotblauer/catd/daemon/webd"
 	"github.com/rotblauer/catd/params"
+	"github.com/spf13/pflag"
 	"log"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 )
@@ -30,15 +32,19 @@ var optHTTPPort int
 var webdCmd = &cobra.Command{
 	Use:   "webd",
 	Short: "Start the webserver",
-	Long:  `Serves cat on the internet`,
+	Long:  `Serves cats on the internet`,
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
+		slog.Info("webd.Run")
+
+		backend := params.DefaultCatBackendConfig()
 
 		server := webd.NewWebDaemon(&params.WebDaemonConfig{
-			// FIXME Configure tiled for webd clients. Global CLI flags?
-			TileDaemonConfig: params.DefaultTileDaemonConfig(),
-			NetPort:          optHTTPPort,
-			NetAddr:          optHTTPAddr,
+			ListenerConfig: params.ListenerConfig{
+				Address: optHTTPAddr,
+				Network: "tcp",
+			},
+			CatBackendConfig: backend,
 		})
 
 		if err := server.Run(); err != nil {
@@ -56,9 +62,10 @@ func init() {
 	// and all subcommands, e.g.:
 	// webdCmd.PersistentFlags().String("foo", "", "A help for foo")
 	defaults := params.DefaultWebDaemonConfig()
+
 	pFlags := webdCmd.PersistentFlags()
-	pFlags.StringVar(&optHTTPAddr, "http.addr", defaults.NetAddr, "HTTP address to listen on")
-	pFlags.IntVar(&optHTTPPort, "http.port", defaults.NetPort, "HTTP port to listen on")
+	pFlags.AddFlagSet(&pflag.FlagSet{})
+	pFlags.StringVar(&optHTTPAddr, "address", defaults.Address, "HTTP address to listen on")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:

@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/rotblauer/catd/catz"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"go.etcd.io/bbolt"
@@ -55,24 +56,28 @@ type TileDaemon struct {
 	// RPC responses to clients about long-running jobs.
 	tilingEvents *event.FeedOf[TilingResponse]
 
+	ready       bool
 	done        chan struct{}
 	interrupt   chan struct{}
 	interrupted atomic.Bool
 }
 
 func NewDaemon(config *params.TileDaemonConfig) (*TileDaemon, error) {
+	logger := slog.With("daemon", "tile")
 	if config == nil {
+		logger.Warn("No config provided, using default")
 		config = params.DefaultTileDaemonConfig()
 	}
 
 	f := catz.NewFlatWithRoot(config.RootDir)
 	if !f.Exists() {
+		logger.Info("Creating flat file storage", "path", f.Path())
 		if err := f.MkdirAll(); err != nil {
 			return nil, err
 		}
 	}
 
-	db, err := bbolt.Open(filepath.Join(config.RootDir, "tiled.db"), 0660, nil)
+	db, err := bbolt.Open(filepath.Join(config.RootDir, params.TiledDBName), 0660, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +86,7 @@ func NewDaemon(config *params.TileDaemonConfig) (*TileDaemon, error) {
 		Config:          config,
 		flat:            f,
 		db:              db,
-		logger:          slog.With("d", "tile"),
+		logger:          logger,
 		tilingRunningM:  sync.Map{},
 		pendingTTLCache: ttlcache.New[string, *TilingRequestArgs](ttlcache.WithTTL[string, *TilingRequestArgs](config.TilingPendingExpiry)),
 		tilingEvents:    &event.FeedOf[TilingResponse]{},
@@ -94,21 +99,38 @@ func (d *TileDaemon) Wait() {
 	<-d.done
 }
 
-func (d *TileDaemon) Stop() {
+func (d *TileDaemon) Interrupt() {
 	d.interrupt <- struct{}{}
 }
 
-// Run starts the tiling daemon and does not block.
-func (d *TileDaemon) Run() error {
+// TileD hides the Daemon from the RPC service.
+type TileD struct {
+	*TileDaemon
+}
+
+var ErrNotReady = errors.New("tile daemon not ready")
+
+func (d *TileD) Ping(common.RPCArgNone, common.RPCArgNone) error {
+	if !d.ready {
+		return ErrNotReady
+	}
+	return nil
+}
+
+// Run starts the tiling daemon and does not wait for it to complete.
+// It can be stopped gracefully with a call to Stop then Wait.
+func (d *TileDaemon) Start() error {
 	server := rpc.NewServer()
 
-	if err := server.Register(d); err != nil {
+	// Wrap service in TileD to hide Daemon from RPC service.
+	service := &TileD{d}
+	if err := server.Register(service); err != nil {
 		slog.Error("Failed to register tiling daemon", "error", err)
 		return err
 	}
 
 	server.HandleHTTP(d.Config.RPCPath, rpc.DefaultDebugPath)
-	listen, err := net.Listen(d.Config.RPCNetwork, d.Config.RPCAddress)
+	listen, err := net.Listen(d.Config.ListenerConfig.Network, d.Config.ListenerConfig.Address)
 	if err != nil {
 		return err
 	}
@@ -132,12 +154,12 @@ func (d *TileDaemon) Run() error {
 			d.pending(item.Value())
 			return
 		}
-		if err := d.callTiling(item.Value(), nil); err != nil {
+		if err := service.callTiling(item.Value(), nil); err != nil {
 			d.logger.Error("Failed to run pending tiling", "error", err)
 		}
 	})
 	go d.pendingTTLCache.Start()
-
+	d.ready = true
 	go func() {
 		defer func() {
 			if err := d.db.Close(); err != nil {
@@ -147,7 +169,7 @@ func (d *TileDaemon) Run() error {
 			d.markDone()
 		}()
 		d.logger.Info("TileDaemon RPC HTTP server started",
-			slog.Group("listen", "network", d.Config.RPCNetwork, "address", d.Config.RPCAddress))
+			slog.Group("listen", "network", d.Config.ListenerConfig.Network, "address", d.Config.ListenerConfig.Address))
 
 		// Block until interrupted
 		<-d.interrupt
@@ -171,7 +193,7 @@ func (d *TileDaemon) Run() error {
 		// This is a blocking operation, graceful though it may be, and long though it may be.
 		// A real server (and not development) should probably just abort these stragglers.
 		if d.Config.AwaitPendingOnShutdown {
-			d.awaitPendingTileRequests()
+			service.awaitPendingTileRequests()
 		}
 
 		d.logger.Info("TileDaemon interrupted", "awaiting", "running")
@@ -189,7 +211,7 @@ func (d *TileDaemon) markDone() {
 	close(d.done)
 }
 
-func (d *TileDaemon) awaitPendingTileRequests() {
+func (d *TileD) awaitPendingTileRequests() {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
 	for _, key := range keys {
@@ -280,8 +302,8 @@ func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 	})
 }
 
-// Recover attempts to recover pending requests from the database.
-func (d *TileDaemon) Recover() error {
+// recover attempts to recover pending requests from the database.
+func (d *TileDaemon) recover() error {
 	d.logger.Info("Recovering pending requests...")
 	pending := []*TilingRequestArgs{}
 	err := d.db.View(func(tx *bbolt.Tx) error {
@@ -342,7 +364,7 @@ func (s *TilingRequestArgs) id() string {
 	return fmt.Sprintf("%s/%s/%s/%s", s.CatID, s.SourceName, s.LayerName, s.Version)
 }
 
-func (d *TileDaemon) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
+func (d *TileD) SourcePathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
 	root := d.flat.Path()
 	var out string
 	switch version {
@@ -361,7 +383,7 @@ func (d *TileDaemon) SourcePathFor(schema SourceSchema, version TileSourceVersio
 
 // TargetPathFor returns the final output path for some source schema and version.
 // It will have a .mbtiles extension
-func (d *TileDaemon) TargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
+func (d *TileD) TargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
 	source, err := d.SourcePathFor(schema, version)
 	if err != nil {
 		return "", err
@@ -381,7 +403,7 @@ func (d *TileDaemon) TargetPathFor(schema SourceSchema, version TileSourceVersio
 
 // TmpTargetPathFor returns a deterministic temporary target path for a source schema and version.
 // This value (filepath) is not safe for use by concurrent processes.
-func (d *TileDaemon) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
+func (d *TileD) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion) (string, error) {
 	target, err := d.TargetPathFor(schema, version)
 	if err != nil {
 		return "", err
@@ -461,7 +483,7 @@ func (a *PushFeaturesRequestArgs) validate() error {
 	return nil
 }
 
-func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jsonData []byte) (err error) {
+func (d *TileD) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jsonData []byte) (err error) {
 	gzw, er := catz.NewGZFileWriter(source, writeConfig)
 	if er != nil {
 		return er
@@ -503,7 +525,7 @@ func (d *TileDaemon) writeGZ(source string, writeConfig *catz.GZFileWriterConfig
 	return nil
 }
 
-func (d *TileDaemon) write(source string, writeConfig *catz.GZFileWriterConfig, gzipData []byte) error {
+func (d *TileD) write(source string, writeConfig *catz.GZFileWriterConfig, gzipData []byte) error {
 	f, err := os.OpenFile(source, writeConfig.Flag, writeConfig.FilePerm)
 	if err != nil {
 		return err
@@ -517,7 +539,7 @@ func (d *TileDaemon) write(source string, writeConfig *catz.GZFileWriterConfig, 
 	return err
 }
 
-func (d *TileDaemon) rollEdgeToBackup(args *TilingRequestArgs) error {
+func (d *TileD) rollEdgeToBackup(args *TilingRequestArgs) error {
 	if d.Config.SkipEdge {
 		return nil
 	}
@@ -569,7 +591,7 @@ func (d *TileDaemon) rollEdgeToBackup(args *TilingRequestArgs) error {
 	return nil
 }
 
-func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesResponse) error {
+func (d *TileD) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesResponse) error {
 	if args == nil {
 		return fmt.Errorf("nil args")
 	}
@@ -772,7 +794,7 @@ func validateSourcePathFile(source string, version TileSourceVersion) error {
 // RequestTiling requests tiling of a source file.
 // It uses a combination of debouncing and enqueuing to cause it to run
 // at most end-to-end per source file. (Once it finishes, it can be run again.)
-func (d *TileDaemon) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+func (d *TileD) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	if args == nil {
 		return fmt.Errorf("nil args")
 	}
@@ -812,7 +834,7 @@ func (d *TileDaemon) RequestTiling(args *TilingRequestArgs, reply *TilingRespons
 	return nil
 }
 
-func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
+func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Info("callTiling", "args", args.id())
 
 	d.running.Add(1)
@@ -911,7 +933,7 @@ func (d *TileDaemon) callTiling(args *TilingRequestArgs, reply *TilingResponse) 
 	}, reply)
 }
 
-func (d *TileDaemon) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
+func (d *TileD) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Info("tiling", "source", args.parsedSourcePath,
 		"args", args.id(), "config", args.TippeConfigName)
 

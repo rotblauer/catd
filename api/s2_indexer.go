@@ -25,7 +25,7 @@ func (c *Cat) GetDefaultS2CellIndexer() (*reducer.CellIndexer, error) {
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
 		CatID:           c.CatID,
-		DBPath:          filepath.Join(c.State.Flat.Path(), catS2.DBName),
+		DBPath:          filepath.Join(c.State.Flat.Path(), params.S2DBName),
 		BatchSize:       params.DefaultBatchSize, // 10% of default batch size? Why? Reduce batch-y-ness.
 		Buckets:         bucketLevels,
 		DefaultIndexerT: catS2.DefaultIndexerT,
@@ -64,7 +64,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			level > catS2.CellLevelTilingMaximum {
 			continue
 		}
-		if !c.IsRPCEnabled() {
+		if !c.IsTilingEnabled() {
 			c.logger.Warn("No RPC configuration, skipping S2 indexing", "level", level)
 			continue
 		}
