@@ -120,6 +120,9 @@ func getReducerKey(location rgeo.Location, dataset string) (string, error) {
 /*
 BUG REPORT: Mismatched reducer keys.
 See the second track below with reducer_key "USA-US-MN-Minneapolis", but obviously in Missoula.
+This was resolved to be an issue with rgeo. The s2.ContainingShapesQuery backing it is not
+threadsafe, and returns bad answers when called concurrently. This was fixed by
+locking around the call in rotblauer's fork.
 
 cattracks-ia/Cities10_cells/Cities10_cells
 2 features

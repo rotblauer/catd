@@ -62,7 +62,7 @@ tabula_rasa() {
 
 run() {
   # go tool pprof -http localhost:8001 http://localhost:6060/debug/pprof/heap
-  # for i in $(seq 1 120); do curl -sK -v http://localhost:6060/debug/pprof/heap > heap.${i}.pprof; sleep 60; done
+  # for i in $(seq 1 360); do curl -sK -v http://localhost:6060/debug/pprof/heap > heap.${i}.pprof && echo $(date) - heap.${i}.prof; sleep 60; done
   # go tool pprof -http localhost:8001 heap.5.pprof
 
   set -e
