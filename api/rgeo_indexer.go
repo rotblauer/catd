@@ -124,6 +124,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 		c.logger.Debug("No unique tracks for level", "level", bucket)
 		return nil
 	}
+
 	// There were some unique tracks at this level.
 	// So now we need to send ALL unique tracks at this level to tiled,
 	// and tell tiled to use mode truncate.
@@ -136,7 +137,6 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
 		return len(s) == batchSize
 	}, dump)
-
 	sourceMode := tiled.SourceModeTruncate
 	levelZoomMin := rgeo.TilingZoomLevels[int(bucket)][0]
 	levelZoomMax := rgeo.TilingZoomLevels[int(bucket)][1]

@@ -128,10 +128,10 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 
 	// Batch dumped tracks to avoid sending too many at once.
 	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+
 		return len(s) == batchSize
 	}, dump)
 	sourceMode := tiled.SourceModeTruncate
-
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][1]
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)

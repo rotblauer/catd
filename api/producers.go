@@ -8,6 +8,27 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
+//func (c *Cat) TeeToFileGZ(ctx context.Context, in <-chan cattrack.CatTrack, path string) {
+//	gz, err := catz.NewGZFileWriter(path, catz.DefaultGZFileWriterConfig())
+//	if err != nil {
+//		c.logger.Error("Failed to create GZ file writer", "error", err)
+//		return
+//	}
+//	defer gz.Close()
+//
+//	for track := range in {
+//		select {
+//		case <-ctx.Done():
+//			return
+//		default:
+//		}
+//		if _, err := gz.Write(track); err != nil {
+//			c.logger.Error("Failed to write track to GZ file", "error", err)
+//			return
+//		}
+//	}
+//}
+
 func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack) error {
 
 	c.logger.Info("Producer pipelines")
