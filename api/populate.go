@@ -311,7 +311,7 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr io.WriteClo
 }
 
 func (c *Cat) IsRPCEnabled() bool {
-	return c.rpcClient != nil
+	return c.tiledConf != nil
 }
 
 // sendToCatRPCClient sends a batch of features to the Cat RPC client.
@@ -319,7 +319,7 @@ func (c *Cat) IsRPCEnabled() bool {
 func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		stream.Sink(ctx, nil, in)
+		go stream.Sink(ctx, nil, in)
 		return nil
 	}
 
@@ -330,24 +330,30 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeat
 	}
 
 	buf := bytes.NewBuffer([]byte{})
+	defer buf.Reset()
 	enc := json.NewEncoder(buf)
 
 	for _, el := range all {
-		cp := el
-		if err := enc.Encode(cp); err != nil {
+		if err := enc.Encode(el); err != nil {
 			c.logger.Error("Failed to encode feature", "error", err)
 			return err
 		}
 	}
 
 	args.JSONBytes = buf.Bytes()
-	defer buf.Reset()
 
-	err := c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
+	client, err := c.dialRPCServer()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	err = client.Call("TileDaemon.PushFeatures", args, nil)
 	if err != nil {
 		c.logger.Error("Failed to call RPC client",
 			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
 	}
+
+	args = nil
 	return err
 }
 
@@ -356,7 +362,7 @@ func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeat
 func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		go stream.Sink(ctx, nil, in)
+		stream.Sink(ctx, nil, in)
 		return nil
 	}
 
@@ -388,7 +394,12 @@ func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.P
 
 	args.GzippedJSONBytes = buf.Bytes()
 
-	err = c.rpcClient.Call("TileDaemon.PushFeatures", args, nil)
+	client, err := c.dialRPCServer()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	err = client.Call("TileDaemon.PushFeatures", args, nil)
 	if err != nil {
 		c.logger.Error("Failed to call RPC client",
 			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
