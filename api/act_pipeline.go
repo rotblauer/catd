@@ -61,7 +61,8 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 			errCh <- err
 			return
 		}
-		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkLaps)
+		defer wr.Close()
+		errCh <- sinkStreamToJSONWriter(ctx, wr, sinkLaps)
 	}()
 	go func() {
 		wr, err := c.State.Flat.NewGZFileWriter(params.NapsGZFileName, nil)
@@ -70,7 +71,8 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 			errCh <- err
 			return
 		}
-		errCh <- sinkStreamToJSONGZWriter(ctx, c, wr, sinkNaps)
+		defer wr.Close()
+		errCh <- sinkStreamToJSONWriter(ctx, wr, sinkNaps)
 	}()
 	go func() {
 		errCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{

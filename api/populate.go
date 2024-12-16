@@ -14,6 +14,7 @@ import (
 	"github.com/rotblauer/catd/types/activity"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
+	"log/slog"
 	"math"
 	"time"
 )
@@ -173,7 +174,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			sinkSnapErrs <- err
 			return
 		}
-		if err := sinkStreamToJSONGZWriter(ctx, c, gzftwSnaps, sinkSnaps); err != nil {
+		defer gzftwSnaps.Close()
+		if err := sinkStreamToJSONWriter(ctx, gzftwSnaps, sinkSnaps); err != nil {
 			c.logger.Error("Failed to write snaps", "error", err)
 			sinkSnapErrs <- err
 		}
@@ -289,21 +291,29 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return nil
 }
 
-func sinkStreamToJSONGZWriter[T any](ctx context.Context, c *Cat, wr io.WriteCloser, in <-chan T) error {
-
-	defer c.logger.Info("Sunk stream to gz file")
-	defer func() {
-		if err := wr.Close(); err != nil {
-			c.logger.Error("Failed to close writer", "error", err)
-		}
-	}()
-
-	enc := json.NewEncoder(wr)
-
-	// Blocking.
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) error {
+	defer slog.Info("Sunk stream to JSON GZ writer")
+	gz, err := gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
+	if err != nil {
+		return err
+	}
+	defer gz.Close() // ignore error, ensure assign returning err below
+	enc := json.NewEncoder(gz)
 	for a := range in {
 		if err := enc.Encode(a); err != nil {
-			c.logger.Error("Failed to write", "error", err)
+			slog.Error("Failed to write", "error", err)
+			return err
+		}
+	}
+	return gz.Close()
+}
+
+func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) error {
+	defer slog.Info("Sunk stream to JSON writer")
+	enc := json.NewEncoder(wr)
+	for a := range in {
+		if err := enc.Encode(a); err != nil {
+			slog.Error("Failed to write", "error", err)
 			return err
 		}
 	}
