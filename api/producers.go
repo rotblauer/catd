@@ -57,7 +57,7 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	indexer := &cattrack.StackerV1{}
 	old := &cattrack.StackerV1{}
 	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), old); err != nil {
-		c.logger.Warn("Failed to read stacker state (new cat?)", "error", err)
+		c.logger.Warn("Did not read stacker state (new cat?)", "error", err)
 	}
 
 	for track := range in {

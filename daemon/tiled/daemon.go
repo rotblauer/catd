@@ -420,8 +420,8 @@ func (d *TileD) TmpTargetPathFor(schema SourceSchema, version TileSourceVersion)
 type SourceMode string
 
 const (
-	SourceModeAppend SourceMode = "append"
-	SourceModeTrunc  SourceMode = "trunc"
+	SourceModeAppend   SourceMode = "append"
+	SourceModeTruncate SourceMode = "trunc"
 )
 
 type PushFeaturesRequestArgs struct {
@@ -646,7 +646,7 @@ func (d *TileD) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeaturesR
 
 		// Configure to truncate if truncate requested.
 		writeConf := catz.DefaultGZFileWriterConfig()
-		if args.SourceModes[vi] == SourceModeTrunc {
+		if args.SourceModes[vi] == SourceModeTruncate {
 			writeConf.Flag = os.O_WRONLY | os.O_TRUNC | os.O_CREATE
 		}
 		if args.GzippedJSONBytes != nil {

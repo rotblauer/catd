@@ -66,3 +66,7 @@ func FilterNaps(ct cattrack.CatNap) bool {
 	duration := ct.Properties.MustFloat64("Duration", 0)
 	return duration > 120
 }
+
+func FilterNoEmpty(ct cattrack.CatTrack) bool {
+	return !ct.IsEmpty()
+}

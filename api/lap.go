@@ -31,7 +31,7 @@ func (c *Cat) TrackLaps(ctx context.Context, in <-chan cattrack.CatTrack) (*lap.
 
 	ls, err := c.GetLapState()
 	if err != nil {
-		c.logger.Warn("Failed to read lap state (new cat?)", "error", err)
+		c.logger.Warn("Did not read lap state (new cat?)", "error", err)
 		ls = lap.NewState(params.DefaultLapConfig)
 	} else {
 		c.logger.Info("Restored lap-builder state", "tracks", len(ls.Tracks), "last", ls.TimeLast)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/daemon/tiled"
+	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/reducer"
 	"github.com/rotblauer/catd/rgeo"
@@ -46,6 +47,8 @@ func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 		Logger:          slog.With("reducer", "rgeo"),
 	})
 }
+
+type CatHandler func(ctx context.Context, in <-chan cattrack.CatTrack) error
 
 // RGeoIndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) error {
@@ -111,59 +114,68 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 }
 
 func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, bucket reducer.Bucket, in <-chan []cattrack.CatTrack) error {
-	unsliced := stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in)
-
 	// Block, waiting to see if any unique tracks are sent.
+	// Don't care what these are, actually. Only want to know if any exist on stream close. FIXME?
 	uniqs := 0
-	stream.Sink(ctx, func(track cattrack.CatTrack) { uniqs++ }, unsliced)
+	for i := range in {
+		uniqs += len(i)
+	}
 	if uniqs == 0 {
-		c.logger.Debug("No unique tracks for bucket", "bucket", bucket)
+		c.logger.Debug("No unique tracks for level", "level", bucket)
 		return nil
 	}
-
 	// There were some unique tracks at this level.
-	batchSize := params.RPCTrackBatchSize
-	pushBatchN := int32(0)
-	c.logger.Info("Rgeo unique tracks dumping", "bucket", bucket, "count", uniqs, "push.batch_size", batchSize)
-	defer func() {
-		c.logger.Info("Rgeo unique tracks dumped", "bucket", bucket, "count", uniqs,
-			"push.batch_size", batchSize, "pushed.batches", pushBatchN)
-	}()
-
 	// So now we need to send ALL unique tracks at this level to tiled,
 	// and tell tiled to use mode truncate.
 	// This will replace the existing map/level with the newest version of unique tracks.
 	dump, errs := cellIndexer.DumpLevel(bucket)
 
+	// Batch dumped tracks to avoid sending too many at once.
+	batchSize := params.RPCTrackBatchSize
+	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
+	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+		return len(s) == batchSize
+	}, dump)
+
+	sourceMode := tiled.SourceModeTruncate
 	levelZoomMin := rgeo.TilingZoomLevels[int(bucket)][0]
 	levelZoomMax := rgeo.TilingZoomLevels[int(bucket)][1]
-
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNamePlats, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendErrCh := make(chan error, 1)
-	go func() {
-		defer close(sendErrCh)
+	// TileD is sensitive to file paths. Sanitize.
+	sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
+		string(filepath.Separator), "_")
+	layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
+		string(filepath.Separator), "_")
 
-		// Batch dumped tracks to avoid sending too many at once.
-		batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-			return len(s) == batchSize
-		}, dump)
+	c.logger.Info("Rgeo unique tracks dumping", "bucket", bucket, "count", uniqs, "push.batch_size", batchSize)
+	defer func() {
+		c.logger.Info("Rgeo unique tracks dumped", "bucket", bucket, "count", uniqs,
+			"push.batch_size", batchSize, "pushed.batches", pushBatchN.Load())
+	}()
 
-		// TileD is sensitive to file paths. Sanitize.
-		sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
-			string(filepath.Separator), "_")
-		layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
-			string(filepath.Separator), "_")
-
-		sourceMode := tiled.SourceModeTrunc
-		for s := range batched {
-			if atomic.LoadInt32(&pushBatchN) > 0 {
+	for batched != nil && errs != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err, ok := <-errs:
+			if err != nil {
+				c.logger.Error("Failed to dump level if unique", "error", err)
+				return err
+			}
+			if !ok {
+				errs = nil
+			}
+		case s, ok := <-batched:
+			if !ok {
+				batched = nil
+			}
+			if pushBatchN.Add(1) > 1 {
 				sourceMode = tiled.SourceModeAppend
 			}
-			atomic.AddInt32(&pushBatchN, 1)
 			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
@@ -174,30 +186,12 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 				TippeConfigRaw:  levelTippeConfig,
 				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
 				SourceModes:     []tiled.SourceMode{sourceMode},
-			}, stream.Filter(ctx, func(t cattrack.CatTrack) bool {
-				return !t.IsEmpty()
-			},
-				stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
-					rgeo.TransformCatTrackFn(int(bucket)),
-					stream.Slice(ctx, s))))
+			}, stream.Filter(ctx, clean.FilterNoEmpty, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
+				rgeo.TransformCatTrackFn(int(bucket)),
+				stream.Slice(ctx, s))))
 			if err != nil {
-				sendErrCh <- err
-				return
+				return err
 			}
-		}
-	}()
-
-	// Block on dump errors.
-	for err := range errs {
-		if err != nil {
-			c.logger.Error("Failed to dump level if unique", "error", err)
-			return err
-		}
-	}
-	for err := range sendErrCh {
-		if err != nil {
-			c.logger.Error("Failed to send unique tracks level", "error", err)
-			return err
 		}
 	}
 	return nil

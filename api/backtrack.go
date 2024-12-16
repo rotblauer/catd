@@ -104,7 +104,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 	// Reload the cat's window map from the state.
 	m := map[string]Window{}
 	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), &m); err != nil {
-		c.logger.Warn("Failed to read UUID window map (new cat?)", "error", err)
+		c.logger.Warn("Did not read UUID window map (new cat?)", "error", err)
 	} else {
 		skiplog := 0
 		for k, v := range m {

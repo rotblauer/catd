@@ -14,7 +14,7 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 
 	im := &act.Improver{}
 	if err := c.restoreActImprover(im); err != nil {
-		c.logger.Warn("Failed to read act improver (new cat?)", "error", err)
+		c.logger.Warn("Did not read act improver (new cat?)", "error", err)
 		im = act.NewImprover()
 	} else {
 		c.logger.Info("Restored act-improver state")

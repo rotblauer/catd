@@ -52,13 +52,13 @@ func (d *RgeoDaemon) Start() error {
 	d.logger.Info("Rgeo daemon starting...",
 		"network", d.config.ListenerConfig.Network, "address", d.config.ListenerConfig.Address)
 
+	if strings.HasPrefix(d.config.Network, "unix") {
+		defer os.Remove(d.config.Address)
+	}
 	c, err := common.DialRPC(d.config.ListenerConfig.Network, d.config.ListenerConfig.Address)
 	if err == nil {
 		c.Close()
 		return fmt.Errorf("%w: %s", ErrAlreadyRunning, d.config.ListenerConfig.Address)
-	}
-	if strings.HasPrefix(d.config.Network, "unix") {
-		defer os.Remove(d.config.Address)
 	}
 
 	d.server = rpc.NewServer()

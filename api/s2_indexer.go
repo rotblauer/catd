@@ -14,7 +14,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 )
 
@@ -127,36 +126,40 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 	// This will replace the existing map/level with the newest version of unique tracks.
 	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 
+	// Batch dumped tracks to avoid sending too many at once.
+	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
+		return len(s) == batchSize
+	}, dump)
+	sourceMode := tiled.SourceModeTruncate
+
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][1]
-
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
 	levelTippeConfig = levelTippeConfig.Copy()
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendErrCh := make(chan error, 1)
-	go func(ch chan cattrack.CatTrack) {
-		defer close(sendErrCh)
-
-		// Batch dumped tracks to avoid sending too many at once.
-		batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-			return len(s) == batchSize
-		}, ch)
-
-		sourceMode := tiled.SourceModeTrunc
-		for s := range batched {
-			if atomic.LoadInt32(&pushBatchN) > 0 {
-				sourceMode = tiled.SourceModeAppend
+	for batched != nil && errs != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err, ok := <-errs:
+			if err != nil {
+				c.logger.Error("Failed to dump level", "error", err)
+				return err
 			}
-			atomic.AddInt32(&pushBatchN, 1)
-
+			if !ok {
+				errs = nil
+			}
+		case s, ok := <-batched:
+			if !ok {
+				batched = nil
+			}
 			edit := stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 				track.ID = track.MustTime().Unix()
 				track.Geometry = catS2.CellGeometryForPointAtLevel(track.Point(), catS2.CellLevel(level))
 				return track
 			}, stream.Slice(ctx, s))
-
 			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
@@ -169,23 +172,8 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				SourceModes:     []tiled.SourceMode{sourceMode},
 			}, edit)
 			if err != nil {
-				sendErrCh <- err
-				return
+				return err
 			}
-		}
-	}(dump)
-
-	// Block on dump errors.
-	for err := range errs {
-		if err != nil {
-			c.logger.Error("Failed to dump level if unique", "error", err)
-			return err
-		}
-	}
-	for err := range sendErrCh {
-		if err != nil {
-			c.logger.Error("Failed to send unique tracks level", "error", err)
-			return err
 		}
 	}
 	return nil
