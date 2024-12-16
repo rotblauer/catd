@@ -1,38 +1,21 @@
 package rgeo
 
 import (
-	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/reducer"
 	"github.com/rotblauer/catd/types/cattrack"
 	"github.com/sams96/rgeo"
-	"log/slog"
 	"regexp"
 )
 
-var DBName = "rgeo.db"
-
-//var R_Cities *rgeo.Rgeo
-//var R_Countries *rgeo.Rgeo
-//var R_Provinces *rgeo.Rgeo
-//var R_US_Counties *rgeo.Rgeo
-
-var R *rgeo.Rgeo
-
 const dataSourcePre = "github.com/sams96/rgeo."
-
-func init() {}
 
 var DatasetNamesStable = []string{
 	dataSourcePre + "Cities10",
 	dataSourcePre + "Countries10",
 	dataSourcePre + "Provinces10",
 	dataSourcePre + "US_Counties10",
-}
-
-func getR(dataset string) *rgeo.Rgeo {
-	return R
 }
 
 var TilingZoomLevels = map[int][2]int{}
@@ -43,19 +26,7 @@ var TilingZoomLevelsRe = map[string][2]int{
 	"(?i)Cities":    [2]int{3, 10},
 }
 
-var ErrAlreadyInitialized = fmt.Errorf("rgeo already initialized")
-
-func DoInit() error {
-	if R != nil {
-		return ErrAlreadyInitialized
-	}
-	var err error
-	slog.Info("Initializing rgeo...")
-	R, err = rgeo.New(rgeo.Cities10, rgeo.Countries10, rgeo.Provinces10, rgeo.US_Counties10)
-	if err != nil {
-		return err
-	}
-	DatasetNamesStable = R.DatasetNames()
+func init() {
 	for i, v := range DatasetNamesStable {
 		for re, zooms := range TilingZoomLevelsRe {
 			if regexp.MustCompile(re).MatchString(v) {
@@ -63,7 +34,6 @@ func DoInit() error {
 			}
 		}
 	}
-	return nil
 }
 
 func getIndexForStableName(name string) int {
@@ -83,7 +53,7 @@ var DefaultIndexerT = &cattrack.StackerV1{
 func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 	dataset := DatasetNamesStable[bucket]
 
-	loc, err := getR(dataset).ReverseGeocode(ct.Point())
+	loc, err := R(dataset).ReverseGeocode(ct.Point())
 	if err != nil {
 		// - Flying cat over bermuda triangle, over ocean = cat without a country, intl waters.
 		// - Country mouse, not city cat = no city rgeocode.
@@ -93,7 +63,7 @@ func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 }
 
 func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := getR(dataset).ReverseGeocodeWithGeometry(pt, dataset)
+	loc, err := R(dataset).ReverseGeocodeWithGeometry(pt, dataset)
 	if err != nil {
 		return nil, nil
 	}
