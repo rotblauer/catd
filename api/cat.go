@@ -82,6 +82,6 @@ func (c *Cat) Close() {
 	}
 }
 
-func (c *Cat) dialRPCServer() (*rpc.Client, error) {
+func (c *Cat) dialTiledHTTPRPC() (*rpc.Client, error) {
 	return rpc.DialHTTP(c.tiledConf.RPCNetwork, c.tiledConf.RPCAddress)
 }

@@ -13,6 +13,14 @@ import (
 
 type CatLap geojson.Feature
 
+func Lap2Track(lap CatLap) CatTrack {
+	return CatTrack(lap)
+}
+
+func Lap2TrackP(lap *CatLap) *CatTrack {
+	return (*CatTrack)(lap)
+}
+
 func (cl CatLap) MarshalJSON() ([]byte, error) {
 	return (geojson.Feature)(cl).MarshalJSON()
 }
@@ -128,7 +136,11 @@ func (cl *CatLap) Duration() time.Duration {
 func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
 	activities := []float64{}
 	for _, f := range list {
-		act := activity.FromAny(f.Properties.MustString("Activity", "Unknown"))
+		props := f.Properties
+		if props == nil {
+			panic("nil properties")
+		}
+		act := activity.FromAny(props.MustString("Activity", "Unknown"))
 		if act > activity.TrackerStateStationary {
 			activities = append(activities, float64(act))
 		}

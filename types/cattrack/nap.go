@@ -12,6 +12,14 @@ import (
 
 type CatNap geojson.Feature
 
+func Nap2Track(nap CatNap) CatTrack {
+	return CatTrack(nap)
+}
+
+func Nap2TrackP(nap *CatNap) *CatTrack {
+	return (*CatTrack)(nap)
+}
+
 func (cn CatNap) MarshalJSON() ([]byte, error) {
 	return (geojson.Feature)(cn).MarshalJSON()
 }

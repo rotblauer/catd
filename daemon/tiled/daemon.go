@@ -426,7 +426,7 @@ type PushFeaturesRequestArgs struct {
 }
 
 type PushFeaturesResponse struct {
-	Success   bool
+	Error     error
 	WrittenTo string
 }
 
@@ -509,18 +509,12 @@ func (d *TileDaemon) write(source string, writeConfig *catz.GZFileWriterConfig, 
 		return err
 	}
 	defer f.Close()
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		return err
-	}
-	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 	_, err = f.Write(gzipData)
 	if err != nil {
 		return err
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+	err = f.Close()
+	return err
 }
 
 func (d *TileDaemon) rollEdgeToBackup(args *TilingRequestArgs) error {
@@ -579,6 +573,9 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 	if args == nil {
 		return fmt.Errorf("nil args")
 	}
+	if reply == nil {
+		reply = &PushFeaturesResponse{}
+	}
 
 	var data []byte
 	if args.GzippedJSONBytes != nil {
@@ -592,6 +589,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 
 	if err := args.validate(); err != nil {
 		slog.Error("PushFeatures invalid args", "error", err)
+		reply.Error = err
 		return err
 	}
 
@@ -603,9 +601,11 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 		args.SourceModes = args.SourceModes[:1]
 	}
 
+	writtenTo := []string{}
 	for vi, version := range args.Versions {
 		source, err := d.SourcePathFor(args.SourceSchema, version)
 		if err != nil {
+			reply.Error = err
 			return fmt.Errorf("failed to get source path: %w", err)
 		}
 
@@ -618,6 +618,7 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 
 		// Ensure dirs.
 		if err := os.MkdirAll(filepath.Dir(source), os.ModePerm); err != nil {
+			reply.Error = err
 			return err
 		}
 
@@ -628,19 +629,25 @@ func (d *TileDaemon) PushFeatures(args *PushFeaturesRequestArgs, reply *PushFeat
 		}
 		if args.GzippedJSONBytes != nil {
 			if err := d.write(source, writeConf, data); err != nil {
+				reply.Error = err
 				return err
 			}
 		} else {
 			if err := d.writeGZ(source, writeConf, data); err != nil {
+				reply.Error = err
 				return err
 			}
 		}
+		writtenTo = append(writtenTo, source)
 		d.logger.Debug("Wrote source", "source", source,
 			"size", humanize.Bytes(uint64(len(data))))
 	}
 
 	args.JSONBytes = nil
 	args.GzippedJSONBytes = nil
+
+	reply.Error = nil
+	reply.WrittenTo = strings.Join(writtenTo, ",")
 
 	// Request tiling. Will get debounced.
 	err := d.RequestTiling(&TilingRequestArgs{

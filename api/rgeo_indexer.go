@@ -163,7 +163,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 				sourceMode = tiled.SourceModeAppend
 			}
 			atomic.AddInt32(&pushBatchN, 1)
-			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
 					SourceName: sourceName,

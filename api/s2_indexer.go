@@ -150,7 +150,7 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				sourceMode = tiled.SourceModeAppend
 			}
 			atomic.AddInt32(&pushBatchN, 1)
-			err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
 					SourceName: "s2_cells",
@@ -206,7 +206,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	sendToCatRPCClient[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
+	sendToCatTileD[cattrack.CatTrack](ctx, c, &tiled.PushFeaturesRequestArgs{
 		SourceSchema: tiled.SourceSchema{
 			CatID:      c.CatID,
 			SourceName: "s2_cells_first",

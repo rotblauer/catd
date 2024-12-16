@@ -52,30 +52,35 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	notifyNaps := make(chan cattrack.CatNap)
 	stream.TeeMany(ctx, filteredNaps, sinkNaps, sendNaps, notifyNaps)
 
-	expectedErrsN := 4
+	expectedErrsN := 4 // 2 sink, 2 send.
 	errCh := make(chan error, expectedErrsN)
-	go func() {
-		wr, err := c.State.Flat.NewGZFileWriter(params.LapsGZFileName, nil)
-		if err != nil {
-			c.logger.Error("Failed to create custom writer", "error", err)
+	lapsNapsMap := map[string]<-chan cattrack.CatTrack{
+		params.LapsGZFileName: stream.Transform(ctx, cattrack.Lap2Track, sinkLaps),
+		params.NapsGZFileName: stream.Transform(ctx, cattrack.Nap2Track, sinkNaps),
+	}
+	for to, ch := range lapsNapsMap {
+		go func() {
+			to := to
+			ch := ch
+			wr, err := c.State.Flat.NewGZFileWriter(to, nil)
+			if err != nil {
+				c.logger.Error("Failed to create gz file writer", "path", to, "error", err)
+				errCh <- err
+				return
+			}
+			_, err = sinkStreamToJSONWriter(ctx, wr, ch)
+			if err != nil {
+				c.logger.Error("Failed to sink stream", "path", to, "error", err)
+				wr.Close()
+			} else {
+				err = wr.Close()
+			}
 			errCh <- err
-			return
-		}
-		defer wr.Close()
-		errCh <- sinkStreamToJSONWriter(ctx, wr, sinkLaps)
-	}()
+		}()
+	}
+
 	go func() {
-		wr, err := c.State.Flat.NewGZFileWriter(params.NapsGZFileName, nil)
-		if err != nil {
-			c.logger.Error("Failed to create custom writer", "error", err)
-			errCh <- err
-			return
-		}
-		defer wr.Close()
-		errCh <- sinkStreamToJSONWriter(ctx, wr, sinkNaps)
-	}()
-	go func() {
-		errCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		errCh <- sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
 				SourceName: "laps",
@@ -87,7 +92,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		}, sendLaps)
 	}()
 	go func() {
-		errCh <- sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		errCh <- sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
 				SourceName: "naps",
@@ -99,6 +104,7 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		}, sendNaps)
 	}()
 
+	// There's no way the waitgroups are necessary, but they probably don't hurt.
 	notifyWG := sync.WaitGroup{}
 	notifyWG.Add(2)
 	go func() {

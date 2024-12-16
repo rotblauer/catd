@@ -175,16 +175,18 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			return
 		}
 		defer gzftwSnaps.Close()
-		if err := sinkStreamToJSONWriter(ctx, gzftwSnaps, sinkSnaps); err != nil {
-			c.logger.Error("Failed to write snaps", "error", err)
+		if n, err := sinkStreamToJSONWriter(ctx, gzftwSnaps, sinkSnaps); err != nil {
+			c.logger.Error("Failed to write snaps", "error", err, "written", n)
 			sinkSnapErrs <- err
+		} else {
+			c.logger.Info("Wrote snaps", "count", n)
 		}
 	}()
 
 	sendSnapErrs := make(chan error, 1)
 	go func() {
 		defer close(sendSnapErrs)
-		err := sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+		err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 			SourceSchema: tiled.SourceSchema{
 				CatID:      c.CatID,
 				SourceName: "snaps",
@@ -227,7 +229,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}()
 
 	//// P.S. Don't send all tracks to tiled unless development.
-	//sendToCatRPCClient(ctx, c, &tiled.PushFeaturesRequestArgs{
+	//sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 	//	SourceSchema: tiled.SourceSchema{
 	//		CatID:      c.CatID,
 	//		SourceName: "tracks",
@@ -291,128 +293,136 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return nil
 }
 
-func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) error {
-	defer slog.Info("Sunk stream to JSON GZ writer")
-	gz, err := gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
-	if err != nil {
-		return err
-	}
-	defer gz.Close() // ignore error, ensure assign returning err below
-	enc := json.NewEncoder(gz)
-	for a := range in {
-		if err := enc.Encode(a); err != nil {
-			slog.Error("Failed to write", "error", err)
-			return err
-		}
-	}
-	return gz.Close()
-}
-
-func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) error {
-	defer slog.Info("Sunk stream to JSON writer")
-	enc := json.NewEncoder(wr)
-	for a := range in {
-		if err := enc.Encode(a); err != nil {
-			slog.Error("Failed to write", "error", err)
-			return err
-		}
-	}
-	return nil
-}
-
 func (c *Cat) IsRPCEnabled() bool {
 	return c.tiledConf != nil
 }
 
-// sendToCatRPCClient sends a batch of features to the Cat RPC client.
+// sendToCatTileD sends a batch of features to the Cat RPC client.
 // It is a blocking function, and registers itself with the Cat Waiting state.
-func sendToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
+func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
 	if !c.IsRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		go stream.Sink(ctx, nil, in)
+		go stream.Sink(ctx, nil, in) // Black hole, does not block.
 		return nil
 	}
-
-	all := stream.Collect(ctx, in)
-	if len(all) == 0 {
+	buf := new(bytes.Buffer)
+	n, err := sinkStreamToJSONGZWriter(ctx, buf, in)
+	if err != nil {
+		c.logger.Error("Failed to sink stream to JSON GZ writer", "error", err)
+		return err
+	}
+	if n == 0 {
 		c.logger.Warn("No features to send", "source", args.SourceName)
 		return nil
 	}
-
-	buf := bytes.NewBuffer([]byte{})
-	defer buf.Reset()
-	enc := json.NewEncoder(buf)
-
-	for _, el := range all {
-		if err := enc.Encode(el); err != nil {
-			c.logger.Error("Failed to encode feature", "error", err)
-			return err
-		}
+	if buf.Len() == 0 {
+		c.logger.Error("Empty buffer, nonzero features", "source", args.SourceName, "count", n)
+		return nil
 	}
-
-	args.JSONBytes = buf.Bytes()
-
-	client, err := c.dialRPCServer()
+	c.logger.Info("Sending features to tiled RPC client", "source", args.SourceName,
+		"count", n, "gz.len", humanize.Bytes(uint64(buf.Len())))
+	args.GzippedJSONBytes = buf.Bytes()
+	client, err := c.dialTiledHTTPRPC()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	err = client.Call("TileDaemon.PushFeatures", args, nil)
+	reply := &tiled.PushFeaturesResponse{}
+	err = client.Call("TileDaemon.PushFeatures", args, reply)
 	if err != nil {
 		c.logger.Error("Failed to call RPC client",
-			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
+			"method", "PushFeatures", "source", args.SourceName, "count", n, "error", err)
 	}
-
+	if reply.Error != nil {
+		c.logger.Error("RPC client returned error", "error", err)
+		return reply.Error
+	}
+	// Pulverize args, maybe sizeable.
 	args = nil
-	return err
+	return nil
+}
+
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (int, error) {
+	defer slog.Info("Sunk stream to JSON GZ writer")
+	gz, err := gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
+	if err != nil {
+		return 0, err
+	}
+	defer gz.Close() // Ignore error, ensure assign returning error below.
+	enc := json.NewEncoder(gz)
+	n := 0
+	for a := range in {
+		if err := enc.Encode(a); err != nil {
+			slog.Error("Failed to write", "error", err)
+			return n, err
+		}
+		n++
+	}
+	// Assignment returning error, defer above.
+	err = gz.Close()
+	return n, err
+}
+
+func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (int, error) {
+	defer slog.Info("Sunk stream to JSON writer")
+	enc := json.NewEncoder(wr)
+	n := 0
+	for a := range in {
+		if err := enc.Encode(a); err != nil {
+			slog.Error("Failed to write", "error", err)
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 // sendGZippedToCatRPCClient sends a batch of gzipped features to the Cat RPC client.
 // It is a non-blocking function, and registers itself with the Cat Waiting state.
-func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
-	if !c.IsRPCEnabled() {
-		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
-		stream.Sink(ctx, nil, in)
-		return nil
-	}
-
-	all := stream.Collect(ctx, in)
-	if len(all) == 0 {
-		c.logger.Warn("No features to send", "source", args.SourceName)
-		return nil
-	}
-
-	buf := bytes.NewBuffer([]byte{})
-	gz, err := gzip.NewWriterLevel(buf, params.DefaultGZipCompressionLevel)
-	if err != nil {
-		c.logger.Error("Failed to create gzip writer", "error", err)
-		return err
-	}
-	enc := json.NewEncoder(gz)
-
-	for _, el := range all {
-		if err := enc.Encode(el); err != nil {
-			c.logger.Error("Failed to encode feature", "error", err)
-			return err
-		}
-	}
-
-	if err := gz.Flush(); err != nil {
-		c.logger.Error("Failed to flush gzip writer", "error", err)
-		return err
-	}
-
-	args.GzippedJSONBytes = buf.Bytes()
-
-	client, err := c.dialRPCServer()
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	err = client.Call("TileDaemon.PushFeatures", args, nil)
-	if err != nil {
-		c.logger.Error("Failed to call RPC client",
-			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
-	}
-	return err
-}
+//func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
+//	if !c.IsRPCEnabled() {
+//		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
+//		stream.Sink(ctx, nil, in)
+//		return nil
+//	}
+//
+//	all := stream.Collect(ctx, in)
+//	if len(all) == 0 {
+//		c.logger.Warn("No features to send", "source", args.SourceName)
+//		return nil
+//	}
+//
+//	buf := bytes.NewBuffer([]byte{})
+//	gz, err := gzip.NewWriterLevel(buf, params.DefaultGZipCompressionLevel)
+//	if err != nil {
+//		c.logger.Error("Failed to create gzip writer", "error", err)
+//		return err
+//	}
+//	enc := json.NewEncoder(gz)
+//
+//	for _, el := range all {
+//		if err := enc.Encode(el); err != nil {
+//			c.logger.Error("Failed to encode feature", "error", err)
+//			return err
+//		}
+//	}
+//
+//	if err := gz.Flush(); err != nil {
+//		c.logger.Error("Failed to flush gzip writer", "error", err)
+//		return err
+//	}
+//
+//	args.GzippedJSONBytes = buf.Bytes()
+//
+//	client, err := c.dialTiledHTTPRPC()
+//	if err != nil {
+//		return err
+//	}
+//	defer client.Close()
+//	err = client.Call("TileDaemon.PushFeatures", args, nil)
+//	if err != nil {
+//		c.logger.Error("Failed to call RPC client",
+//			"method", "PushFeatures", "source", args.SourceName, "all.len", len(all), "error", err)
+//	}
+//	return err
+//}
