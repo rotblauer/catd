@@ -22,6 +22,9 @@ func NewCatTrack(geometry orb.Geometry) *CatTrack {
 	}
 }
 
+type SinkerFn func(track CatTrack)
+type TransformerFn func(track CatTrack) CatTrack
+
 func (ct *CatTrack) SetPropertySafe(key string, val any) {
 	p := ct.Properties.Clone()
 	p[key] = val

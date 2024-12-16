@@ -150,6 +150,13 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				sourceMode = tiled.SourceModeAppend
 			}
 			atomic.AddInt32(&pushBatchN, 1)
+
+			edit := stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+				track.ID = track.MustTime().Unix()
+				track.Geometry = catS2.CellGeometryForPointAtLevel(track.Point(), catS2.CellLevel(level))
+				return track
+			}, stream.Slice(ctx, s))
+
 			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
@@ -160,11 +167,7 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				TippeConfigRaw:  levelTippeConfig,
 				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
 				SourceModes:     []tiled.SourceMode{sourceMode},
-			}, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-				track.ID = track.MustTime().Unix()
-				track.Geometry = catS2.CellGeometryForPointAtLevel(track.Point(), catS2.CellLevel(level))
-				return track
-			}, stream.Slice(ctx, s)))
+			}, edit)
 			if err != nil {
 				sendErrCh <- err
 				return
