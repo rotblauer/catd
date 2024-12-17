@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
@@ -112,23 +113,14 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 		return nil
 	}
 
-	// There were some unique tracks at this level.
 	batchSize := params.RPCTrackBatchSize
-	pushBatchN := int32(0)
-	c.logger.Info("S2 unique tracks dumping", "level", level, "count", uniqs, "push.batch_size", batchSize)
-	defer func() {
-		c.logger.Info("S2 unique tracks dumped", "level", level, "count", uniqs,
-			"push.batch_size", batchSize, "pushed.batches", pushBatchN)
-	}()
+	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
 
-	// So now we need to send ALL unique tracks at this level to tiled,
-	// and tell tiled to use mode truncate.
-	// This will replace the existing map/level with the newest version of unique tracks.
+	// Track different data source.
 	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 
 	// Batch dumped tracks to avoid sending too many at once.
 	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-
 		return len(s) == batchSize
 	}, dump)
 	sourceMode := tiled.SourceModeTruncate
@@ -139,7 +131,7 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	for batched != nil && errs != nil {
+	for batched != nil || errs != nil {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -152,6 +144,9 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				errs = nil
 			}
 		case s, ok := <-batched:
+			if pushBatchN.Add(1) > 1 {
+				sourceMode = tiled.SourceModeAppend
+			}
 			if !ok {
 				batched = nil
 			}
@@ -180,12 +175,10 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 }
 
 func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
-	txed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+	transformed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 		cp := track
-
 		cp.ID = track.MustTime().Unix()
 		cp.Geometry = catS2.CellGeometryForPointAtLevel(cp.Point(), level)
-
 		return cp
 	}, stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
 
@@ -209,7 +202,7 @@ func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.Ce
 		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
 	}, stream.Filter(ctx, func(track cattrack.CatTrack) bool {
 		return !track.IsEmpty()
-	}, txed))
+	}, transformed))
 
 	for err := range awaitErr {
 		if err != nil {

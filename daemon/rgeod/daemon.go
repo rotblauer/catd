@@ -52,6 +52,7 @@ func (d *RgeoDaemon) Start() error {
 	d.logger.Info("Rgeo daemon starting...",
 		"network", d.config.ListenerConfig.Network, "address", d.config.ListenerConfig.Address)
 
+	os.Remove(d.config.Address) // FIXME
 	if strings.HasPrefix(d.config.Network, "unix") {
 		defer os.Remove(d.config.Address)
 	}

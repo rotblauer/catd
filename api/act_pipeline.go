@@ -59,24 +59,22 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		params.NapsGZFileName: stream.Transform(ctx, cattrack.Nap2Track, sinkNaps),
 	}
 	for to, ch := range lapsNapsMap {
-		go func() {
-			to := to
-			ch := ch
-			wr, err := c.State.Flat.NewGZFileWriter(to, nil)
+		go func(ch <-chan cattrack.CatTrack, path string) {
+			wr, err := c.State.Flat.NewGZFileWriter(path, nil)
 			if err != nil {
-				c.logger.Error("Failed to create gz file writer", "path", to, "error", err)
+				c.logger.Error("Failed to create gz file writer", "path", path, "error", err)
 				errCh <- err
 				return
 			}
 			_, err = sinkStreamToJSONWriter(ctx, wr, ch)
 			if err != nil {
-				c.logger.Error("Failed to sink stream", "path", to, "error", err)
+				c.logger.Error("Failed to sink stream", "path", path, "error", err)
 				wr.Close()
 			} else {
 				err = wr.Close()
 			}
 			errCh <- err
-		}()
+		}(ch, to)
 	}
 
 	go func() {

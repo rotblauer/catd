@@ -125,15 +125,13 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 		return nil
 	}
 
-	// There were some unique tracks at this level.
-	// So now we need to send ALL unique tracks at this level to tiled,
-	// and tell tiled to use mode truncate.
-	// This will replace the existing map/level with the newest version of unique tracks.
+	batchSize := params.RPCTrackBatchSize
+	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
+
+	// Totally different data source.
 	dump, errs := cellIndexer.DumpLevel(bucket)
 
 	// Batch dumped tracks to avoid sending too many at once.
-	batchSize := params.RPCTrackBatchSize
-	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
 	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
 		return len(s) == batchSize
 	}, dump)
@@ -144,20 +142,11 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 	levelTippeConfig = levelTippeConfig.Copy()
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
-
 	// TileD is sensitive to file paths. Sanitize.
-	sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
-		string(filepath.Separator), "_")
-	layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells",
-		string(filepath.Separator), "_")
+	sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells", string(filepath.Separator), "_")
+	layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells", string(filepath.Separator), "_")
 
-	c.logger.Info("Rgeo unique tracks dumping", "bucket", bucket, "count", uniqs, "push.batch_size", batchSize)
-	defer func() {
-		c.logger.Info("Rgeo unique tracks dumped", "bucket", bucket, "count", uniqs,
-			"push.batch_size", batchSize, "pushed.batches", pushBatchN.Load())
-	}()
-
-	for batched != nil && errs != nil {
+	for batched != nil || errs != nil {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -176,6 +165,10 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 			if pushBatchN.Add(1) > 1 {
 				sourceMode = tiled.SourceModeAppend
 			}
+			edit := stream.Filter(ctx, clean.FilterNoEmpty,
+				stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
+					rgeo.TransformCatTrackFn(int(bucket)),
+					stream.Slice(ctx, s)))
 			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 				SourceSchema: tiled.SourceSchema{
 					CatID:      c.CatID,
@@ -186,9 +179,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 				TippeConfigRaw:  levelTippeConfig,
 				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
 				SourceModes:     []tiled.SourceMode{sourceMode},
-			}, stream.Filter(ctx, clean.FilterNoEmpty, stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
-				rgeo.TransformCatTrackFn(int(bucket)),
-				stream.Slice(ctx, s))))
+			}, edit)
 			if err != nil {
 				return err
 			}
