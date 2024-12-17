@@ -30,8 +30,8 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
-    zcat "${HOME}"/tdata/master.json.gz
-#    zcat "${HOME}"/tdata/{devop,edge}.json.gz
+#     zcat "${HOME}"/tdata/master.json.gz
+   zcat "${HOME}"/tdata/{devop,edge}.json.gz
 
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -43,6 +43,7 @@ tdata() {
 }
 
 bump_tileservice() {
+    >&2 echo "Bumping mbtileserver"
     if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
     then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
     fi
@@ -52,7 +53,7 @@ bump_tileservice() {
 }
 
 tabula_rasa() {
-    echo "WARN: Removing datadir"
+    >&2 echo "WARN: Removing datadir"
     set -x
     # This way you get to look at maps while catd (re-)runs,
     # .mbtiles get overwritten with a mv, if all goes well.
@@ -69,7 +70,7 @@ run() {
   set -e
   set -x
   go install . || { echo "Install failed" && exit 1 ; }
-  [[ -z "${RMCATS}" ]] || { echo "WARN RMCATS rming cats" && tabula_rasa ; }
+  [[ -z "${RMCATS}" ]] || { >&2 echo "WARN RMCATS rming cats" && tabula_rasa ; }
   tdata | catd populate \
     --datadir /tmp/catd \
     --verbosity 0 \

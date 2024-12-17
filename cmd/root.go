@@ -68,7 +68,7 @@ func init() {
 	pFlags.StringVar(&cfgFile, "config", "",
 		`Config file (default is $HOME/.catd.yaml)`)
 
-	pFlags.StringVar(&params.DatadirRoot, "datadir", "/tmp/catd",
+	pFlags.StringVar(&params.DefaultDatadirRoot, "datadir", "/tmp/catd",
 		`Root directory for data storage`)
 
 	pFlags.IntVar(&params.DefaultBatchSize, "batch-size", params.DefaultBatchSize,

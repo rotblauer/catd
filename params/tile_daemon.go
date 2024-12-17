@@ -49,7 +49,7 @@ func DefaultTileDaemonConfig() *TileDaemonConfig {
 		// In this way, the `source` directory will imitate the
 		// cat state directory (datadir/cats/).
 		// This allows an easy `cp -a` to init or reset the tiler daemon's data.
-		RootDir:      filepath.Join(DatadirRoot, "tiled"),
+		RootDir:      filepath.Join(DefaultDatadirRoot, "tiled"),
 		TilingTmpDir: filepath.Join(os.TempDir(), "catd-tilerdaemon-tmp"),
 
 		// FIXME: Debounce should be derived from HTTP timeout threshold?

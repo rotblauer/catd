@@ -133,7 +133,6 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
 		SourceModes:     []tiled.SourceMode{tiled.SourceModeTruncate},
 	}, edit)
-
 	for err := range errs {
 		if err != nil {
 			c.logger.Error("Failed to dump unique tracks level", "error", err)

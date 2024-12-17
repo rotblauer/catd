@@ -260,7 +260,7 @@ Missoula, Montana
 // CatID is determined by the first track read from the channel.
 // The call to Populate will block on DB lock for each cat, which
 // makes calling this function for the same cat concurrently harmless, but useless.
-func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, backend *params.CatBackendConfig) {
+func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, backend *params.CatRPCServices) {
 	defer done.Done()
 
 	var cat *api.Cat
@@ -274,7 +274,9 @@ func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 
 	slog.Debug("CatWorker first track", "cat", catN, "track", string(first))
 	catID := names.AliasOrSanitizedName(gjson.GetBytes(first, "properties.Name").String())
-	cat, err = api.NewCat(conceptual.CatID(catID), backend)
+	id := conceptual.CatID(catID)
+	catD := params.DefaultCatDataDir(id.String())
+	cat, err = api.NewCat(id, catD, backend)
 	if err != nil {
 		panic(err)
 	}

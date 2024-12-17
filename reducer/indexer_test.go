@@ -7,6 +7,7 @@ import (
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
+	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"os"
@@ -17,7 +18,7 @@ import (
 func NewTestCellIndexer(t *testing.T) *CellIndexer {
 	ci, err := NewCellIndexer(
 		&CellIndexerConfig{
-			CatID:     conceptual.CatID("rye"),
+			CatID:     conceptual.CatID("any"),
 			DBPath:    filepath.Join(os.TempDir(), "reducer_test.catdb"),
 			BatchSize: params.DefaultBatchSize,
 			Buckets:   []Bucket{3, 4, 5},
@@ -38,7 +39,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 }
 
 func TestCellIndexer(t *testing.T) {
-	testdataPathGZ := "../testing/testdata/private/edge_20241217.json.gz"
+	testdataPathGZ := testdata.Path(testdata.Source_EDGE20241217)
 	gzr, err := catz.NewGZFileReader(testdataPathGZ)
 	if err != nil {
 		t.Fatal(err)

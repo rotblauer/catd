@@ -24,8 +24,8 @@ type CatState struct {
 // NewCatWithState defines data sources, caches, and encoding for a cat.
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
-func (c *Cat) NewCatWithState(readOnly bool) (*CatState, error) {
-	flatCat := catz.NewFlatWithRoot(params.DatadirRoot).Joins(params.CatsDir, c.CatID.String())
+func (c *Cat) NewCatWithState(catRoot string, readOnly bool) (*CatState, error) {
+	flatCat := catz.NewFlatWithRoot(catRoot)
 
 	if !readOnly {
 		if err := flatCat.MkdirAll(); err != nil {

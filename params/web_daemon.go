@@ -2,7 +2,7 @@ package params
 
 type WebDaemonConfig struct {
 	ListenerConfig
-	CatBackendConfig *CatBackendConfig
+	CatBackendConfig *CatRPCServices
 }
 
 func DefaultWebListenerConfig() ListenerConfig {

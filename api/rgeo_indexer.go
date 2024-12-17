@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -125,16 +124,6 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 		return nil
 	}
 
-	batchSize := params.RPCTrackBatchSize
-	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
-
-	// Totally different data source.
-	dump, errs := cellIndexer.DumpLevel(bucket)
-
-	// Batch dumped tracks to avoid sending too many at once.
-	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-		return len(s) == batchSize
-	}, dump)
 	sourceMode := tiled.SourceModeTruncate
 	levelZoomMin := rgeo.TilingZoomLevels[int(bucket)][0]
 	levelZoomMax := rgeo.TilingZoomLevels[int(bucket)][1]
@@ -146,49 +135,30 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 	sourceName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells", string(filepath.Separator), "_")
 	layerName := strings.ReplaceAll(rgeo.DatasetNamesStable[bucket]+"_cells", string(filepath.Separator), "_")
 
-	for batched != nil || errs != nil {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err, ok := <-errs:
-			if err != nil {
-				c.logger.Error("Failed to dump level if unique", "error", err)
-				return err
-			}
-			if !ok {
-				errs = nil
-			}
-		case s, ok := <-batched:
-			if !ok {
-				batched = nil
-			}
-			if len(s) == 0 {
-				continue
-			}
-			if pushBatchN.Add(1) > 1 {
-				sourceMode = tiled.SourceModeAppend
-			}
-			edit := stream.Filter(ctx, clean.FilterNoEmpty,
-				stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
-					rgeo.TransformCatTrackFn(int(bucket)),
-					stream.Slice(ctx, s)))
-			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-				SourceSchema: tiled.SourceSchema{
-					CatID:      c.CatID,
-					SourceName: sourceName,
-					LayerName:  layerName,
-				},
-				TippeConfigName: "",
-				TippeConfigRaw:  levelTippeConfig,
-				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
-				SourceModes:     []tiled.SourceMode{sourceMode},
-			}, edit)
-			if err != nil {
-				return err
-			}
+	// Dump all indexed tracks for the level.
+	dump, errs := cellIndexer.DumpLevel(bucket)
+	edit := stream.Filter(ctx, clean.FilterNoEmpty,
+		stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx,
+			rgeo.TransformCatTrackFn(int(bucket)),
+			dump))
+	err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: sourceName,
+			LayerName:  layerName,
+		},
+		TippeConfigName: "",
+		TippeConfigRaw:  levelTippeConfig,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
+		SourceModes:     []tiled.SourceMode{sourceMode},
+	}, edit)
+	for err := range errs {
+		if err != nil {
+			c.logger.Error("Failed to dump unique tracks level", "error", err)
+			return err
 		}
 	}
-	return nil
+	return err
 }
 
 // S2CollectLevel returns all indexed tracks for a given S2 cell level.

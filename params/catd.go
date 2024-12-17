@@ -28,7 +28,7 @@ const (
 	NapsGZFileName         = "naps.geojson.gz"
 )
 
-var DatadirRoot = func() string {
+var DefaultDatadirRoot = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		panic(err)

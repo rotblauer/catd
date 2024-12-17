@@ -23,7 +23,7 @@ func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (err
 	// Cat/thread safe because gz file locks.
 	// Cat pushes will be stored in cat push/populate-batches.
 	//c.logger.Info("Waiting on master locker...")
-	//gzftwMaster, err := flat.NewFlatWithRoot(params.DatadirRoot).
+	//gzftwMaster, err := flat.NewFlatWithRoot(params.DefaultDatadirRoot).
 	//	NewGZFileWriter(params.MasterTracksGZFileName, nil)
 	//if err != nil {
 	//	c.logger.Error("Failed to create custom writer", "error", err)

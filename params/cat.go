@@ -1,6 +1,8 @@
 package params
 
-type CatBackendConfig struct {
+import "path/filepath"
+
+type CatRPCServices struct {
 	// TileDaemonConfig is the configuration for a running TileD instance.
 	// When cats push tracks, we can optionally make requests
 	// on their behalf to the tiling service.
@@ -14,9 +16,13 @@ type CatBackendConfig struct {
 	RgeoD *RgeoDaemonConfig
 }
 
-func DefaultCatBackendConfig() *CatBackendConfig {
-	return &CatBackendConfig{
+func DefaultCatBackendConfig() *CatRPCServices {
+	return &CatRPCServices{
 		TileD: DefaultTileDaemonConfig(),
 		RgeoD: DefaultRgeoDaemonConfig(),
 	}
+}
+
+func DefaultCatDataDir(catID string) string {
+	return filepath.Join(DefaultDatadirRoot, CatsDir, catID)
 }

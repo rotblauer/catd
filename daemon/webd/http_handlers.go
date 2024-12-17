@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
@@ -227,7 +228,8 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.Debug("Decoding", len(body), "bytes: ", string(body)[:int(math.Min(80, float64(len(body))))])
+	truncatedBytes := string(body)[:int(math.Min(80, float64(len(body))))]
+	s.logger.Debug("Decoding", "body.len", len(body), "bytes: ", truncatedBytes)
 
 	features, err := types.DecodeCatTracksShotgun(body)
 	if err != nil || len(features) == 0 {
@@ -238,7 +240,7 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT, ie. conceptual cat.
 	catID := features[0].CatID()
-	cat, err := api.NewCat(catID, s.Config.CatBackendConfig)
+	cat, err := api.NewCat(catID, params.DefaultCatDataDir(catID.String()), s.Config.CatBackendConfig)
 	if err != nil {
 		s.logger.Error("Failed to create cat", "error", err)
 		http.Error(w, "Failed to create cat", http.StatusInternalServerError)

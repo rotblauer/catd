@@ -297,10 +297,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	return nil
 }
 
-func (c *Cat) IsTilingEnabled() bool {
-	return c.backend.TileD != nil
-}
-
 // sendToCatTileD sends a batch of features to the Cat RPC client.
 // It is a blocking function.
 func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {

@@ -19,13 +19,15 @@ import (
 type Cat struct {
 	CatID conceptual.CatID
 
+	DataDir string
+
 	// Ok, actually we DO have to have/want a conn to state.
 	// An API function might use another API function,
 	// and they might want to share a state conn.
 	State *state.CatState
 
 	// backend hooks the cat up with tiled and rgeod services.
-	backend *params.CatBackendConfig
+	backend *params.CatRPCServices
 
 	// logger logs lines with the cat name attached.
 	logger        *slog.Logger
@@ -33,23 +35,24 @@ type Cat struct {
 	completedNaps event.FeedOf[cattrack.CatNap]
 }
 
-func NewCat(catID conceptual.CatID, backing *params.CatBackendConfig) (*Cat, error) {
+func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServices) (*Cat, error) {
 	c := &Cat{
 		CatID:         catID,
-		backend:       backing,
+		DataDir:       datadir,
+		backend:       backend,
 		logger:        slog.With("cat", catID),
 		completedLaps: event.FeedOf[cattrack.CatLap]{},
 		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
 
-	if c.backend.TileD != nil {
+	if c.IsTilingEnabled() {
 		c.logger.Info("Tiled RPC client configured",
 			"network", c.backend.TileD.Network, "address", c.backend.TileD.Address)
 	} else {
 		c.logger.Debug("No Tiled RPC client configured")
 	}
 
-	if c.backend.RgeoD != nil {
+	if c.IsRgeoEnabled() {
 		c.logger.Info("Rgeo RPC client configured",
 			"network", c.backend.RgeoD.Network, "address", c.backend.RgeoD.Address)
 	} else {
@@ -66,7 +69,7 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 		return c.State, nil
 	}
 	s := &state.Cat{CatID: c.CatID}
-	st, err := s.NewCatWithState(readOnly)
+	st, err := s.NewCatWithState(c.DataDir, readOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +95,18 @@ func (c *Cat) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (c *Cat) IsRPCEnabled() bool {
+	return c.backend != nil
+}
+
+func (c *Cat) IsTilingEnabled() bool {
+	return c.IsRPCEnabled() && c.backend.TileD != nil
+}
+
+func (c *Cat) IsRgeoEnabled() bool {
+	return c.IsRPCEnabled() && c.backend.RgeoD != nil
 }
 
 func getRPCClient(config params.ListenerConfig) (*rpc.Client, error) {
