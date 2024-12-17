@@ -140,7 +140,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 func (ci *CellIndexer) indexerTForBucket(level Bucket) cattrack.Indexer {
 	if ci.Config.LevelIndexerT != nil {
-		if v, ok := ci.Config.LevelIndexerT[level]; ok {
+		if v, ok := ci.Config.LevelIndexerT[level]; ok && v != nil {
 			return v
 		}
 	}

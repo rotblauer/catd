@@ -2,6 +2,11 @@ package cattrack
 
 // Indexer is an interface that defines the methods for indexing a CatTrack.
 // By another name, a Reducer. Maybe, a dimension reducer.
+// CatTrack asserts here its own opinion that it is the only type of data that can be indexed.
+// Some day, the Indexer (actually, Reducer) will take
+// the Index and IsEmpty interface methods for its own, and
+// will deal in any kind of data structure you want.
+// Then, FromCatTrack might become Unmarshal/Decode, and ApplyToCatTrack might become Marshal/Encode.
 type Indexer interface {
 	// FromCatTrack associates a given cattrack value with an Indexer.
 	// The indexer can choose to maintain a reference to the CatTrack or not.

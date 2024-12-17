@@ -38,7 +38,7 @@ type MyReducerT struct {
 }
 
 func (ix *MyReducerT) IsEmpty() bool {
-	return ix.Count == 0
+	return ix == nil || ix.Count == 0
 }
 
 func (*MyReducerT) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
@@ -134,11 +134,14 @@ func (*MyReducerT) FromCatTrack(ct CatTrack) Indexer {
 
 func (ix *MyReducerT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		out := next.(*MyReducerT)
-		if out.VisitCount == 0 {
-			out.VisitCount++
+		nextT := next.(*MyReducerT)
+		if nextT.VisitCount == 0 {
+			nextT.VisitCount++
 		}
-		return out
+		if nextT.Count == 0 {
+			nextT.Count++
+		}
+		return nextT
 	}
 
 	oldT, nextT := old.(*MyReducerT), next.(*MyReducerT)
