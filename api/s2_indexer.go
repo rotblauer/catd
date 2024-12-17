@@ -144,11 +144,14 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 				errs = nil
 			}
 		case s, ok := <-batched:
-			if pushBatchN.Add(1) > 1 {
-				sourceMode = tiled.SourceModeAppend
-			}
 			if !ok {
 				batched = nil
+			}
+			if len(s) == 0 {
+				continue
+			}
+			if pushBatchN.Add(1) > 1 {
+				sourceMode = tiled.SourceModeAppend
 			}
 			edit := stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 				track.ID = track.MustTime().Unix()

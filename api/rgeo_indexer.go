@@ -162,6 +162,9 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 			if !ok {
 				batched = nil
 			}
+			if len(s) == 0 {
+				continue
+			}
 			if pushBatchN.Add(1) > 1 {
 				sourceMode = tiled.SourceModeAppend
 			}

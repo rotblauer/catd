@@ -108,6 +108,35 @@ func Tee[T any](ctx context.Context, in <-chan T) (a, b chan T) {
 	return
 }
 
+//
+//func BatchCh[T any](ctx context.Context, predicate func(T) bool, in <-chan T) chan<- chan T {
+//	out := make(chan <-chan T)
+//	go func() {
+//		defer close(out)
+//		var batch []T
+//		flush := func() {
+//			if len(batch) > 0 {
+//				out <- Slice(ctx, batch)
+//				batch = []T{}
+//			}
+//		}
+//		defer flush()
+//		for element := range in {
+//			el := element
+//			if predicate(el) {
+//				flush()
+//			}
+//			batch = append(batch, el)
+//			select {
+//			case <-ctx.Done():
+//				return
+//			default:
+//			}
+//		}
+//	}()
+//	return out
+//}
+
 // Batch is a non-blocking function that batches elements from the input channel.
 func Batch[T any](ctx context.Context, predicate func(T) bool, posticate func([]T) bool, in <-chan T) <-chan []T {
 	out := make(chan []T)
