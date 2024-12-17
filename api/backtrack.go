@@ -5,6 +5,7 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"math"
 	"sync"
 	"time"
 )
@@ -141,7 +142,13 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		}
 
 		if t.After(popWindow.First) && t.Before(popWindow.Last) {
-			c.logger.Warn("Track within pop window", "track", ct.StringPretty(), "first", popWindow.First, "last", popWindow.Last)
+			df := t.Sub(popWindow.First).Round(time.Second).Seconds()
+			dl := popWindow.Last.Sub(t).Round(time.Second).Seconds()
+			d := math.Min(df, dl)
+			c.logger.Warn("Track within pop window",
+				"by", (time.Second * time.Duration(d)).String(),
+				"track", ct.StringPretty(),
+				"first", popWindow.First, "last", popWindow.Last)
 			return false
 		}
 

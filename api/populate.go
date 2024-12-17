@@ -302,7 +302,7 @@ func (c *Cat) IsTilingEnabled() bool {
 }
 
 // sendToCatTileD sends a batch of features to the Cat RPC client.
-// It is a blocking function, and registers itself with the Cat Waiting state.
+// It is a blocking function.
 func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
 	if !c.IsTilingEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
@@ -346,25 +346,26 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 	return nil
 }
 
-func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (int, error) {
+// sinkStreamToJSONGZWriter sinks a stream of T encoded as JSON to some GZ writer.
+func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer slog.Info("Sunk stream to JSON GZ writer")
-	gz, err := gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
+	var gz *gzip.Writer
+	gz, err = gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
 	if err != nil {
-		return 0, err
+		return
 	}
 	defer gz.Close() // Ignore error, ensure assign returning error below.
 	enc := json.NewEncoder(gz)
-	n := 0
 	for a := range in {
 		if err := enc.Encode(a); err != nil {
 			slog.Error("Failed to write", "error", err)
-			return n, err
+			return items, err
 		}
-		n++
+		items++
 	}
 	// Assignment returning error, defer above.
 	err = gz.Close()
-	return n, err
+	return items, err
 }
 
 func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (int, error) {

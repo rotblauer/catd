@@ -37,7 +37,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 	return ci
 }
 
-func TestCellIndexer_Index(t *testing.T) {
+func TestCellIndexer(t *testing.T) {
 	testdataPathGZ := "../testing/testdata/private/edge_20241217.json.gz"
 	gzr, err := catz.NewGZFileReader(testdataPathGZ)
 	if err != nil {

@@ -14,7 +14,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"sync/atomic"
 	"time"
 )
 
@@ -55,13 +54,14 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(catS2.DefaultCellLevels))
+	defer close(sendErrs)
 	for _, level := range catS2.DefaultCellLevels {
-		if level < catS2.CellLevelTilingMinimum ||
-			level > catS2.CellLevelTilingMaximum {
+		if !c.IsTilingEnabled() {
+			c.logger.Warn("No RPC configuration, skipping S2 index dumps", "level", level)
 			continue
 		}
-		if !c.IsTilingEnabled() {
-			c.logger.Warn("No RPC configuration, skipping S2 indexing", "level", level)
+		if level < catS2.CellLevelTilingMinimum ||
+			level > catS2.CellLevelTilingMaximum {
 			continue
 		}
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(reducer.Bucket(level))
@@ -93,7 +93,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			return err
 		}
 	}
-	close(sendErrs)
 	return nil
 }
 
@@ -109,17 +108,6 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 		return nil
 	}
 
-	batchSize := params.RPCTrackBatchSize
-	pushBatchN := &atomic.Int32{} // for truncating once, then appending; and counting batches
-
-	// Track different data source.
-	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
-
-	// Batch dumped tracks to avoid sending too many at once.
-	batched := stream.Batch(ctx, nil, func(s []cattrack.CatTrack) bool {
-		return len(s) == batchSize
-	}, dump)
-	sourceMode := tiled.SourceModeTruncate
 	levelZoomMin := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][0]
 	levelZoomMax := catS2.TilingDefaultCellZoomLevels[catS2.CellLevel(level)][1]
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNameCells, nil)
@@ -127,57 +115,39 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 	levelTippeConfig.MustSetPair("--maximum-zoom", fmt.Sprintf("%d", levelZoomMax))
 	levelTippeConfig.MustSetPair("--minimum-zoom", fmt.Sprintf("%d", levelZoomMin))
 
-	for batched != nil || errs != nil {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err, ok := <-errs:
-			if err != nil {
-				c.logger.Error("Failed to dump level", "error", err)
-				return err
-			}
-			if !ok {
-				errs = nil
-			}
-		case s, ok := <-batched:
-			if !ok {
-				batched = nil
-			}
-			if len(s) == 0 {
-				continue
-			}
-			if pushBatchN.Add(1) > 1 {
-				sourceMode = tiled.SourceModeAppend
-			}
-			edit := stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
-				track.ID = track.MustTime().Unix()
-				track.Geometry = catS2.CellGeometryForPointAtLevel(track.Point(), catS2.CellLevel(level))
-				return track
-			}, stream.Slice(ctx, s))
-			err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-				SourceSchema: tiled.SourceSchema{
-					CatID:      c.CatID,
-					SourceName: "s2_cells",
-					LayerName:  fmt.Sprintf("level-%02d-polygons", level),
-				},
-				TippeConfigName: "",
-				TippeConfigRaw:  levelTippeConfig,
-				Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
-				SourceModes:     []tiled.SourceMode{sourceMode},
-			}, edit)
-			if err != nil {
-				return err
-			}
+	// Dump all indexed tracks for the level.
+	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
+	edit := stream.Transform[cattrack.CatTrack, cattrack.CatTrack](ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
+		track.ID = track.MustTime().Unix()
+		track.Geometry = catS2.GetCellGeometry(track.Point(), catS2.CellLevel(level))
+		return track
+	}, dump)
+	err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+		SourceSchema: tiled.SourceSchema{
+			CatID:      c.CatID,
+			SourceName: "s2_cells",
+			LayerName:  fmt.Sprintf("level-%02d", level),
+		},
+		TippeConfigName: "",
+		TippeConfigRaw:  levelTippeConfig,
+		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeTruncate},
+	}, edit)
+
+	for err := range errs {
+		if err != nil {
+			c.logger.Error("Failed to dump unique tracks level", "error", err)
+			return err
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
 	transformed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 		cp := track
 		cp.ID = track.MustTime().Unix()
-		cp.Geometry = catS2.CellGeometryForPointAtLevel(cp.Point(), level)
+		cp.Geometry = catS2.GetCellGeometry(cp.Point(), level)
 		return cp
 	}, stream.Unbatch[[]cattrack.CatTrack, cattrack.CatTrack](ctx, in))
 

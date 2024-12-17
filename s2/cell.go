@@ -33,7 +33,7 @@ func CellIDForTrackLevel(ct cattrack.CatTrack, level CellLevel) s2.CellID {
 
 func dbBucket(level CellLevel) []byte { return []byte{byte(level)} }
 
-func CellGeometryForPointAtLevel(pt orb.Point, level CellLevel) orb.Polygon {
+func GetCellGeometry(pt orb.Point, level CellLevel) orb.Polygon {
 	leaf := s2.CellIDFromLatLng(s2.LatLngFromDegrees(pt.Lat(), pt.Lon()))
 	leveledCellID := CellIDWithLevel(leaf, level)
 

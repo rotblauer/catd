@@ -57,7 +57,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -67,10 +66,8 @@ type Bucket int
 type CellIndexer struct {
 	Config *CellIndexerConfig
 
-	Caches map[Bucket]*lru.Cache[string, cattrack.Indexer]
-	DB     *bbolt.DB
-
-	Waiting sync.WaitGroup
+	caches map[Bucket]*lru.Cache[string, cattrack.Indexer]
+	db     *bbolt.DB
 
 	logger         *slog.Logger
 	indexFeeds     map[Bucket]*event.FeedOf[[]cattrack.CatTrack]
@@ -97,6 +94,7 @@ type CellIndexerConfig struct {
 // ErrNoKeyFound should be returned by a CatKeyFn if no key is found.
 var ErrNoKeyFound = errors.New("no key found")
 
+// CatKeyFn describes a function that returns an indexing key for a CatTrack/level.
 type CatKeyFn func(track cattrack.CatTrack, bucket Bucket) (string, error)
 
 func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
@@ -120,12 +118,6 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 	uniqIndexFeeds := make(map[Bucket]*event.FeedOf[[]cattrack.CatTrack], len(config.Buckets))
 
 	for _, bucket := range config.Buckets {
-		//gzf, err := f.NewGZFileWriter(fmt.Sprintf("s2_level-%02d.geojson.gz", level), nil)
-		//if err != nil {
-		//	return nil, err
-		//}
-		//flatFileMap[level] = gzf
-
 		indexFeeds[bucket] = &event.FeedOf[[]cattrack.CatTrack]{}
 		uniqIndexFeeds[bucket] = &event.FeedOf[[]cattrack.CatTrack]{}
 	}
@@ -137,8 +129,8 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 
 	return &CellIndexer{
 		Config: config,
-		Caches: make(map[Bucket]*lru.Cache[string, cattrack.Indexer], len(config.Buckets)),
-		DB:     db,
+		caches: make(map[Bucket]*lru.Cache[string, cattrack.Indexer], len(config.Buckets)),
+		db:     db,
 
 		indexFeeds:     indexFeeds,
 		uniqIndexFeeds: uniqIndexFeeds,
@@ -207,7 +199,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	if err != nil {
 		return err
 	}
-	ci.Caches[level] = cache
+	ci.caches[level] = cache
 
 	indexT := ci.indexerTForBucket(level)
 
@@ -250,7 +242,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	gzw := gzip.NewWriter(new(bytes.Buffer))
 	defer gzw.Close()
 
-	err = ci.DB.Update(func(tx *bbolt.Tx) error {
+	err = ci.db.Update(func(tx *bbolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte{byte(level)})
 		if err != nil {
 			return err
@@ -339,7 +331,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 }
 
 func (ci *CellIndexer) Close() error {
-	if err := ci.DB.Close(); err != nil {
+	if err := ci.db.Close(); err != nil {
 		return err
 	}
 	return nil
@@ -358,7 +350,7 @@ func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan err
 		r1 := new(gzip.Reader)
 		defer r1.Close()
 
-		err := ci.DB.View(func(tx *bbolt.Tx) error {
+		err := ci.db.View(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte{byte(level)})
 			if b == nil {
 				return fmt.Errorf("bucket not found")
