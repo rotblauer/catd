@@ -68,3 +68,14 @@ func (c *Cat) handleInvalid(ctx context.Context, invalid chan cattrack.CatTrack,
 		}
 	}
 }
+
+func (c *Cat) dedupe(ctx context.Context, size int, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
+	dedupeCache := cattrack.NewDedupeLRUFunc(size)
+	return stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
+		if !dedupeCache(ct) {
+			c.logger.Warn("Deduped track", "track", ct.StringPretty())
+			return false
+		}
+		return true
+	}, in)
+}

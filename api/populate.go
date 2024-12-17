@@ -115,21 +115,14 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
+	// Validate, dedupe, sanitize.
 	valid, invalid := c.Validate(ctx, in)
 	c.waitHandleInvalid(ctx, invalid, c.State.Waiting)
-
-	dedupeCache := cattrack.NewDedupeLRUFunc()
-	deduped := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
-		// Dedupe with hash cache.
-		if !dedupeCache(ct) {
-			c.logger.Warn("Deduped track", "track", ct.StringPretty())
-			return false
-		}
-		return true
-	}, valid)
-
+	deduped := c.dedupe(ctx, params.DedupeCacheSize, valid)
 	sanitized := stream.Transform(ctx, cattrack.Sanitize, deduped)
 
+	// The catdReceivedAt stamp will indicate the time Populate was called
+	// for this batch of tracks (not exactly the time this function receives it).
 	receivedAt := time.Now().Unix()
 	stamped := stream.Transform(ctx, func(ct cattrack.CatTrack) cattrack.CatTrack {
 		ct.SetPropertySafe("catdReceivedAt", receivedAt)
@@ -143,6 +136,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		//pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 
+	// Unbacktrack drops tracks that are older than the last known track,
+	// or otherwise within the window of seen tracks, critically: per cat/uuid.
 	unbacktracked, onCloseBack := c.Unbacktrack(ctx, pipedLast)
 	defer func() {
 		if err := onCloseBack(); err != nil {
@@ -198,7 +193,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}()
 
 	// All non-snaps flow to these channels.
-	//storeCh, pipelineChan := stream.Tee(ctx, noSnaps)
 	storeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
 	pipelineChan := make(chan cattrack.CatTrack, params.DefaultBatchSize)
 	stream.TeeMany(ctx, noSnaps, storeCh, pipelineChan)
@@ -355,18 +349,17 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-cha
 	return items, err
 }
 
-func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (int, error) {
+func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer slog.Info("Sunk stream to JSON writer")
 	enc := json.NewEncoder(wr)
-	n := 0
 	for a := range in {
 		if err := enc.Encode(a); err != nil {
 			slog.Error("Failed to write", "error", err)
-			return n, err
+			return items, err
 		}
-		n++
+		items++
 	}
-	return n, nil
+	return items, nil
 }
 
 // sendGZippedToCatRPCClient sends a batch of gzipped features to the Cat RPC client.

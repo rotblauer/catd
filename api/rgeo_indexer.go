@@ -36,10 +36,12 @@ func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 		bucketLevels = append(bucketLevels, reducer.Bucket(i))
 	}
 	return reducer.NewCellIndexer(&reducer.CellIndexerConfig{
-		CatID:           c.CatID,
-		DBPath:          filepath.Join(c.State.Flat.Path(), params.RgeoDBName),
-		BatchSize:       params.DefaultBatchSize,
-		Buckets:         bucketLevels,
+		CatID:     c.CatID,
+		DBPath:    filepath.Join(c.State.Flat.Path(), params.RgeoDBName),
+		BatchSize: params.DefaultBatchSize,
+		Buckets:   bucketLevels,
+
+		// The default indexer is a StackerV1 with a visit threshold of 24 hours.
 		DefaultIndexerT: rgeo.DefaultIndexerT,
 		LevelIndexerT:   nil,
 		BucketKeyFn:     rgeo.CatKeyFn,
@@ -51,6 +53,12 @@ type CatHandler func(ctx context.Context, in <-chan cattrack.CatTrack) error
 
 // RGeoIndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) error {
+	if !c.IsRgeoEnabled() {
+		c.logger.Warn("No Rgeo RPC client configured, skipping Rgeo indexing")
+		stream.Blackhole(in)
+		return nil
+	}
+
 	c.getOrInitState(false)
 
 	c.logger.Info("Rgeo Indexing cat tracks")

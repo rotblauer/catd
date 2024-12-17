@@ -316,6 +316,13 @@ func Sink[T any](ctx context.Context, sink func(T), in <-chan T) {
 	}
 }
 
+func Blackhole[T any](in <-chan T) {
+	go func() {
+		for range in {
+		}
+	}()
+}
+
 // Merge is a non-blocking function that merges multiple input channels into a single output channel.
 // It blocks until all input channels are closed.
 func Merge[T any](ctx context.Context, ins ...chan T) <-chan T {

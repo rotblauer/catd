@@ -135,7 +135,7 @@ func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 	// If you start tracking on Monday, stop on Tuesday, and start again on Friday,
 	// you don't get offset points for Wednesday and Thursday.
 	if offset > time.Hour*24 {
-		return time.Second
+		offset = time.Second
 	}
 	return offset
 }

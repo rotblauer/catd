@@ -19,11 +19,11 @@ func TestCat_Unbacktrack_NoneMissing(t *testing.T) {
 	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
 	defer slog.SetLogLoggerLevel(oldLevel)
 	cases := []struct {
-		cat      string
 		gzSource string
+		cat      string
 	}{
-		{"rye", testdata.Path(testdata.Source_EDGE20241217)},
-		{"ia", testdata.Path(testdata.Source_EDGE20241217)},
+		{cat: "rye", gzSource: testdata.Path(testdata.Source_EDGE20241217)},
+		{cat: "ia", gzSource: testdata.Path(testdata.Source_EDGE20241217)},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%s-%s", filepath.Base(c.gzSource), c.cat), func(t *testing.T) {

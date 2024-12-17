@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"github.com/golang/groupcache/lru"
 	"github.com/mitchellh/hashstructure/v2"
-	"github.com/rotblauer/catd/params"
 )
 
-func NewDedupeLRUFunc() func(CatTrack) bool {
-	var dedupeCache = lru.New(params.DefaultBatchSize)
+func NewDedupeLRUFunc(size int) func(CatTrack) bool {
+	var dedupeCache = lru.New(size)
 	return func(track CatTrack) bool {
 		hash, err := hashstructure.Hash(track, hashstructure.FormatV2, nil)
 		if err != nil {

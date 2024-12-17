@@ -97,4 +97,63 @@ func testCat_Validate(t *testing.T, cat, gzSource string) {
 	wait.Wait()
 }
 
-func TestCat_Ded
+func TestCat_dedupe(t *testing.T) {
+	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
+	defer slog.SetLogLoggerLevel(oldLevel)
+
+	source := testdata.Path(testdata.Source_EDGE20241217)
+	gzr, err := catz.NewGZFileReader(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gzr.Close()
+
+	tc := NewTestCatWriter(t, "any", nil)
+	c := tc.Cat()
+	defer tc.CloseAndDestroy()
+
+	ctx := context.Background()
+	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	go stream.Sink(ctx, nil, errs) // Ignore.
+
+	raw := stream.Collect[cattrack.CatTrack](ctx, tracks)
+	rawTracksN := len(raw)
+	if rawTracksN == 0 {
+		t.Fatal("no tracks")
+	}
+
+	// Tee into streams for
+	// - raw tracks, which should not have any dupes (as-is)
+	// - another stream to add some dupes to and make sure they get filtered
+	aTracks, bTracks := stream.Tee(ctx, stream.Slice(ctx, raw))
+
+	wait := sync.WaitGroup{}
+	wait.Add(2)
+
+	// Expect 0 dupes in raw/good/canonical source.
+	// The deduped stream size should be equivalent to raw.
+	go func() {
+		defer wait.Done()
+		deduped := c.dedupe(ctx, rawTracksN, aTracks)
+		dedupedCollection := stream.Collect[cattrack.CatTrack](ctx, deduped)
+		if len(dedupedCollection) != len(raw) {
+			t.Errorf("expected %d deduped tracks, got %d", len(raw), len(dedupedCollection))
+		}
+	}()
+	// Collect duping tracks.
+	go func() {
+		defer wait.Done()
+		duplicated := stream.Collect[cattrack.CatTrack](ctx, bTracks)
+		// Deduped stream size should be equal to half of duping stream.
+		duplicated = append(duplicated, duplicated...)
+		expected := len(duplicated) / 2
+
+		deduped := c.dedupe(ctx, rawTracksN, stream.Slice(ctx, duplicated))
+		dedupedCollection := stream.Collect[cattrack.CatTrack](ctx, deduped)
+		if len(dedupedCollection) != expected {
+			t.Errorf("expected %d deduped tracks, got %d (difference: %d)",
+				expected, len(dedupedCollection), expected-len(dedupedCollection))
+		}
+	}()
+	wait.Wait()
+}

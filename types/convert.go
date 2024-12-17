@@ -231,11 +231,11 @@ func FeatureToTrack(f geojson.Feature) (trackpoint.TrackPoint, error) {
 	return tp, nil
 }
 
-// TrackToFeature2 (WIP/experimental) is a track->geojson function that uses reflection to
+// trackToFeature2 (WIP/experimental) is a track->geojson function that uses reflection to
 // transfer fields. This might be useful for a more dynamic approach to geojson, but it's
 // probably better in the broader scheme to just swap trackpoints for geojson entirely, though
 // this would require coordinated changes between the client (cattracker) and server.
-func TrackToFeature2(tp *trackpoint.TrackPoint) *geojson.Feature {
+func trackToFeature2(tp *trackpoint.TrackPoint) *geojson.Feature {
 	if tp == nil {
 		return nil
 	}
