@@ -142,6 +142,8 @@ func (c *Cat) tiledDumpS2LevelIfUnique(ctx context.Context, cellIndexer *reducer
 	return err
 }
 
+// sendUniqueTracksLevelAppending is not currently in use, but here
+// for reference in case you want to send unique tracks to tiled with source mode appending.
 func (c *Cat) sendUniqueTracksLevelAppending(ctx context.Context, level catS2.CellLevel, in <-chan []cattrack.CatTrack, awaitErr <-chan error) {
 	transformed := stream.Transform(ctx, func(track cattrack.CatTrack) cattrack.CatTrack {
 		cp := track
