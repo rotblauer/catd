@@ -26,7 +26,7 @@ func TestCat_Unbacktrack_NoneMissing(t *testing.T) {
 		{"ia", testdata.Path(testdata.Source_EDGE20241217)},
 	}
 	for _, c := range cases {
-		t.Run(c.cat, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s-%s", filepath.Base(c.gzSource), c.cat), func(t *testing.T) {
 			testCat_Unbacktrack_NoneMissing(t, c.cat, c.gzSource)
 		})
 	}

@@ -91,7 +91,6 @@ func (c *Cat) SubscribeFancyLogs() {
 }
 
 // Populate persists incoming CatTracks for one cat.
-// FIXME: All functions should return errors, and this function should return first of any errors.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
 
 	c.SubscribeFancyLogs()
@@ -116,28 +115,20 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 			"elapsed", time.Since(started).Round(time.Millisecond))
 	}()
 
+	valid, invalid := c.Validate(ctx, in)
+	c.waitHandleInvalid(ctx, invalid, c.State.Waiting)
+
 	dedupeCache := cattrack.NewDedupeLRUFunc()
-	validated := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
-		if ct.IsEmpty() {
-			c.logger.Error("Invalid track: track is empty")
-			return false
-		}
-		if err := ct.Validate(); err != nil {
-			c.logger.Error("Invalid track", "error", err)
-			return false
-		}
-		if id := ct.CatID(); c.CatID != id {
-			c.logger.Error("Invalid track, mismatched cat", "want", fmt.Sprintf("%q", c.CatID), "got", fmt.Sprintf("%q", id))
-			return false
-		}
+	deduped := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		// Dedupe with hash cache.
 		if !dedupeCache(ct) {
 			c.logger.Warn("Deduped track", "track", ct.StringPretty())
 			return false
 		}
 		return true
-	}, in)
-	sanitized := stream.Transform(ctx, cattrack.Sanitize, validated)
+	}, valid)
+
+	sanitized := stream.Transform(ctx, cattrack.Sanitize, deduped)
 
 	receivedAt := time.Now().Unix()
 	stamped := stream.Transform(ctx, func(ct cattrack.CatTrack) cattrack.CatTrack {
