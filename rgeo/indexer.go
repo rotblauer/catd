@@ -36,7 +36,7 @@ func getStableIndexForDataset(name string) int {
 	return -1
 }
 
-var DefaultIndexerT = &cattrack.StackerV1{
+var DefaultIndexerT = &cattrack.MyReducerT{
 	VisitThreshold: params.RgeoDefaultVisitThreshold,
 }
 

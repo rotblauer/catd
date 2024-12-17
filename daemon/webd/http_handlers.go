@@ -102,7 +102,7 @@ func getStackerIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
 		return
 	}
-	indexed := cattrack.StackerV1{}
+	indexed := cattrack.MyReducerT{}
 	if err := cat.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), &indexed); err != nil {
 		slog.Warn("Failed to read stacker index", "error", err)
 		http.Error(w, "Failed to read stacker index", http.StatusInternalServerError)

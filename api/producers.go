@@ -75,8 +75,8 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	c.logger.Info("Simple indexer")
 	defer c.logger.Info("Simple indexer complete")
 
-	indexer := &cattrack.StackerV1{}
-	old := &cattrack.StackerV1{}
+	indexer := &cattrack.MyReducerT{}
+	old := &cattrack.MyReducerT{}
 	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), old); err != nil {
 		c.logger.Warn("Did not read stacker state (new cat?)", "error", err)
 	}
@@ -89,7 +89,7 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 		}
 		indexing := indexer.FromCatTrack(track)
 		next := indexer.Index(old, indexing)
-		*old = *next.(*cattrack.StackerV1)
+		*old = *next.(*cattrack.MyReducerT)
 	}
 
 	c.logger.Info("Simple indexer complete")

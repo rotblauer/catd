@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-// StackerV1 is an Indexer implementation that tracks the number of times
+// MyReducerT is an Indexer implementation that tracks the number of times
 // a cat has entered and left a cell, as well as the total time spent in the cell.
 // It also tracks the activity mode of the cat while in the cell,
 // and the first and last times the cat was in the cell.
-type StackerV1 struct {
+type MyReducerT struct {
 	Count int
 
 	// VisitCount is the number of times the cat has entered and left this cell.
@@ -37,13 +37,13 @@ type StackerV1 struct {
 	AMFly        float64
 }
 
-func (ix *StackerV1) IsEmpty() bool {
+func (ix *MyReducerT) IsEmpty() bool {
 	return ix.Count == 0
 }
 
-func (*StackerV1) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
+func (*MyReducerT) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
 	pct := &ct
-	ixr := idxr.(*StackerV1)
+	ixr := idxr.(*MyReducerT)
 	props := map[string]interface{}{
 		"Count":                   ixr.Count,
 		"VisitCount":              ixr.VisitCount,
@@ -63,7 +63,7 @@ func (*StackerV1) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
 	return *pct
 }
 
-func (*StackerV1) FromCatTrack(ct CatTrack) Indexer {
+func (*MyReducerT) FromCatTrack(ct CatTrack) Indexer {
 	first, err := time.Parse(time.RFC3339, ct.Properties.MustString("FirstTime", ""))
 	if err != nil {
 		first = ct.MustTime()
@@ -78,7 +78,7 @@ func (*StackerV1) FromCatTrack(ct CatTrack) Indexer {
 		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
 	}
 
-	out := &StackerV1{
+	out := &MyReducerT{
 		Count:           ct.Properties.MustInt("Count", 1),
 		VisitCount:      ct.Properties.MustInt("VisitCount", 0),
 		FirstTime:       first,
@@ -132,18 +132,18 @@ func (*StackerV1) FromCatTrack(ct CatTrack) Indexer {
 	return out
 }
 
-func (ix *StackerV1) Index(old, next Indexer) Indexer {
+func (ix *MyReducerT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		out := next.(*StackerV1)
+		out := next.(*MyReducerT)
 		if out.VisitCount == 0 {
 			out.VisitCount++
 		}
 		return out
 	}
 
-	oldT, nextT := old.(*StackerV1), next.(*StackerV1)
+	oldT, nextT := old.(*MyReducerT), next.(*MyReducerT)
 
-	out := &StackerV1{
+	out := &MyReducerT{
 		// Relatively sane defaults only for concision.
 		FirstTime: oldT.FirstTime,
 		LastTime:  nextT.LastTime,

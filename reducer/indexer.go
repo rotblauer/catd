@@ -103,7 +103,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		return nil, fmt.Errorf("no buckets provided")
 	}
 	if config.DefaultIndexerT == nil {
-		config.DefaultIndexerT = &cattrack.StackerV1{}
+		config.DefaultIndexerT = &cattrack.MyReducerT{}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.DBPath), 0777); err != nil {

@@ -22,7 +22,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 			DBPath:    filepath.Join(os.TempDir(), "reducer_test.catdb"),
 			BatchSize: params.DefaultBatchSize,
 			Buckets:   []Bucket{3, 4, 5},
-			DefaultIndexerT: &cattrack.StackerV1{
+			DefaultIndexerT: &cattrack.MyReducerT{
 				VisitThreshold: params.S2DefaultVisitThreshold,
 			},
 			LevelIndexerT: nil,
