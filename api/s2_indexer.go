@@ -50,11 +50,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 		c.logger.Error("Failed to initialize S2 indexer", "error", err)
 		return err
 	}
-	defer func() {
-		if err := cellIndexer.Close(); err != nil {
-			c.logger.Error("Failed to close indexer", "error", err)
-		}
-	}()
+	defer cellIndexer.Close()
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
