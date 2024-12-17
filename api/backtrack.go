@@ -56,6 +56,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 	// popUUIDWindowMap defines the time range of cat tracks for this population.
 	popUUIDWindowMap := sync.Map{}
 
+	// onClose stores the stateful representation of the cat's window map(s).
 	onClose := func() error {
 
 		// Extend the cat window map by the population window map.
@@ -121,9 +122,8 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		}
 	}
 
-	onceDejavu := sync.Once{}
-	onceFresh := sync.Once{}
-
+	onceDejaVu := sync.Once{}
+	onceJamaisVu := sync.Once{}
 	unbacktracked := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
 		uuid := ct.Properties.MustString("UUID", "")
 		t := ct.MustTime()
@@ -148,7 +148,8 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			c.logger.Warn("Track within pop window",
 				"by", (time.Second * time.Duration(d)).String(),
 				"track", ct.StringPretty(),
-				"first", popWindow.First, "last", popWindow.Last)
+				"first", popWindow.First.Format(time.DateTime),
+				"last", popWindow.Last.Format(time.DateTime))
 			return false
 		}
 
@@ -173,13 +174,13 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		spreadsCatWindow := t.Before(catWindow.First) || t.After(catWindow.Last)
 		if !spreadsCatWindow {
 			// Do not update the pop window if we're not populating this track.
-			onceDejavu.Do(func() {
-				c.logger.Warn("Track within cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
+			onceDejaVu.Do(func() {
+				c.logger.Warn("Deja vu: track within cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
 			})
 			return false
 		}
-		onceFresh.Do(func() {
-			c.logger.Info("Track outside cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
+		onceJamaisVu.Do(func() {
+			c.logger.Info("Jamais vu: track outside cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
 		})
 		if t.After(popWindow.Last) {
 			popWindow.Last = t
