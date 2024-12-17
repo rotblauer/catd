@@ -18,7 +18,7 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 	ci, err := NewCellIndexer(
 		&CellIndexerConfig{
 			CatID:     conceptual.CatID("rye"),
-			DBPath:    filepath.Join(os.TempDir(), "reducer.catdb_test"),
+			DBPath:    filepath.Join(os.TempDir(), "reducer_test.catdb"),
 			BatchSize: params.DefaultBatchSize,
 			Buckets:   []Bucket{3, 4, 5},
 			DefaultIndexerT: &cattrack.StackerV1{
@@ -37,8 +37,8 @@ func NewTestCellIndexer(t *testing.T) *CellIndexer {
 	return ci
 }
 
-func TestCellIndexerIndex(t *testing.T) {
-	testdataPathGZ := "../testing/testdata/private/rye_2024-12.geojson.gz"
+func TestCellIndexer_Index(t *testing.T) {
+	testdataPathGZ := "../testing/testdata/private/edge_20241217.json.gz"
 	gzr, err := catz.NewGZFileReader(testdataPathGZ)
 	if err != nil {
 		t.Fatal(err)
