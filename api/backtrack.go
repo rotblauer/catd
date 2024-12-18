@@ -71,6 +71,9 @@ For example, if a cat...
 ...But wait! That's wrong!
 If the other GPS tracker has a different UUID, it will be allowed to populate,
 since the windows are cat/UUID specific.
+
+But still: A Monday's push, then Wednesday, will fail on Tuesday.
+Careful.
 */
 type uuidWindowMap map[string]Window
 
@@ -92,18 +95,24 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 	onClose := func() error {
 
 		// Extend the cat window map by the population window map.
-		popUUIDWindowMap.Range(func(k, v interface{}) bool {
-			pw := v.(Window)
-			catWindow, ok := catUUIDWindowMap.Load(k)
+		recordsPop := uuidWindowMap{} // For logging.
+		popUUIDWindowMap.Range(func(popUuid, tt interface{}) bool {
+			recordsPop[popUuid.(string)] = tt.(Window)
+
+			popW := tt.(Window)
+			catUUIDWindow, ok := catUUIDWindowMap.Load(popUuid)
 			if !ok {
-				catUUIDWindowMap.Store(k, pw)
+				// There was no cat window! Cat's UUID's first rodeo. New cat tracker?
+				catUUIDWindow = popW
+				catUUIDWindowMap.Store(popUuid, catUUIDWindow)
 				return true
 			}
-			cw := catWindow.(Window)
-			cw.ExtendFromWindow(&pw)
-			catUUIDWindowMap.Store(k, cw)
+			catW := catUUIDWindow.(Window)
+			catW.ExtendFromWindow(&popW)
+			catUUIDWindowMap.Store(popUuid, catW)
 			return true
 		})
+		logUUIDWindowMap(c.logger, recordsPop, "Pop cat ")
 
 		// Transform the catUUIDWindowMap to a map[string]Window for marshaling.
 		records := uuidWindowMap{}
@@ -111,7 +120,9 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			records[key.(string)] = value.(Window)
 			return true
 		})
-		logUUIDWindowMap(c.logger, records, "Final ")
+		logUUIDWindowMap(c.logger, records, "All-time cat ")
+
+		// Store the cat's UUID:window map to the persistent state.
 		err := c.State.StoreKVMarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), records)
 		if err != nil {
 			c.logger.Error("Failed to store UUID window map", "error", err)
@@ -127,7 +138,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		for k, v := range recorded {
 			catUUIDWindowMap.Store(k, v)
 		}
-		logUUIDWindowMap(c.logger, recorded, "Reloaded ")
+		logUUIDWindowMap(c.logger, recorded, "Reloaded cat ")
 	}
 
 	onceDejaVu := sync.Once{}
@@ -153,7 +164,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			df := t.Sub(popWindow.First).Round(time.Second).Seconds()
 			dl := popWindow.Last.Sub(t).Round(time.Second).Seconds()
 			d := math.Min(df, dl)
-			c.logger.Warn("Track within pop window",
+			c.logger.Warn("Glitch in matrix: track within pop window",
 				"by", (time.Second * time.Duration(d)).String(),
 				"track", ct.StringPretty(),
 				"first", popWindow.First.Format(time.DateTime),
