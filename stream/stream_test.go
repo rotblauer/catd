@@ -144,18 +144,22 @@ type BatchSorterInt func(ctx context.Context, size int, cmp func(a, b int) int, 
 
 func TestBatchSorting(t *testing.T) {
 	t.Run("BatchSort", func(t *testing.T) {
-		testBatchSort(t, BatchSort)
+		testBatchSort(t, BatchSort, reverse)
 	})
 	t.Run("BatchSortBetterSorta", func(t *testing.T) {
-		t.Skip("failure to comprehend")
-		testBatchSort(t, BatchSortBetterSorta)
+		testBatchSort(t, BatchSortBetterSorta, reverse)
 	})
 	t.Run("BatchSortBetter", func(t *testing.T) {
 		t.Skip("failure to comprehend")
-		testBatchSort(t, BatchSortBetter)
+		testBatchSort(t, BatchSortBetter, reverse)
 	})
 }
-func testBatchSort(t *testing.T, mySort BatchSorterInt) {
+
+func reverse(a, b int) int {
+	return b - a
+}
+
+func testBatchSort(t *testing.T, mySort BatchSorterInt, comparator func(a, b int) int) {
 	cases := []struct {
 		name string
 		fn   func(tt *testing.T)
@@ -176,13 +180,10 @@ func testBatchSort(t *testing.T, mySort BatchSorterInt) {
 		{
 			name: "Sorts",
 			fn: func(tt *testing.T) {
-				reverse := func(a, b int) int {
-					return b - a
-				}
 				data := []int{0, 2, 4, 6, 8}
 				ctx := context.Background()
 				s := Slice(ctx, data)
-				b := mySort(ctx, 2, reverse, s)
+				b := mySort(ctx, 2, comparator, s)
 				result := Collect(ctx, b)
 				if !slices.Equal([]int{2, 0, 6, 4, 8}, result) {
 					tt.Errorf("Expected [2, 0, 6, 4, 8], got %v", result)
@@ -192,13 +193,10 @@ func testBatchSort(t *testing.T, mySort BatchSorterInt) {
 		{
 			name: "Sorts all",
 			fn: func(tt *testing.T) {
-				reverse := func(a, b int) int {
-					return b - a
-				}
 				data := []int{0, 2, 4, 6, 8}
 				ctx := context.Background()
 				s := Slice(ctx, data)
-				b := mySort(ctx, 10, reverse, s)
+				b := mySort(ctx, 10, comparator, s)
 				result := Collect(ctx, b)
 				if !slices.Equal([]int{8, 6, 4, 2, 0}, result) {
 					tt.Errorf("Expected [8, 6, 4, 2, 0], got %v", result)

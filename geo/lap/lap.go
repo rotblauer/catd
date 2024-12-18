@@ -81,6 +81,10 @@ func (s *State) Stream(ctx context.Context, in <-chan cattrack.CatTrack) <-chan 
 	go func() {
 		defer close(s.ch)
 		for ct := range in {
+			if ct.IsEmpty() {
+				panic("empty track")
+				continue
+			}
 			s.Add(&ct)
 			select {
 			case <-ctx.Done():

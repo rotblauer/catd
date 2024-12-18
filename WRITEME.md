@@ -1,5 +1,39 @@
 
 ```shell
+2024/12/18 02:26:59 INFO 🚗 Completed lap cat=ia time=2020-02-16T13:13:21-07:00 count=1677 duration=31m44s meters="35.25 km" activity=Automotive
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x48 pc=0x8572cd]
+
+goroutine 57714 [running]:
+github.com/rotblauer/catd/types/cattrack.ActivityModeNotUnknownNorStationary({0xc0a07f8808, 0x49, 0x0?})
+        /home/ia/dev/rotblauer/catd/types/cattrack/lap.go:139 +0x6d
+github.com/rotblauer/catd/types/cattrack.NewCatLap({0xc0a07f8808, 0x49, 0x7f})
+        /home/ia/dev/rotblauer/catd/types/cattrack/lap.go:47 +0x125
+github.com/rotblauer/catd/geo/lap.(*State).Flush(0xc00f982100)
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:69 +0x31
+github.com/rotblauer/catd/geo/lap.(*State).Add(0xc00f982100, 0xeca08d?)
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:43 +0x6e
+github.com/rotblauer/catd/geo/lap.(*State).Stream.func1()
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:84 +0x185
+created by github.com/rotblauer/catd/geo/lap.(*State).Stream in goroutine 57572
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:81 +0x8f
+
+real    328m57.756s
+user    4m13.853s
+sys     1m30.941s
+
+real    328m57.756s
+user    3220m32.867s
+sys     37m27.584s
+
+real    328m57.757s
+user    3220m33.452s
+sys     37m33.680s
+```
+
+---
+
+```shell
 catd \
     --datadir "${HOME}/tdata" \
     --verbosity 0 \
