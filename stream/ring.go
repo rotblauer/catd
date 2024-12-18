@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"log/slog"
 	"sync"
 )
 
@@ -122,16 +123,44 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 		rb.count++
 	}
 
+	once := sync.Once{}
 	if rb.count > 1 {
 		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
 		// I can walk forwards but not backwards.
-		for i := 0; !sorted && i < rb.count-1; i++ {
-			i1 := (rb.write + rb.size - rb.count + i) % rb.size
-			i2 := (rb.write + rb.size - 1) % rb.size // prev
-			if !rb.less(rb.buffer[i1], rb.buffer[i2]) {
-				rb.buffer[i1], rb.buffer[i2] = rb.buffer[i2], rb.buffer[i1]
+		if !sorted {
+			/*
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5997 pr=5996 wrote=5996
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7689 pr=7688 wrote=7688
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5998 pr=5997 wrote=5997
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7709 pr=7708 wrote=7708
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7714 pr=7713 wrote=7713
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6149 pr=6148 wrote=6148
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6154 pr=6153 wrote=6153
+				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+				^C2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7719 pr=7718 wrote=7718
+
+				This is running backwards.
+			*/
+			ii := 0
+			for ii = 0; ii < rb.count-1; ii++ {
+				wr := (rb.write + rb.size - rb.count + ii) % rb.size
+				pr := (rb.write + rb.size - 1) % rb.size // prev
+				once.Do(func() {
+					slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
+				})
+				if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
+					rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
+				}
 			}
+			slog.Info("SortRing sorted", "iters", ii)
 		}
+
 		//for i := wrote; !sorted && i >= 0; i-- {
 		//	pr := (wrote + rb.size - 1) % rb.size // prev
 		//	wr := (wrote + rb.size - rb.count + i) % rb.size
