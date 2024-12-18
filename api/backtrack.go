@@ -144,8 +144,8 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 	onceDejaVu := sync.Once{}
 	onceJamaisVu := sync.Once{}
 	unbacktracked := stream.Filter(ctx, func(ct cattrack.CatTrack) bool {
-		uuid := ct.Properties.MustString("UUID", "")
 		t := ct.MustTime()
+		uuid := ct.Properties.MustString("UUID", "")
 
 		// Get or init the population window.
 		var popWindow Window

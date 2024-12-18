@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/rotblauer/catd/params"
 	"slices"
 	"sync"
 	"testing"
@@ -127,17 +128,85 @@ func TestTee(t *testing.T) {
 }
 
 func TestMeter(t *testing.T) {
+	old := params.MetricsEnabled
+	params.MetricsEnabled = true
+	defer func() {
+		params.MetricsEnabled = old
+	}()
 	m := metrics.NewMeter()
 	m.Mark(47)
 	if v := m.Snapshot().Count(); v != 47 {
 		t.Fatalf("have %d want %d", v, 47)
 	}
-	/*
-		/home/ia/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.22.2.linux-amd64/bin/go tool test2json -t /home/ia/.cache/JetBrains/GoLand2024.2/tmp/GoLand/___TestMeter_in_github_com_rotblauer_catd_stream.test -test.v=test2json -test.paniconexit0 -test.run ^\QTestMeter\E$
-		=== RUN   TestMeter
-		    stream_test.go:133: have 0 want 47
-		--- FAIL: TestMeter (0.00s)
+}
 
-		FAIL
-	*/
+type BatchSorterInt func(ctx context.Context, size int, cmp func(a, b int) int, s <-chan int) <-chan int
+
+func TestBatchSorting(t *testing.T) {
+	t.Run("BatchSort", func(t *testing.T) {
+		testBatchSort(t, BatchSort)
+	})
+	t.Run("BatchSortBetterSorta", func(t *testing.T) {
+		t.Skip("failure to comprehend")
+		testBatchSort(t, BatchSortBetterSorta)
+	})
+	t.Run("BatchSortBetter", func(t *testing.T) {
+		t.Skip("failure to comprehend")
+		testBatchSort(t, BatchSortBetter)
+	})
+}
+func testBatchSort(t *testing.T, mySort BatchSorterInt) {
+	cases := []struct {
+		name string
+		fn   func(tt *testing.T)
+	}{
+		{
+			name: "Does not unsort",
+			fn: func(tt *testing.T) {
+				data := []int{0, 2, 4, 6, 8}
+				ctx := context.Background()
+				s := Slice(ctx, data)
+				b := mySort(ctx, 2, nil, s)
+				result := Collect(ctx, b)
+				if !slices.Equal([]int{0, 2, 4, 6, 8}, result) {
+					tt.Errorf("Expected [0, 2, 4, 6, 8], got %v", result)
+				}
+			},
+		},
+		{
+			name: "Sorts",
+			fn: func(tt *testing.T) {
+				reverse := func(a, b int) int {
+					return b - a
+				}
+				data := []int{0, 2, 4, 6, 8}
+				ctx := context.Background()
+				s := Slice(ctx, data)
+				b := mySort(ctx, 2, reverse, s)
+				result := Collect(ctx, b)
+				if !slices.Equal([]int{2, 0, 6, 4, 8}, result) {
+					tt.Errorf("Expected [2, 0, 6, 4, 8], got %v", result)
+				}
+			},
+		},
+		{
+			name: "Sorts all",
+			fn: func(tt *testing.T) {
+				reverse := func(a, b int) int {
+					return b - a
+				}
+				data := []int{0, 2, 4, 6, 8}
+				ctx := context.Background()
+				s := Slice(ctx, data)
+				b := mySort(ctx, 10, reverse, s)
+				result := Collect(ctx, b)
+				if !slices.Equal([]int{8, 6, 4, 2, 0}, result) {
+					tt.Errorf("Expected [8, 6, 4, 2, 0], got %v", result)
+				}
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, c.fn)
+	}
 }

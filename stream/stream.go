@@ -177,6 +177,7 @@ func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) in
 	go func() {
 		defer close(out)
 
+		// Could declare size and make, but that's a lot of i's. Append is easy and safe.
 		var batch []T
 		flush := func() {
 			if sorter != nil {
@@ -206,6 +207,98 @@ func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) in
 	}()
 	return out
 }
+
+// BatchSort is a batching function that can sort batches of elements
+// before forwarding them on the channel. The 'sorter' function is optional.
+func BatchSortBetterSorta[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
+	out := make(chan T, batchSize)
+	go func() {
+		defer close(out)
+
+		// Could declare size and make, but that's a lot of i's. Append is easy and safe.
+		var batch []T
+		sorted := true
+		flush := func() {
+			if !sorted && sorter != nil {
+				slices.SortFunc(batch, sorter)
+			}
+			Sink(ctx, func(t T) {
+				out <- t
+			}, Slice(ctx, batch))
+			sorted = true
+			batch = []T{}
+		}
+		defer flush()
+
+		// Range, blocking until 'in' is closed.
+		n := 0
+		for element := range in {
+			batch = append(batch, element)
+			n++
+			if i := n % batchSize; i > 1 {
+				sorted = sorted || slices.IsSortedFunc([]T{batch[i-2], batch[i-1]}, sorter)
+			}
+			if len(batch) == batchSize {
+				flush()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	return out
+}
+
+// BatchSortBetter is a batching function that can sort batches of elements
+// before forwarding them on the channel. The 'sorter' function is optional.
+func BatchSortBetter[T any](ctx context.Context, maxSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
+	out := make(chan T, maxSize)
+	go func() {
+		defer close(out)
+
+		// Range, blocking until 'in' is closed.
+		var batch = make([]T, maxSize)
+		i := 0
+		n := 0
+		sorted := true
+
+		flush := func() {
+			//n % maxSize
+		}
+		defer flush()
+
+		for element := range in {
+			batch[i] = element // these
+			n++                // always
+			i++                // happen
+			if i > 1 {
+				// a truth can become a lie, but a lie never the truth
+				sorted = sorted || slices.IsSortedFunc([]T{batch[i-2], batch[i-1]}, sorter)
+			}
+			if len(batch) == maxSize {
+				i = 0
+				flush()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+		}
+	}()
+	return out
+}
+
+//// batch[0] will always be sent
+//// but first sort (all) if any of this batch were unsorted
+//// ... and batch[0] isn't batch[0], its the fifo element i from the ring buffer
+//if sorter != nil {
+//	if !slices.IsSortedFunc(batch, sorter) {
+//		slices.SortFunc(batch, sorter)
+//	}
+//}
 
 func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in <-chan T) <-chan T {
 	out := make(chan T, size)

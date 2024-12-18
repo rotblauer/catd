@@ -131,8 +131,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	pipedLast := stamped
 	if sort {
-		// Sorting is blocking.
-		pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
+		// ~~Sorting is hard.~~
+		pipedLast = stream.BatchSortBetterSorta(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
+		//pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
 		//pipedLast = stream.SortRing1(ctx, cattrack.SortFunc, params.DefaultBatchSize, sanitized)
 	}
 

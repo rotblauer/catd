@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+var MetricsEnabled = true
+
 func init() {
-	metrics.Enabled = true
+	metrics.Enabled = MetricsEnabled
 }
 
 const (
