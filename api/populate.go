@@ -296,8 +296,11 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 		c.logger.Error("Failed to sink stream to JSON GZ writer", "error", err)
 		return err
 	}
+	// This can happen all the time.
+	// Pipe direct in here and don't see any laps, naps, snaps or any other goodies
+	// and this will fire.
 	if n == 0 {
-		c.logger.Warn("No features to send", "source", args.SourceName)
+		c.logger.Debug("No features to send", "source", args.SourceName)
 		return nil
 	}
 	if buf.Len() == 0 {
