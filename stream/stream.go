@@ -216,7 +216,7 @@ func BatchSortBetterSorta[T any](ctx context.Context, batchSize int, sorter func
 		defer close(out)
 
 		// Could declare size and make, but that's a lot of i's. Append is easy and safe.
-		var batch []T
+		var batch = make([]T, batchSize)
 		sorted := true
 		flush := func() {
 			if !sorted && sorter != nil {
@@ -226,20 +226,23 @@ func BatchSortBetterSorta[T any](ctx context.Context, batchSize int, sorter func
 				out <- t
 			}, Slice(ctx, batch))
 			sorted = true
-			batch = []T{}
+			batch = make([]T, batchSize)
 		}
 		defer flush()
 
 		// Range, blocking until 'in' is closed.
 		n := 0
 		for element := range in {
-			batch = append(batch, element)
+			batch[n%batchSize] = element
 			n++
-			if i := n % batchSize; i > 1 {
+			if n > 1 {
+				i := n % batchSize
+				// a truth can become a lie, but a lie never the truth
 				sorted = sorted || slices.IsSortedFunc([]T{batch[i-2], batch[i-1]}, sorter)
 			}
-			if len(batch) == batchSize {
+			if n > batchSize {
 				flush()
+				n = 0
 			}
 			select {
 			case <-ctx.Done():
@@ -260,32 +263,39 @@ func BatchSortBetter[T any](ctx context.Context, maxSize int, sorter func(a, b T
 
 		// Range, blocking until 'in' is closed.
 		var batch = make([]T, maxSize)
-		i := 0
-		n := 0
-		sorted := true
+		count := 0
+		cursor := func(count int) int {
+			return count % maxSize
+		}
 
 		flush := func() {
-			//n % maxSize
+			for j := cursor(count); j < maxSize; j++ {
+				out <- batch[j]
+			}
+			for j := 0; j < cursor(count); j++ {
+				out <- batch[j]
+			}
 		}
 		defer flush()
 
 		for element := range in {
-			batch[i] = element // these
-			n++                // always
-			i++                // happen
-			if i > 1 {
-				// a truth can become a lie, but a lie never the truth
-				sorted = sorted || slices.IsSortedFunc([]T{batch[i-2], batch[i-1]}, sorter)
+			next := cursor(count)
+			count++
+			if count >= maxSize {
+				// about to overwrite the oldest element
+				out <- batch[next]
+
+				last := []T{batch[cursor(count-1)], batch[cursor(count)]}
+				if sorter != nil && !slices.IsSortedFunc(last, sorter) {
+					if count >= maxSize {
+						head := batch[cursor(count):]
+						tail := batch[:cursor(count)]
+						slices.SortFunc(tail, sorter)
+						slices.SortFunc(head, sorter)
+					}
+				}
 			}
-			if len(batch) == maxSize {
-				i = 0
-				flush()
-			}
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
+			batch[next] = element
 		}
 	}()
 	return out
@@ -300,7 +310,7 @@ func BatchSortBetter[T any](ctx context.Context, maxSize int, sorter func(a, b T
 //	}
 //}
 
-func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in <-chan T) <-chan T {
+func SortRing1[T any](ctx context.Context, size int, sorter func(a, b T) int, in <-chan T) <-chan T {
 	out := make(chan T, size)
 	go func() {
 		defer close(out)
@@ -308,7 +318,7 @@ func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in
 		var write int
 		var count int
 		defer func() {
-			slices.SortFunc(ring, sorter)
+			//slices.SortFunc(ring, sorter)
 			for i := 0; i < count; i++ {
 				idx := (write + size - count + i) % size
 				select {
@@ -325,13 +335,16 @@ func SortRing1[T any](ctx context.Context, sorter func(a, b T) int, size int, in
 				count++
 				continue
 			}
-			if !slices.IsSortedFunc([]T{ring[write-1], ring[write]}, sorter) {
-				slices.SortFunc(ring, sorter)
+			if write > 1 {
+				if !slices.IsSortedFunc([]T{ring[write-1], ring[write]}, sorter) {
+					slices.SortFunc(ring, sorter)
+				}
+
 			}
 			select {
 			case <-ctx.Done():
 				return
-			case out <- ring[write-1]:
+			case out <- ring[write]:
 			}
 		}
 	}()
