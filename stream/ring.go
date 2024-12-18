@@ -53,3 +53,15 @@ func (rb *RingBuffer[T]) Len() int {
 	defer rb.mu.Unlock()
 	return rb.count
 }
+
+func (rb *RingBuffer[T]) Last() T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.buffer[(rb.write+rb.size-1)%rb.size]
+}
+
+func (rb *RingBuffer[T]) First() T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.buffer[(rb.write+rb.size-rb.count)%rb.size]
+}

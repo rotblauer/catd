@@ -7,6 +7,70 @@ import (
 	"time"
 )
 
+func TestRingBuffer_Last(t *testing.T) {
+	ringBuffer := NewRingBuffer[int](3)
+	ringBuffer.Add(1)
+	ringBuffer.Add(2)
+	ringBuffer.Add(3)
+
+	expected := 3
+	actual := ringBuffer.Last()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+
+	ringBuffer.Add(4)
+	ringBuffer.Add(5)
+	ringBuffer.Add(6)
+
+	expected = 6
+	actual = ringBuffer.Last()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(8)
+
+	expected = 8
+	actual = ringBuffer.Last()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+}
+
+func TestRingBuffer_First(t *testing.T) {
+	ringBuffer := NewRingBuffer[int](3)
+	ringBuffer.Add(1)
+	ringBuffer.Add(2)
+	ringBuffer.Add(3)
+
+	expected := 1
+	actual := ringBuffer.First()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+
+	ringBuffer.Add(4)
+	ringBuffer.Add(5)
+	ringBuffer.Add(6)
+
+	expected = 4
+	actual = ringBuffer.First()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(8)
+
+	expected = 6
+	actual = ringBuffer.First()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+}
+
 func TestRingBuffer_AddAndGet(t *testing.T) {
 	ringBuffer := NewRingBuffer[int](5)
 	ringBuffer.Add(1)
