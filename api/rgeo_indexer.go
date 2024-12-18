@@ -41,7 +41,7 @@ func (c *Cat) GetDefaultRgeoIndexer() (*reducer.CellIndexer, error) {
 		BatchSize: params.DefaultBatchSize,
 		Buckets:   bucketLevels,
 
-		// The default indexer is a MyReducerT with a visit threshold of 24 hours.
+		// The default indexer is a OffsetIndexT with a visit threshold of 24 hours.
 		DefaultIndexerT: rgeo.DefaultIndexerT,
 		LevelIndexerT:   nil,
 		BucketKeyFn:     rgeo.CatKeyFn,

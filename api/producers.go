@@ -37,7 +37,7 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	// Clean and improve tracks for pipeline handlers.
 	cleaned := c.CleanTracks(ctx, in)
 	improved := c.ImprovedActTracks(ctx, cleaned)
-	woffsets := TracksWithOffset(ctx, improved)
+	woffsets := cattrack.WithTimeOffset(ctx, improved)
 
 	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
 	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
@@ -75,8 +75,8 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	c.logger.Info("Simple indexer")
 	defer c.logger.Info("Simple indexer complete")
 
-	indexer := &cattrack.MyReducerT{}
-	old := &cattrack.MyReducerT{}
+	indexer := &cattrack.OffsetIndexT{}
+	old := &cattrack.OffsetIndexT{}
 	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), old); err != nil {
 		c.logger.Warn("Did not read stacker state (new cat?)", "error", err)
 	}
@@ -89,7 +89,7 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 		}
 		indexing := indexer.FromCatTrack(track)
 		next := indexer.Index(old, indexing)
-		*old = *next.(*cattrack.MyReducerT)
+		*old = *next.(*cattrack.OffsetIndexT)
 	}
 
 	c.logger.Info("Simple indexer complete")

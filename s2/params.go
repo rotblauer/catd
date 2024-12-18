@@ -8,7 +8,7 @@ import (
 
 var DefaultVisitThreshold = params.S2DefaultVisitThreshold
 
-var DefaultIndexerT = &cattrack.MyReducerT{
+var DefaultIndexerT = &cattrack.OffsetIndexT{
 	VisitThreshold: DefaultVisitThreshold,
 }
 

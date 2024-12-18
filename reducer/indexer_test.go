@@ -3,7 +3,6 @@ package reducer
 import (
 	"context"
 	"fmt"
-	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -36,8 +35,8 @@ func myNewTestCellIndexer(t *testing.T) *CellIndexer {
 var myBuckets = []Bucket{3, 4, 5}
 
 var myIndexers = map[Bucket]cattrack.Indexer{
-	3: &cattrack.MyReducerT{},
-	4: &cattrack.MyReducerT{},
+	3: &cattrack.OffsetIndexT{},
+	4: &cattrack.OffsetIndexT{},
 	5: nil, // fallback to default
 }
 
@@ -58,15 +57,9 @@ func myBucketKeyFn(track cattrack.CatTrack, bucket Bucket) (string, error) {
 }
 
 func TestCellIndexer(t *testing.T) {
-	testdataPathGZ := testdata.Path(testdata.Source_EDGE20241217)
-	gzr, err := catz.NewGZFileReader(testdataPathGZ)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
+	oTracks := cattrack.WithTimeOffset(ctx, tracks)
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -78,7 +71,7 @@ func TestCellIndexer(t *testing.T) {
 	defer os.Remove(reducer.Config.DBPath)
 	defer reducer.Close()
 
-	err = reducer.Index(ctx, tracks)
+	err := reducer.Index(ctx, oTracks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,15 +81,12 @@ func TestCellIndexer(t *testing.T) {
 	}
 
 	for _, level := range reducer.Config.Buckets {
-
 		dump, errs := reducer.DumpLevel(level)
-
 		go func(errs chan error, level Bucket) {
 			if err := <-errs; err != nil {
 				t.Error(fmt.Errorf("%w: level %d", err, level))
 			}
 		}(errs, level)
-
 		indexed := stream.Collect[cattrack.CatTrack](ctx, dump)
 
 		// Check how many tracks are indexed at each level.
@@ -130,6 +120,14 @@ func TestCellIndexer(t *testing.T) {
 			}
 			if track.Geometry == nil || track.Geometry.GeoJSONType() != "Point" {
 				t.Errorf("invalid geometry: %v", track.Geometry)
+			}
+			tto := track.Properties.MustInt("TotalTimeOffset", 0)
+			if tto < 1 {
+				t.Error("bad time offset", tto)
+				t.Logf("track: %v", track)
+				idx := &cattrack.OffsetIndexT{}
+				idxT := idx.FromCatTrack(track)
+				t.Logf("index: %v", idxT)
 			}
 		}
 	}

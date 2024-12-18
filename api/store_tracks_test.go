@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
@@ -14,19 +13,12 @@ import (
 )
 
 func TestCat_StoreTracks(t *testing.T) {
-	testdataPathGZ := testdata.Path(testdata.Source_RYE202412)
-	gzr, err := catz.NewGZFileReader(testdataPathGZ)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	tc := NewTestCatWriter(t, "rye", nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -34,7 +26,7 @@ func TestCat_StoreTracks(t *testing.T) {
 	}
 	t.Log("stream ok", first.StringPretty())
 
-	err = <-c.StoreTracks(ctx, tracks)
+	err := <-c.StoreTracks(ctx, tracks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,19 +40,12 @@ func TestCat_StoreTracks(t *testing.T) {
 }
 
 func TestCat_StoreTracksYYYYMM(t *testing.T) {
-	testdataPathGZ := testdata.Path(testdata.Source_RYE202412)
-	gzr, err := catz.NewGZFileReader(testdataPathGZ)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	tc := NewTestCatWriter(t, "rye", nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -68,7 +53,7 @@ func TestCat_StoreTracksYYYYMM(t *testing.T) {
 	}
 	t.Log("stream ok", first.StringPretty())
 
-	err = <-c.StoreTracksYYYYMM(ctx, tracks)
+	err := <-c.StoreTracksYYYYMM(ctx, tracks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,19 +67,12 @@ func TestCat_StoreTracksYYYYMM(t *testing.T) {
 }
 
 func TestCat_StoreTracksYYYYMM_ManyTimes(t *testing.T) {
-	testdataPathGZ := testdata.Path(testdata.Source_RYE202412)
-	gzr, err := catz.NewGZFileReader(testdataPathGZ)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	tc := NewTestCatWriter(t, "rye", nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	firstFakeTime := time.Now().Round(time.Second)
 	fakeTime := firstFakeTime
@@ -120,7 +98,7 @@ func TestCat_StoreTracksYYYYMM_ManyTimes(t *testing.T) {
 		t.Fatal("time not set", first.MustTime(), firstFakeTime)
 	}
 
-	err = <-c.StoreTracksYYYYMM(ctx, tracksToFuture)
+	err := <-c.StoreTracksYYYYMM(ctx, tracksToFuture)
 	if err != nil {
 		t.Fatal(err)
 	}

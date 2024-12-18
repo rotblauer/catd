@@ -130,12 +130,19 @@ func MustTimeOffset(a, b CatTrack) time.Duration {
 
 func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 	offset := MustTimeOffset(a, b)
+
 	// If offset is more than 24 hours, reset to 1 second.
 	// This handles signal loss/missing data.
 	// If you start tracking on Monday, stop on Tuesday, and start again on Friday,
 	// you don't get offset points for Wednesday and Thursday.
 	if offset > time.Hour*24 {
 		offset = time.Second
+	}
+
+	// If offset is negative, reset to 0.
+	// This is an out-of-order non-chronological track. Unsorted.
+	if offset < 0 {
+		offset = 0
 	}
 	return offset
 }

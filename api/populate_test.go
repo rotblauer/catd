@@ -15,15 +15,8 @@ import (
 )
 
 func TestSinkStreamToJSONWriter(t *testing.T) {
-	testdataPathGZ := testdata.Path(testdata.Source_EDGE20241217)
-	gzr, err := catz.NewGZFileReader(testdataPathGZ)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -108,18 +101,12 @@ func TestCat_Populate(t *testing.T) {
 }
 
 func testCat_Populate(t *testing.T, cat, source string) {
-	gzr, err := catz.NewGZFileReader(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
-
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, source)
 	stream.Blackhole(errs)
 
 	// Collect and count cat's tracks.
@@ -133,7 +120,7 @@ func testCat_Populate(t *testing.T, cat, source string) {
 	}
 
 	// Populate cat with tracks.
-	err = c.Populate(ctx, true, stream.Slice(ctx, catCollection))
+	err := c.Populate(ctx, true, stream.Slice(ctx, catCollection))
 	if err != nil {
 		t.Fatal(err)
 	}

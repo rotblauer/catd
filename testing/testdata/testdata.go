@@ -1,6 +1,9 @@
 package testdata
 
 import (
+	"context"
+	"github.com/rotblauer/catd/catz"
+	"github.com/rotblauer/catd/stream"
 	"path/filepath"
 	"runtime"
 )
@@ -34,3 +37,25 @@ func Path(rel string) string {
 var Source_RYE202412 = "./private/rye_2024-12.geojson.gz"
 var Source_EDGE1000 = "./private/edge_1000.json.gz"
 var Source_EDGE20241217 = "./private/edge_20241217.json.gz"
+
+func ReadSourceGZ[T any](ctx context.Context, path string) (<-chan T, chan error) {
+	errs := make(chan error, 1)
+	defer close(errs)
+	gzr, err := catz.NewGZFileReader(path)
+	if err != nil {
+		errs <- err
+		return nil, errs
+	}
+	itemsCh, errCh := stream.NDJSON[T](ctx, gzr)
+	items := stream.Collect(ctx, itemsCh)
+	err = <-errCh
+	if err != nil {
+		errs <- err
+		return nil, errs
+	}
+	err = gzr.Close()
+	if err != nil {
+		errs <- err
+	}
+	return stream.Slice(ctx, items), errs
+}

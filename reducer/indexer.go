@@ -103,7 +103,7 @@ func NewCellIndexer(config *CellIndexerConfig) (*CellIndexer, error) {
 		return nil, fmt.Errorf("no buckets provided")
 	}
 	if config.DefaultIndexerT == nil {
-		config.DefaultIndexerT = &cattrack.MyReducerT{}
+		config.DefaultIndexerT = &cattrack.OffsetIndexT{}
 	}
 
 	if err := os.MkdirAll(filepath.Dir(config.DBPath), 0777); err != nil {
@@ -212,6 +212,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 			ci.logger.Debug("No indexer key for cattrack, skipping", "track", ct.StringPretty(), "level", level)
 			continue
 		}
+		// This needs pulled to a generic (optional) stamping function.
 		ct.SetPropertySafe("reducer_key", key)
 
 		var old, next cattrack.Indexer

@@ -5,11 +5,12 @@ import (
 	"time"
 )
 
-// MyReducerT is an Indexer implementation that tracks the number of times
+// OffsetIndexT is an Indexer implementation that tracks the number of times
 // a cat has entered and left a cell, as well as the total time spent in the cell.
 // It also tracks the activity mode of the cat while in the cell,
 // and the first and last times the cat was in the cell.
-type MyReducerT struct {
+// TODO: Pull apart into OffsetIndexT and OffsetIndexActivityT.
+type OffsetIndexT struct {
 	Count int
 
 	// VisitCount is the number of times the cat has entered and left this cell.
@@ -37,13 +38,13 @@ type MyReducerT struct {
 	AMFly        float64
 }
 
-func (ix *MyReducerT) IsEmpty() bool {
+func (ix *OffsetIndexT) IsEmpty() bool {
 	return ix == nil || ix.Count == 0
 }
 
-func (*MyReducerT) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
+func (*OffsetIndexT) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
 	pct := &ct
-	ixr := idxr.(*MyReducerT)
+	ixr := idxr.(*OffsetIndexT)
 	props := map[string]interface{}{
 		"Count":                   ixr.Count,
 		"VisitCount":              ixr.VisitCount,
@@ -63,7 +64,7 @@ func (*MyReducerT) ApplyToCatTrack(idxr Indexer, ct CatTrack) CatTrack {
 	return *pct
 }
 
-func (*MyReducerT) FromCatTrack(ct CatTrack) Indexer {
+func (*OffsetIndexT) FromCatTrack(ct CatTrack) Indexer {
 	first, err := time.Parse(time.RFC3339, ct.Properties.MustString("FirstTime", ""))
 	if err != nil {
 		first = ct.MustTime()
@@ -78,7 +79,7 @@ func (*MyReducerT) FromCatTrack(ct CatTrack) Indexer {
 		totalOffset = time.Duration(ct.Properties.MustFloat64("TimeOffset", 1)) * time.Second
 	}
 
-	out := &MyReducerT{
+	out := &OffsetIndexT{
 		Count:           ct.Properties.MustInt("Count", 1),
 		VisitCount:      ct.Properties.MustInt("VisitCount", 0),
 		FirstTime:       first,
@@ -132,9 +133,9 @@ func (*MyReducerT) FromCatTrack(ct CatTrack) Indexer {
 	return out
 }
 
-func (ix *MyReducerT) Index(old, next Indexer) Indexer {
+func (ix *OffsetIndexT) Index(old, next Indexer) Indexer {
 	if old == nil || old.IsEmpty() {
-		nextT := next.(*MyReducerT)
+		nextT := next.(*OffsetIndexT)
 		if nextT.VisitCount == 0 {
 			nextT.VisitCount++
 		}
@@ -144,10 +145,11 @@ func (ix *MyReducerT) Index(old, next Indexer) Indexer {
 		return nextT
 	}
 
-	oldT, nextT := old.(*MyReducerT), next.(*MyReducerT)
+	oldT, nextT := old.(*OffsetIndexT), next.(*OffsetIndexT)
 
-	out := &MyReducerT{
+	out := &OffsetIndexT{
 		// Relatively sane defaults only for concision.
+		// Must be fixed below.
 		FirstTime: oldT.FirstTime,
 		LastTime:  nextT.LastTime,
 

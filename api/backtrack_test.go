@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
@@ -33,18 +32,12 @@ func TestCat_Unbacktrack_NoneMissing(t *testing.T) {
 }
 
 func testCat_Unbacktrack_NoneMissing(t *testing.T, cat, gzSource string) {
-	gzr, err := catz.NewGZFileReader(gzSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
+	ctx := context.Background()
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, gzSource)
 
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
-
-	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
 
 	// Collect and count cat's tracks.
 	catTracks := stream.Filter(ctx, func(track cattrack.CatTrack) bool {
@@ -110,18 +103,12 @@ func TestCat_Unbacktracked_ReInits(t *testing.T) {
 }
 
 func testCat_Unbacktracked_ReInits(t *testing.T, cat, gzSource string, backtracks, batchSize int) {
-	gzr, err := catz.NewGZFileReader(gzSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gzr.Close()
+	ctx := context.Background()
+	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, gzSource)
 
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
-
-	ctx := context.Background()
-	tracks, errs := stream.NDJSON[cattrack.CatTrack](ctx, gzr)
 
 	// Collect and count cat's tracks.
 	catTracks := stream.Filter(ctx, func(track cattrack.CatTrack) bool {
