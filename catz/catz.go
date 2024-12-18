@@ -1,6 +1,7 @@
 package catz
 
 import (
+	"bufio"
 	"compress/gzip"
 	"github.com/rotblauer/catd/params"
 	"os"
@@ -207,4 +208,17 @@ func (g *GZFileReader) MaybeClose() {
 		return
 	}
 	_ = g.Close()
+}
+
+func (g *GZFileReader) LineCount() (int, error) {
+	if err := g.LockSH(); err != nil {
+		return 0, err
+	}
+	defer g.Unlock()
+	count := 0
+	scanner := bufio.NewScanner(g.gzr)
+	for scanner.Scan() {
+		count++
+	}
+	return count, scanner.Err()
 }

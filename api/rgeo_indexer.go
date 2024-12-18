@@ -82,11 +82,6 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(rgeo.DatasetNamesStable))
 	for dataI, dataset := range rgeo.DatasetNamesStable {
-		if !c.IsTilingEnabled() {
-			c.logger.Warn("No RPC configuration, skipping Rgeo indexing", "bucket", dataset)
-			continue
-		}
-
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(reducer.Bucket(dataI))
 		if err != nil {
 			c.logger.Error("Failed to get Rgeo feed", "bucket", dataset, "error", err)

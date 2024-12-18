@@ -27,6 +27,10 @@ func (c *TestCat) Cat() *Cat {
 // NewTestCatWriter creates a new cat with a writable state
 // in a temporary directory inside the TestDatadirRoot.
 func NewTestCatWriter(t *testing.T, name string, backend *params.CatRPCServices) *TestCat {
+	err := os.MkdirAll(TestDatadirRoot, 0770)
+	if err != nil {
+		t.Fatal(err)
+	}
 	d, err := os.MkdirTemp(TestDatadirRoot, name)
 	if err != nil {
 		t.Fatal(err)

@@ -164,7 +164,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			df := t.Sub(popWindow.First).Round(time.Second).Seconds()
 			dl := popWindow.Last.Sub(t).Round(time.Second).Seconds()
 			d := math.Min(df, dl)
-			c.logger.Warn("Glitch in matrix: track within pop window",
+			c.logger.Warn("Glitch in matrix: track within pop/uuid window",
 				"by", (time.Second * time.Duration(d)).String(),
 				"track", ct.StringPretty(),
 				"first", popWindow.First.Format(time.DateTime),
@@ -180,6 +180,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		if !catWindowOK {
 			// There is no cat window for this track/uuid,
 			// so spread the pop window and return OK.
+			// Cat tracker's first rodeo.
 			if t.After(popWindow.Last) {
 				popWindow.Last = t
 			} else if t.Before(popWindow.First) {
@@ -187,18 +188,20 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			}
 			popWindow.Extend(t)
 			popUUIDWindowMap.Store(uuid, popWindow)
+			onceJamaisVu.Do(func() {
+				c.logger.Info("Jamais vu: cat/uuid tracker first rodeo", "track", ct.StringPretty(), "first", popWindow.First, "last", popWindow.Last)
+			})
 			return true
 		}
 
 		catWindow = cwl.(Window)
-		spreadsCatWindow := t.Before(catWindow.First) || t.After(catWindow.Last)
-		if !spreadsCatWindow {
+		if catWindow.Contains(t) {
 			// Do not update the pop window if we're not populating this track.
 			onceDejaVu.Do(func() {
 				df := t.Sub(catWindow.First).Round(time.Second).Seconds()
 				dl := catWindow.Last.Sub(t).Round(time.Second).Seconds()
 				d := math.Min(df, dl)
-				c.logger.Warn("Deja vu: track within cat window",
+				c.logger.Warn("Deja vu: track within cat/uuid window",
 					"by", (time.Second * time.Duration(d)).String(),
 					"track", ct.StringPretty(),
 					"first", catWindow.First,
@@ -207,7 +210,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 			return false
 		}
 		onceJamaisVu.Do(func() {
-			c.logger.Info("Jamais vu: track outside cat window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
+			c.logger.Info("Jamais vu: track outside cat/uuid window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
 		})
 		if t.After(popWindow.Last) {
 			popWindow.Last = t

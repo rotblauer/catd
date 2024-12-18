@@ -183,7 +183,100 @@ func TestRingBufferConcurrent(t *testing.T) {
 
 func TestSortingRingBuffer_Add(t *testing.T) {
 	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
-		return a > b
+		return a < b
+	})
+
+	ringBuffer.Add(2)
+	ringBuffer.Add(1)
+
+	expected := []int{1, 2}
+	actual := ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(3)
+	ringBuffer.Add(4)
+	ringBuffer.Add(5)
+	ringBuffer.Add(2)
+	ringBuffer.Add(1)
+
+	expected = []int{1, 2, 3, 4, 5}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(6)
+	ringBuffer.Add(8)
+
+	expected = []int{4, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+}
+
+func TestSortingRingBuffer_Add2(t *testing.T) {
+	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
+		return a < b
+	})
+
+	ringBuffer.Add(5)
+	ringBuffer.Add(4)
+	ringBuffer.Add(3)
+	ringBuffer.Add(2)
+	ringBuffer.Add(1)
+
+	expected := []int{1, 2, 3, 4, 5}
+	actual := ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(6)
+	ringBuffer.Add(8)
+
+	expected = []int{4, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(1)
+	expected = []int{1, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(2)
+	expected = []int{2, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(3)
+	expected = []int{3, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(5)
+	expected = []int{5, 5, 6, 7, 8}
+	actual = ringBuffer.Get()
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+}
+
+func TestSortingRingBuffer_Get(t *testing.T) {
+	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
+		return a < b
 	})
 
 	ringBuffer.Add(3)
@@ -211,7 +304,7 @@ func TestSortingRingBuffer_Add(t *testing.T) {
 
 func TestSortingRingBuffer_First(t *testing.T) {
 	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
-		return a > b
+		return a < b
 	})
 
 	ringBuffer.Add(3)
@@ -234,5 +327,73 @@ func TestSortingRingBuffer_First(t *testing.T) {
 	actual = ringBuffer.First()
 	if actual != expected {
 		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+}
+
+func TestSortingRingBuffer_Last(t *testing.T) {
+	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
+		return a < b
+	})
+
+	ringBuffer.Add(3)
+	ringBuffer.Add(1)
+	ringBuffer.Add(5)
+	ringBuffer.Add(4)
+	ringBuffer.Add(2)
+
+	expected := 5
+	actual := ringBuffer.Last()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+
+	ringBuffer.Add(6)
+	ringBuffer.Add(8)
+	ringBuffer.Add(7)
+
+	expected = 8
+	actual = ringBuffer.Last()
+	if actual != expected {
+		t.Errorf("Expected %d, but got %d", expected, actual)
+	}
+}
+
+func TestSortingRingBuffer_Scan(t *testing.T) {
+	ringBuffer := NewSortingRingBuffer[int](5, func(a, b int) bool {
+		return a < b
+	})
+
+	ringBuffer.Add(3)
+	ringBuffer.Add(1)
+	ringBuffer.Add(5)
+	ringBuffer.Add(4)
+	ringBuffer.Add(2)
+
+	expected := []int{1, 2, 3, 4, 5}
+	actual := make([]int, 5)
+	i := 0
+	ringBuffer.Scan(func(in int) bool {
+		actual[i] = in
+		i++
+		return true
+	})
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(6)
+	ringBuffer.Add(8)
+	ringBuffer.Add(7)
+
+	expected = []int{4, 5, 6, 7, 8}
+	actual = make([]int, 5)
+	i = 0
+	ringBuffer.Scan(func(in int) bool {
+		actual[i] = in
+		i++
+		return true
+	})
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
 	}
 }

@@ -66,10 +66,13 @@ func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServic
 // If readOnly is false it will block.
 func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 	if c.State != nil {
+		if !c.State.IsOpen() {
+			return c.State.Open(c.DataDir, readOnly)
+		}
 		return c.State, nil
 	}
-	s := &state.Cat{CatID: c.CatID}
-	st, err := s.NewCatWithState(c.DataDir, readOnly)
+	s := &state.CatState{CatID: c.CatID}
+	st, err := s.Open(c.DataDir, readOnly)
 	if err != nil {
 		return nil, err
 	}

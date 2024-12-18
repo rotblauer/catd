@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -55,10 +56,13 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(catS2.DefaultCellLevels))
 	defer close(sendErrs)
+	logOnce := sync.Once{}
 	for _, level := range catS2.DefaultCellLevels {
 		if !c.IsTilingEnabled() {
-			c.logger.Warn("No RPC configuration, skipping S2 index dumps", "level", level)
-			continue
+			logOnce.Do(func() {
+				c.logger.Warn("No RPC configuration, skipping S2 indexing", "level", level)
+			})
+			break
 		}
 		if level < catS2.CellLevelTilingMinimum ||
 			level > catS2.CellLevelTilingMaximum {

@@ -6,11 +6,10 @@ import (
 	"sync"
 )
 
-const appDBName = "app.db"
-
 type State struct {
 	DB      *bbolt.DB
 	Flat    *catz.Flat
 	Waiting sync.WaitGroup
 	rOnly   bool
+	open    bool
 }

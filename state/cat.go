@@ -11,20 +11,34 @@ import (
 	"path/filepath"
 )
 
-type Cat struct {
-	CatID conceptual.CatID
-	State *CatState
-}
-
 type CatState struct {
 	CatID conceptual.CatID
 	*State
 }
 
-// NewCatWithState defines data sources, caches, and encoding for a cat.
+// Open defines data sources, caches, and encoding for a cat.
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
-func (c *Cat) NewCatWithState(catRoot string, readOnly bool) (*CatState, error) {
+func (c *CatState) Open(catRoot string, readOnly bool) (*CatState, error) {
+
+	if c.State != nil && c.open {
+		return c, nil // Or throw error?
+	}
+	if c.State != nil && !c.open {
+		// Opening a writable DB conn will block all other cat writers and readers
+		// with essentially a file lock/flock.
+		db, err := bbolt.Open(filepath.Join(c.Flat.Path(), params.CatStateDBName),
+			0600, &bbolt.Options{
+				ReadOnly: readOnly,
+			})
+		if err != nil {
+			return nil, err
+		}
+		c.DB = db
+		c.open = true
+		return c, nil
+	}
+
 	flatCat := catz.NewFlatWithRoot(catRoot)
 
 	if !readOnly {
@@ -46,15 +60,20 @@ func (c *Cat) NewCatWithState(catRoot string, readOnly bool) (*CatState, error) 
 	s := &CatState{
 		CatID: c.CatID,
 		State: &State{
+			open: true,
 			DB:   db,
 			Flat: flatCat,
 		},
 	}
-	c.State = s
-	return c.State, nil
+	return s, nil
+}
+
+func (s *State) IsOpen() bool {
+	return s.open
 }
 
 func (s *State) Close() error {
+	s.open = false
 	if err := s.DB.Close(); err != nil {
 		return err
 	}

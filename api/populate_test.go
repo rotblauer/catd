@@ -3,13 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log/slog"
 	"path/filepath"
 	"testing"
 )
@@ -84,23 +84,29 @@ func TestSinkStreamToJSONGZWriter(t *testing.T) {
 }
 
 func TestCat_Populate(t *testing.T) {
-	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
-	defer slog.SetLogLoggerLevel(oldLevel)
+	//oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
+	//defer slog.SetLogLoggerLevel(oldLevel)
 	cases := []struct {
 		cat      string
 		gzSource string
+		// storedCount is all the expected tracks (past validation, deduping, sorting, stamping).
+		storedCount int
+		// Expected values are read from SimpleIndexer, an example OffsetIndexerT implementation
+		// plugged in to the Producers pipeline.
+		// NOT ALL STORED TRACKS GO TO THE PRODUCER PIPELINE; only good ones.
+		producersCount int
 	}{
-		{"rye", testdata.Path(testdata.Source_EDGE20241217)},
-		{"ia", testdata.Path(testdata.Source_EDGE20241217)},
+		{"rye", testdata.Path(testdata.Source_EDGE20241217), 23775, 23561},
+		{"ia", testdata.Path(testdata.Source_EDGE20241217), 23194, 22422},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%s-%s", filepath.Base(c.gzSource), c.cat), func(t *testing.T) {
-			testCat_Populate(t, c.cat, c.gzSource)
+			testCat_Populate(t, c.cat, c.gzSource, c.storedCount, c.producersCount)
 		})
 	}
 }
 
-func testCat_Populate(t *testing.T, cat, source string) {
+func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProdCount int) {
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
@@ -118,10 +124,39 @@ func testCat_Populate(t *testing.T, cat, source string) {
 	if catTracksLen == 0 {
 		t.Fatal("no tracks")
 	}
+	t.Log("Count testdata cat tracks", catTracksLen)
 
 	// Populate cat with tracks.
 	err := c.Populate(ctx, true, stream.Slice(ctx, catCollection))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	s, err := c.WithState(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	old := &cattrack.OffsetIndexT{}
+	if err := s.ReadKVUnmarshalJSON([]byte("state"), []byte("offsetIndexer"), old); err != nil {
+		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
+	}
+	j, _ := json.MarshalIndent(old, "", "  ")
+	if old.Count != wantProdCount {
+		t.Errorf("got %d, want %d", old.Count, wantProdCount)
+		t.Log(string(j))
+	}
+
+	f, err := catz.NewFlatWithRoot(filepath.Join(s.Flat.Path(), "tracks")).NamedGZReader("2024-12.geojson.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.LineCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != wantStoreCount {
+		t.Errorf("got %d, want %d", got, wantStoreCount)
+	}
+
 }

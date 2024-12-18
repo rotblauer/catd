@@ -71,14 +71,15 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 }
 
 func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) error {
-
 	c.logger.Info("Simple indexer")
 	defer c.logger.Info("Simple indexer complete")
 
 	indexer := &cattrack.OffsetIndexT{}
 	old := &cattrack.OffsetIndexT{}
-	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("stacker"), old); err != nil {
-		c.logger.Warn("Did not read stacker state (new cat?)", "error", err)
+
+	stateKey := "offsetIndexer"
+	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte(stateKey), old); err != nil {
+		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
 	}
 
 	for track := range in {
@@ -93,6 +94,10 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	}
 
 	c.logger.Info("Simple indexer complete")
-
-	return c.State.StoreKVMarshalJSON([]byte("state"), []byte("stacker"), old)
+	err := c.State.StoreKVMarshalJSON([]byte("state"), []byte(stateKey), old)
+	if err != nil {
+		c.logger.Error("Failed to store offsetIndexer state", "error", err)
+		return err
+	}
+	return nil
 }
