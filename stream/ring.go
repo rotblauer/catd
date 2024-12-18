@@ -8,6 +8,8 @@ import (
 // https://www.sergetoro.com/golang-round-robin-queue-from-scratch/
 
 // RingBuffer from https://medium.com/@nathanbcrocker/a-practical-guide-to-implementing-a-generic-ring-buffer-in-go-866d27ec1a05.
+// Have added a few things.
+// I'm to blame for SortingRingBuffer.
 type RingBuffer[T any] struct {
 	buffer []T
 	size   int
@@ -86,12 +88,24 @@ func (rb *RingBuffer[T]) Scan(fn func(T) bool) {
 type SortingRingBuffer[T any] struct {
 	*RingBuffer[T]
 	less func(T, T) bool
+	les  func(a T, b T) int
 }
 
 func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuffer[T] {
+	//genericLess := func(a T, b T) int
+	// cmp func(a E, b E) int
 	return &SortingRingBuffer[T]{
 		RingBuffer: NewRingBuffer[T](size),
 		less:       less,
+		les: func(a T, b T) int {
+			if less(a, b) {
+				return -1
+			}
+			if less(b, a) {
+				return 1
+			}
+			return 0
+		},
 	}
 }
 
@@ -99,8 +113,8 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
-	wrote := rb.write
 	prev := (rb.write + rb.size - 1) % rb.size
+	wrote := rb.write
 	rb.buffer[rb.write] = value
 	rb.write = (rb.write + 1) % rb.size
 
@@ -110,12 +124,40 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 
 	if rb.count > 1 {
 		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
+		// I can walk forwards but not backwards.
 		for i := 0; !sorted && i < rb.count-1; i++ {
-			index := (rb.write + rb.size - rb.count + i) % rb.size
-			if !rb.less(rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size]) {
-				rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size] = rb.buffer[(rb.write+rb.size-1)%rb.size], rb.buffer[index]
+			i1 := (rb.write + rb.size - rb.count + i) % rb.size
+			i2 := (rb.write + rb.size - 1) % rb.size // prev
+			if !rb.less(rb.buffer[i1], rb.buffer[i2]) {
+				rb.buffer[i1], rb.buffer[i2] = rb.buffer[i2], rb.buffer[i1]
 			}
 		}
+		//for i := wrote; !sorted && i >= 0; i-- {
+		//	pr := (wrote + rb.size - 1) % rb.size // prev
+		//	wr := (wrote + rb.size - rb.count + i) % rb.size
+		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
+		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
+		//	}
+		//}
+		//for i := rb.count - 1; !sorted && i > 0; i-- {
+		//	pr := (rb.write + rb.size - 1) % rb.size // prev
+		//	wr := (rb.write + rb.size - rb.count + i) % rb.size
+		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
+		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
+		//	}
+		//}
+
+		//if sorted {
+		//sort.Slice(rb.buffer, func(i, j int) bool {
+		//	ii := (rb.write + rb.size - rb.count + i) % rb.size
+		//	jj := (rb.write + rb.size - 1) % rb.size
+		//	return rb.less(rb.buffer[ii], rb.buffer[jj])
+		//})
+		//}
+
+		//if !sorted {
+		//	slices.SortStableFunc(rb.buffer, rb.les)
+		//}
 	}
 }
 

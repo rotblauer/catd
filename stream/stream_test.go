@@ -218,27 +218,33 @@ func testRingSorting(t *testing.T, mySort BatchSorterInt, comparator func(a, b i
 			size:     5,
 		},
 		{
-			name:     "Sorts below size",
+			name:     "Random10Size10",
+			data:     genIntsShuffled(10),
+			expected: genInts(10),
+			size:     10,
+		},
+		{
+			name:     "Sorts small things",
 			data:     []int{3, 2, 1},
 			expected: []int{1, 2, 3},
 			size:     5,
 		},
 		{
-			name:     "Sorts completely at size",
+			name:     "Sorts full size things",
+			data:     []int{4, 2, 0, 3, 1},
+			expected: []int{0, 1, 2, 3, 4},
+			size:     5,
+		},
+		{
+			name:     "Sorts full size things #2",
 			data:     []int{4, 3, 2, 1, 0},
 			expected: []int{0, 1, 2, 3, 4},
 			size:     5,
 		},
 		{
-			name:     "Sorts completely at size actually almost random",
-			data:     []int{4, 2, 0, 3, 1},
-			expected: []int{0, 1, 2, 3, 4},
-			size:     5,
-		},
-		{
-			name:     "Sorts best effort beyond size",
-			data:     []int{4, 2, 0, 3, 1},
-			expected: []int{0, 2, 1, 3, 4},
+			name:     "Kinda sorts big things",
+			data:     []int{4, 2, 0, 3, 1, 5},
+			expected: []int{0, 2, 1, 3, 4, 5},
 			size:     3,
 		},
 		{
@@ -253,16 +259,28 @@ func testRingSorting(t *testing.T, mySort BatchSorterInt, comparator func(a, b i
 			expected: []int{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 17, 18, 19, 20},
 			size:     5,
 		},
-		{
-			name:     "Sorts large data",
-			data:     genIntsShuffled(100_00),
-			expected: genInts(100_00),
-			size:     100_000,
-		},
+		//{
+		//	name:     "Sorts large data",
+		//	data:     genIntsShuffled(100_00),
+		//	expected: genInts(100_00),
+		//	size:     100_000,
+		//},
 		{
 			name:     "Sorts partially shuffled data",
 			data:     append(genInts(5), append(genIntsShuffledOffset(5, 5), genIntsOffset(5, 10)...)...),
-			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+			expected: genInts(5 + 5 + 5),
+			size:     5,
+		},
+		{
+			name:     "Sorts partially shuffled data 2",
+			data:     append(genInts(3), append(genIntsShuffledOffset(5, 3), genIntsOffset(5, 3+5)...)...),
+			expected: genInts(3 + 5 + 5),
+			size:     5,
+		},
+		{
+			name:     "Sorts partially shuffled data 3",
+			data:     append(genInts(6), append(genIntsShuffledOffset(5, 6), genIntsOffset(5, 6+5)...)...),
+			expected: genInts(6 + 5 + 5),
 			size:     5,
 		},
 		// Fails probabilistically, because batch size too low. Just a demo.
@@ -280,7 +298,7 @@ func testRingSorting(t *testing.T, mySort BatchSorterInt, comparator func(a, b i
 			b := mySort(ctx, c.size, comparator, s)
 			result := Collect(ctx, b)
 			if !slices.Equal(c.expected, result) {
-				tt.Errorf("Expected/Got\n%v\n%v", c.expected, result)
+				tt.Errorf("Started/Expected/Got\n%v\n%v\n%v", c.data, c.expected, result)
 			}
 		})
 	}

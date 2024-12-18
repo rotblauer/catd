@@ -256,7 +256,7 @@ func (ct *CatTrack) Validate() error {
 // then, in case of equivalence, by accuracy.
 // > cmp(a, b) should return a negative number when a < b,
 // > a positive number when a > b, and zero when a == b
-func SortFunc(a, b CatTrack) int {
+func SortCatsFunc(a, b CatTrack) int {
 	aUUID := a.Properties.MustString("UUID", "a")
 	bUUID := b.Properties.MustString("UUID", "b")
 	if aUUID < bUUID {
