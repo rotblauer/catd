@@ -154,7 +154,6 @@ func TestBatchSorting(t *testing.T) {
 		testBatchSort(t, BatchSort, myOrdering)
 	})
 	t.Run("BatchSortBetterSorta", func(t *testing.T) {
-		//t.Skip("failure to comprehend")
 		testBatchSort(t, BatchSortBetterSorta, myOrdering)
 	})
 }
@@ -201,131 +200,76 @@ func testBatchSort(t *testing.T, mySort BatchSorterInt, comparator func(a, b int
 
 func TestRingSort(t *testing.T) {
 	t.Run("RingSort", func(t *testing.T) {
-		testRingSort(t, RingSort, myOrdering)
+		testRingSorting(t, RingSort, myOrdering)
 	})
 }
 
-func testRingSort(t *testing.T, mySort BatchSorterInt, comparator func(a, b int) int) {
+func testRingSorting(t *testing.T, mySort BatchSorterInt, comparator func(a, b int) int) {
 	cases := []struct {
-		name string
-		fn   func(tt *testing.T)
+		name     string
+		data     []int
+		expected []int
+		size     int
 	}{
 		{
-			name: "Does not unsort",
-			fn: func(tt *testing.T) {
-				data := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
-				expected := make([]int, len(data))
-				copy(expected, data)
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Does not unsort",
+			data:     []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+			size:     5,
 		},
 		{
-			name: "Sorts below size",
-			fn: func(tt *testing.T) {
-				data := []int{3, 2, 1}
-				expected := []int{1, 2, 3}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts below size",
+			data:     []int{3, 2, 1},
+			expected: []int{1, 2, 3},
+			size:     5,
 		},
 		{
-			name: "Sorts completely at size",
-			fn: func(tt *testing.T) {
-				data := []int{5, 4, 3, 2, 1}
-				expected := []int{1, 2, 3, 4, 5}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts completely at size",
+			data:     []int{4, 3, 2, 1, 0},
+			expected: []int{0, 1, 2, 3, 4},
+			size:     5,
 		},
 		{
-			name: "Sorts completely at size actually almost random",
-			fn: func(tt *testing.T) {
-				data := genIntsShuffled(5)
-				expected := []int{0, 1, 2, 3, 4}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts completely at size actually almost random",
+			data:     []int{4, 2, 0, 3, 1},
+			expected: []int{0, 1, 2, 3, 4},
+			size:     5,
 		},
 		{
-			name: "Sorts best effort beyond size",
-			fn: func(tt *testing.T) {
-				data := []int{6, 5, 4, 3, 2, 1, 0}
-				expected := []int{2, 1, 0, 3, 4, 5, 6}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts best effort beyond size",
+			data:     []int{4, 2, 0, 3, 1},
+			expected: []int{0, 2, 1, 3, 4},
+			size:     3,
 		},
 		{
-			name: "Sorts slightly shuffled simulated cats",
-			fn: func(tt *testing.T) {
-				data := []int{0, 1, 3, 2, 5, 4, 6, 8, 7, 9, 10, 12, 11, 14, 13, 16, 15, 18, 20, 17, 19}
-				expected := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts slightly shuffled simulated cats",
+			data:     []int{0, 1, 3, 2, 5, 4, 6, 8, 7, 9, 10, 12, 11, 14, 13, 16, 15, 18, 20, 17, 19},
+			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+			size:     5,
 		},
 		{
-			name: "Sorts unintuitively but as expected",
-			fn: func(tt *testing.T) {
-				data := []int{20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
-				expected := []int{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 17, 18, 19, 20}
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 5, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected %v, got %v", expected, result)
-				}
-			},
+			name:     "Sorts unintuitively but as expected",
+			data:     []int{20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
+			expected: []int{16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 17, 18, 19, 20},
+			size:     5,
 		},
 		{
-			name: "Sorts large data",
-			fn: func(tt *testing.T) {
-				data := genIntsShuffled(100_00)
-				expected := genInts(100_00)
-				ctx := context.Background()
-				s := Slice(ctx, data)
-				b := mySort(ctx, 100_00, comparator, s)
-				result := Collect(ctx, b)
-				if !slices.Equal(expected, result) {
-					tt.Errorf("Expected/Got\n%v\n%v", expected, result)
-				}
-			},
+			name:     "Sorts large data",
+			data:     genIntsShuffled(100_00),
+			expected: genInts(100_00),
+			size:     100_000,
 		},
 	}
 	for _, c := range cases {
-		t.Run(c.name, c.fn)
+		t.Run(c.name, func(tt *testing.T) {
+			ctx := context.Background()
+			s := Slice(ctx, c.data)
+			b := mySort(ctx, c.size, comparator, s)
+			result := Collect(ctx, b)
+			if !slices.Equal(c.expected, result) {
+				tt.Errorf("Expected/Got\n%v\n%v", c.expected, result)
+			}
+		})
 	}
 }
 
