@@ -153,8 +153,8 @@ func TestBatchSorting(t *testing.T) {
 	t.Run("BatchSort", func(t *testing.T) {
 		testBatchSort(t, BatchSort, myOrdering)
 	})
-	t.Run("BatchSortBetterSorta", func(t *testing.T) {
-		testBatchSort(t, BatchSortBetterSorta, myOrdering)
+	t.Run("BatchSortaBetter", func(t *testing.T) {
+		testBatchSort(t, BatchSortaBetter, myOrdering)
 	})
 }
 
@@ -328,8 +328,8 @@ func BenchmarkSorts(b *testing.B) {
 	b.Run("BatchSort", func(bb *testing.B) {
 		benchmarkSort(bb, BatchSort, benchmarkBatchSize)
 	})
-	b.Run("BatchSortBetterSorta", func(bb *testing.B) {
-		benchmarkSort(bb, BatchSortBetterSorta, benchmarkBatchSize)
+	b.Run("BatchSortaBetter", func(bb *testing.B) {
+		benchmarkSort(bb, BatchSortaBetter, benchmarkBatchSize)
 	})
 	b.Run("RingSort", func(bb *testing.B) {
 		benchmarkSort(bb, RingSort, benchmarkBatchSize)

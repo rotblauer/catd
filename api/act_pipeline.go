@@ -16,8 +16,8 @@ import (
 
 func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) error {
 
-	lapTracks := make(chan cattrack.CatTrack, params.DefaultBatchSize)
-	napTracks := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	lapTracks := make(chan cattrack.CatTrack, params.DefaultChannelCap)
+	napTracks := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 
 	// TrackLaps will send completed laps. Incomplete laps are persisted in KV
 	// and restored on cat restart.

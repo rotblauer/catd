@@ -167,7 +167,7 @@ Missoula, Montana
 		quitScanner := make(chan struct{}, 3)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
-			optCatWorkersN, params.DefaultBatchSize, params.RPCTrackBatchSize)
+			optCatWorkersN, 1_111, 111_111)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -288,7 +288,7 @@ func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 		slog.Info("Cat worker populator done", "cat", cat.CatID)
 	}()
 
-	recat := make(chan []byte, params.DefaultBatchSize)
+	recat := make(chan []byte, params.DefaultChannelCap)
 	recat <- first
 	go func() {
 		defer close(recat)
@@ -422,7 +422,7 @@ func tryGetOrInitRgeoD(cmd *cobra.Command, args []string) {
 	}
 	start := time.Now()
 trying:
-	for ; time.Since(start) < 1*time.Minute; time.Sleep(5 * time.Second) {
+	for ; time.Since(start) < 1*time.Minute; time.Sleep(2 * time.Second) {
 		rpcClient, err := common.DialRPC(optRgeoDNetwork, optRgeoDAddress)
 		if err == nil {
 			err = rpcClient.Call("ReverseGeocode.Ping", common.ArgNone, nil)
@@ -436,7 +436,7 @@ trying:
 		// Gotcha: errors from RPC client isn't _the actual_ error,
 		// because it's coming from the RPC client (not inproc). Leaving noop errors.Is only for fair warning.
 		if err.Error() == rgeod.ErrNotReady.Error() || errors.Is(err, rgeod.ErrNotReady) {
-			slog.Warn("RgeoD not ready, retrying in 5s...", "error", err)
+			slog.Warn("RgeoD not ready, retrying in 2s...")
 			continue
 		}
 		for _, tolerated := range rpcToleratedErrors {

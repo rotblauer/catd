@@ -213,7 +213,7 @@ func sendErr(errs chan error, err error) {
 
 var ErrMissingAttribute = errors.New("missing attribute in read line")
 
-func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bufferN, closeCatAfterInt int) (chan chan []byte, chan error) {
+func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, catChannelCap, closeCatAfterInt int) (chan chan []byte, chan error) {
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
 	// CHECKME. Leaky faucet somewhere. Smells in here.
@@ -279,7 +279,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 
 			catID := conceptual.CatID(names.AliasOrSanitizedName(cat))
 
-			// Every once in bufferN, check to see if there are cats we haven't seen tracks from since last.
+			// Every once in catChannelCap, check to see if there are cats we haven't seen tracks from since last.
 			// For these expired cats, close their chans to free up resources, and make way for more cats.
 
 			n := met.nn.Load()
@@ -307,7 +307,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{}, workersN, bu
 			}
 			catLastMap.Store(catID, n)
 
-			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, bufferN))
+			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, catChannelCap))
 			if loaded {
 				v.(chan []byte) <- msg
 				continue

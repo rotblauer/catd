@@ -209,11 +209,11 @@ func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) in
 	return out
 }
 
-// BatchSortBetterSorta is a batching function that can sort batches of elements
+// BatchSortaBetter is a batching function that can sort batches of elements
 // before forwarding them on the channel. The 'sorter' function is optional.
 // It is sorta better because it only sorts when necessary, by checking if the
 // last two elements are sorted.
-func BatchSortBetterSorta[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
+func BatchSortaBetter[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
 	out := make(chan T, batchSize)
 	go func() {
 		defer close(out)

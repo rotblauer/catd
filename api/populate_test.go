@@ -107,6 +107,12 @@ func TestCat_Populate(t *testing.T) {
 }
 
 func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProdCount int) {
+	//opdbs := params.DefaultBatchSize
+	//params.DefaultBatchSize = 100
+	//defer func() {
+	//	params.DefaultBatchSize = opdbs
+	//}()
+
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
@@ -132,13 +138,15 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 		t.Fatal(err)
 	}
 
-	s, err := c.WithState(true)
+	// Gotcha: Populate will have closed the state. Must reopen.
+	_, err = c.WithState(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+
+	defer c.State.Close()
 	old := &cattrack.OffsetIndexT{}
-	if err := s.ReadKVUnmarshalJSON([]byte("state"), []byte("offsetIndexer"), old); err != nil {
+	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("offsetIndexer"), old); err != nil {
 		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
 	}
 	j, _ := json.MarshalIndent(old, "", "  ")
@@ -147,7 +155,7 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 		t.Log(string(j))
 	}
 
-	f, err := catz.NewFlatWithRoot(filepath.Join(s.Flat.Path(), "tracks")).NamedGZReader("2024-12.geojson.gz")
+	f, err := c.State.Flat.Joins("tracks").NamedGZReader("2024-12.geojson.gz")
 	if err != nil {
 		t.Fatal(err)
 	}

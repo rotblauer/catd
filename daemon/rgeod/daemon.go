@@ -52,18 +52,24 @@ func (d *RgeoDaemon) Start() error {
 	d.logger.Info("Rgeo daemon starting...",
 		"network", d.config.ListenerConfig.Network, "address", d.config.ListenerConfig.Address)
 
-	os.Remove(d.config.Address) // FIXME
+	//os.Remove(d.config.Address) // FIXME
 	if strings.HasPrefix(d.config.Network, "unix") {
+		if _, err := os.Stat(d.config.Address); err == nil {
+			d.logger.Info("Found existing socket file, checking response", "address", d.config.Address)
+			c, err := common.DialRPC(d.config.ListenerConfig.Network, d.config.ListenerConfig.Address)
+			if err == nil {
+				c.Close()
+				d.logger.Warn("Socket file already in use, refusing to compete", "address", d.config.ListenerConfig.Address)
+				return fmt.Errorf("%w: %s", ErrAlreadyRunning, d.config.ListenerConfig.Address)
+			}
+			d.logger.Warn("Removing existing socket file (non-responsive)", "address", d.config.Address)
+			os.Remove(d.config.Address)
+		}
 		defer os.Remove(d.config.Address)
-	}
-	c, err := common.DialRPC(d.config.ListenerConfig.Network, d.config.ListenerConfig.Address)
-	if err == nil {
-		c.Close()
-		return fmt.Errorf("%w: %s", ErrAlreadyRunning, d.config.ListenerConfig.Address)
 	}
 
 	d.server = rpc.NewServer()
-	err = d.server.Register(&ReverseGeocode{d})
+	err := d.server.Register(&ReverseGeocode{d})
 	if err != nil {
 		return err
 	}

@@ -13,8 +13,8 @@ import (
 var PropKeyInvalid = "invalid"
 
 func (c *Cat) Validate(ctx context.Context, in <-chan cattrack.CatTrack) (valid chan cattrack.CatTrack, invalid chan cattrack.CatTrack) {
-	valid = make(chan cattrack.CatTrack, params.DefaultBatchSize)
-	invalid = make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	valid = make(chan cattrack.CatTrack, params.DefaultChannelCap)
+	invalid = make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	go func() {
 		defer close(valid)
 		defer close(invalid)

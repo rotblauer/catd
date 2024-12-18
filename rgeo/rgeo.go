@@ -19,8 +19,10 @@ type ReverseGeocoder interface {
 	GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error)
 }
 
+// rR is the type of our wrapped rgeo.Rgeo instance, which implements the ReverseGeocoder interface.
 type rR rgeo.Rgeo
 
+// r is the instance of our wrapped rgeo.Rgeo instance.
 var r *rR
 
 func (rr *rR) GetLocation(pt orb.Point) (rgeo.Location, error) {
@@ -29,6 +31,20 @@ func (rr *rR) GetLocation(pt orb.Point) (rgeo.Location, error) {
 
 func (rr *rR) GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error) {
 	return (*rgeo.Rgeo)(rr).GetGeometry(pt, dataset)
+}
+
+func R(dataset string) ReverseGeocoder {
+	// if r == nil {
+	// WARN: This takes forever. Init first.
+	//
+	// *Rgeo contains indices representing collection of datasets.
+	// These datasets will be/can be reduced/cross-referenced to a single Location value.
+	// This function accepts a parameter which is not currently used,
+	// but which suggests that dataset services might be differentiated in the future.
+
+	// Another thing.
+
+	return r
 }
 
 //type RPCReverseGeocoder struct {
@@ -59,20 +75,6 @@ func (rr *rR) GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error) {
 //func (r *RPCReverseGeocoder) Close() error {
 //	return r.client.Close()
 //}
-
-func R(dataset string) ReverseGeocoder {
-	// if r == nil {
-	// WARN: This takes forever. Init first.
-	//
-	// *Rgeo contains indices representing collection of datasets.
-	// These datasets will be/can be reduced/cross-referenced to a single Location value.
-	// This function accepts a parameter which is not currently used,
-	// but which suggests that dataset services might be differentiated in the future.
-
-	// Another thing.
-
-	return r
-}
 
 var (
 	Cities10      = rgeo.Cities10

@@ -39,9 +39,9 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	improved := c.ImprovedActTracks(ctx, cleaned)
 	woffsets := cattrack.WithTimeOffset(ctx, improved)
 
-	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
-	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
-	simpleIndexerCh := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
+	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
+	simpleIndexerCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	stream.TeeMany(ctx, woffsets, areaPipeCh, vectorPipeCh, simpleIndexerCh)
 
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)

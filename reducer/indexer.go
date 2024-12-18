@@ -171,7 +171,7 @@ func (ci *CellIndexer) Index(ctx context.Context, in <-chan cattrack.CatTrack) e
 	batches := stream.Batch(ctx, nil,
 		func(tracks []cattrack.CatTrack) bool {
 			return len(tracks) == ci.Config.BatchSize
-		}, stream.Buffered(ctx, in, params.DefaultBatchSize))
+		}, stream.Buffered(ctx, in, ci.Config.BatchSize))
 	batchIndex := 0
 	n := params.DefaultBatchSize / ci.Config.BatchSize // eg. 100_000 / 10_000 = 10
 	for batch := range batches {
@@ -342,7 +342,7 @@ func (ci *CellIndexer) Close() error {
 // It returns a channel of CatTracks and a channel of errors.
 // Only non-nil errors are sent.
 func (ci *CellIndexer) DumpLevel(level Bucket) (chan cattrack.CatTrack, chan error) {
-	out := make(chan cattrack.CatTrack, params.DefaultBatchSize)
+	out := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	errs := make(chan error, 2)
 	go func() {
 		defer close(out)

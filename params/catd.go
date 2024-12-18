@@ -50,10 +50,21 @@ var CatSnapBucket = []byte("snaps")
 // What are they anyways, really? Buffers are the channel size, batches are the
 // number of tracks per batch... (so, what's a "batch"?)...
 // TODO: Make this a flag lol
+
+// DefaultBatchSize is now the default batch size primarily for doing db io.
 var DefaultBatchSize = 9_000
-var DefaultBufferSize = 100_000
-var RPCTrackBatchSize = 111_111 //  9_000 is about 8.3MB max. Give me 100MB max: 111_000
-var DedupeCacheSize = 500_000
+
+// DefaultSortSize is the default size for sorting tracks.
+var DefaultSortSize = 9_000
+
+// DefaultChannelCap is the default channel capacity for channels.
+var DefaultChannelCap = 9_000
+
+// DedupeCacheSize is the default size for the dedupe cache.
+var DedupeCacheSize = int((1 * time.Hour).Seconds())
+
+// Disused since gone gz.
+//var RPCTrackBatchSize = 111_111 //  9_000 is about 8.3MB max. Give me 100MB max: 111_000
 
 var DefaultGZipCompressionLevel = gzip.BestCompression
 
