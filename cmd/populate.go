@@ -167,6 +167,9 @@ Missoula, Montana
 		quitScanner := make(chan struct{}, 3)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
+			// Small buffer to keep scanner running while workers catch up.
+			// A small buffer is faster than a large one,
+			// but too small is slower. These numbers are magic. Around 5MB/s.
 			optCatWorkersN, 1_111, 111_111)
 
 		go func() {
