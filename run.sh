@@ -74,7 +74,6 @@ run() {
   tdata | catd populate \
     --datadir /tmp/catd \
     --verbosity 0 \
-    --batch-size 9000 \
     --workers 0 \
     --sort true \
     --tiled.skip-edge

@@ -4,11 +4,14 @@ import (
 	"context"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/rotblauer/catd/params"
+	"math/rand"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 )
+
+var localRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func divideByTwo(n int) int {
 	return n / 2
@@ -251,6 +254,20 @@ func testRingSort(t *testing.T, mySort BatchSorterInt, comparator func(a, b int)
 			},
 		},
 		{
+			name: "Sorts completely at size actually almost random",
+			fn: func(tt *testing.T) {
+				data := genIntsShuffled(5)
+				expected := []int{0, 1, 2, 3, 4}
+				ctx := context.Background()
+				s := Slice(ctx, data)
+				b := mySort(ctx, 5, comparator, s)
+				result := Collect(ctx, b)
+				if !slices.Equal(expected, result) {
+					tt.Errorf("Expected %v, got %v", expected, result)
+				}
+			},
+		},
+		{
 			name: "Sorts best effort beyond size",
 			fn: func(tt *testing.T) {
 				data := []int{6, 5, 4, 3, 2, 1, 0}
@@ -292,8 +309,82 @@ func testRingSort(t *testing.T, mySort BatchSorterInt, comparator func(a, b int)
 				}
 			},
 		},
+		{
+			name: "Sorts large data",
+			fn: func(tt *testing.T) {
+				data := genIntsShuffled(100_00)
+				expected := genInts(100_00)
+				ctx := context.Background()
+				s := Slice(ctx, data)
+				b := mySort(ctx, 100_00, comparator, s)
+				result := Collect(ctx, b)
+				if !slices.Equal(expected, result) {
+					tt.Errorf("Expected/Got\n%v\n%v", expected, result)
+				}
+			},
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, c.fn)
 	}
+}
+
+func genInts(n int) []int {
+	data := make([]int, n)
+	for i := 0; i < n; i++ {
+		data[i] = i
+	}
+	return data
+}
+
+func shuffleInts(data []int) {
+	r := localRand.Int()
+	for i := len(data) - 1; i > 0; i-- {
+		j := r % (i + 1)
+		data[i], data[j] = data[j], data[i]
+	}
+}
+
+func genIntsShuffled(n int) []int {
+	data := genInts(n)
+	shuffleInts(data)
+	return data
+}
+
+var benchmarkBatchSize = 1_00
+
+func benchmarkSort(b *testing.B, sorter BatchSorterInt, size int) {
+	b.Run("Ordered", func(b *testing.B) {
+		data := genInts(size)
+		ctx := context.Background()
+		s := Slice(ctx, data)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			b := sorter(ctx, size, myOrdering, s)
+			_ = Collect(ctx, b)
+		}
+	})
+	b.Run("Shuffled", func(b *testing.B) {
+		data := genIntsShuffled(size)
+		ctx := context.Background()
+		s := Slice(ctx, data)
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			b := sorter(ctx, size, myOrdering, s)
+			_ = Collect(ctx, b)
+		}
+	})
+}
+
+func BenchmarkSorts(b *testing.B) {
+	b.ReportAllocs()
+	b.Run("BatchSort", func(b *testing.B) {
+		benchmarkSort(b, BatchSort, benchmarkBatchSize)
+	})
+	b.Run("BatchSortBetterSorta", func(b *testing.B) {
+		benchmarkSort(b, BatchSortBetterSorta, benchmarkBatchSize)
+	})
+	b.Run("RingSort", func(b *testing.B) {
+		benchmarkSort(b, RingSort, benchmarkBatchSize)
+	})
 }

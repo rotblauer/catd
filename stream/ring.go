@@ -99,6 +99,8 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 
+	wrote := rb.write
+	prev := (rb.write + rb.size - 1) % rb.size
 	rb.buffer[rb.write] = value
 	rb.write = (rb.write + 1) % rb.size
 
@@ -107,7 +109,8 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 	}
 
 	if rb.count > 1 {
-		for i := 0; i < rb.count-1; i++ {
+		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
+		for i := 0; !sorted && i < rb.count-1; i++ {
 			index := (rb.write + rb.size - rb.count + i) % rb.size
 			if !rb.less(rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size]) {
 				rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size] = rb.buffer[(rb.write+rb.size-1)%rb.size], rb.buffer[index]

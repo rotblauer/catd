@@ -133,10 +133,10 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	if sort {
 		// ~~Sorting is hard.~~
 		//pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
-		pipedLast = stream.BatchSortBetterSorta(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
+		//pipedLast = stream.BatchSortBetterSorta(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
 
 		// Only 131 / 20k times slower...
-		//pipedLast = stream.RingSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
+		pipedLast = stream.RingSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
 	}
 
 	// Unbacktrack drops tracks that are older than the last known track,
