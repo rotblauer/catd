@@ -259,6 +259,19 @@ func testRingSorting(t *testing.T, mySort BatchSorterInt, comparator func(a, b i
 			expected: genInts(100_00),
 			size:     100_000,
 		},
+		{
+			name:     "Sorts partially shuffled data",
+			data:     append(genInts(5), append(genIntsShuffledOffset(5, 5), genIntsOffset(5, 10)...)...),
+			expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+			size:     5,
+		},
+		// Fails probabilistically, because batch size too low. Just a demo.
+		//{
+		//	name:     "Fails to sort partially shuffled data with too small buffer",
+		//	data:     append(genInts(5), append(genIntsShuffledOffset(5, 5), genIntsOffset(5, 10)...)...),
+		//	expected: []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
+		//	size:     2,
+		//},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(tt *testing.T) {
@@ -281,6 +294,14 @@ func genInts(n int) []int {
 	return data
 }
 
+func genIntsOffset(n, offset int) []int {
+	data := make([]int, n)
+	for i := 0; i < n; i++ {
+		data[i] = i + offset
+	}
+	return data
+}
+
 func shuffleInts(data []int) {
 	r := localRand.Int()
 	for i := len(data) - 1; i > 0; i-- {
@@ -295,10 +316,29 @@ func genIntsShuffled(n int) []int {
 	return data
 }
 
+func genIntsShuffledOffset(n, offset int) []int {
+	data := genIntsOffset(n, offset)
+	shuffleInts(data)
+	return data
+}
+
 var benchmarkBatchSize = 1_00
 
-func benchmarkSort(b *testing.B, sorter BatchSorterInt, size int) {
-	b.Run("Ordered", func(b *testing.B) {
+func BenchmarkSorts(b *testing.B) {
+	b.Run("BatchSort", func(bb *testing.B) {
+		benchmarkSort(bb, BatchSort, benchmarkBatchSize)
+	})
+	b.Run("BatchSortBetterSorta", func(bb *testing.B) {
+		benchmarkSort(bb, BatchSortBetterSorta, benchmarkBatchSize)
+	})
+	b.Run("RingSort", func(bb *testing.B) {
+		benchmarkSort(bb, RingSort, benchmarkBatchSize)
+	})
+}
+
+func benchmarkSort(bb *testing.B, sorter BatchSorterInt, size int) {
+	bb.Run("Ordered", func(b *testing.B) {
+		b.ReportAllocs()
 		data := genInts(size)
 		ctx := context.Background()
 		s := Slice(ctx, data)
@@ -308,7 +348,8 @@ func benchmarkSort(b *testing.B, sorter BatchSorterInt, size int) {
 			_ = Collect(ctx, b)
 		}
 	})
-	b.Run("Shuffled", func(b *testing.B) {
+	bb.Run("Shuffled", func(b *testing.B) {
+		b.ReportAllocs()
 		data := genIntsShuffled(size)
 		ctx := context.Background()
 		s := Slice(ctx, data)
@@ -317,18 +358,5 @@ func benchmarkSort(b *testing.B, sorter BatchSorterInt, size int) {
 			b := sorter(ctx, size, myOrdering, s)
 			_ = Collect(ctx, b)
 		}
-	})
-}
-
-func BenchmarkSorts(b *testing.B) {
-	b.ReportAllocs()
-	b.Run("BatchSort", func(b *testing.B) {
-		benchmarkSort(b, BatchSort, benchmarkBatchSize)
-	})
-	b.Run("BatchSortBetterSorta", func(b *testing.B) {
-		benchmarkSort(b, BatchSortBetterSorta, benchmarkBatchSize)
-	})
-	b.Run("RingSort", func(b *testing.B) {
-		benchmarkSort(b, RingSort, benchmarkBatchSize)
 	})
 }
