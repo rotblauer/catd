@@ -1,6 +1,11 @@
 package stream
 
-import "sync"
+import (
+	"sync"
+)
+
+// https://logdy.dev/blog/post/ring-buffer-in-golang
+// https://www.sergetoro.com/golang-round-robin-queue-from-scratch/
 
 // RingBuffer from https://medium.com/@nathanbcrocker/a-practical-guide-to-implementing-a-generic-ring-buffer-in-go-866d27ec1a05.
 type RingBuffer[T any] struct {
@@ -61,6 +66,89 @@ func (rb *RingBuffer[T]) Last() T {
 }
 
 func (rb *RingBuffer[T]) First() T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.buffer[(rb.write+rb.size-rb.count)%rb.size]
+}
+
+func (rb *RingBuffer[T]) Scan(fn func(T) bool) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	for i := 0; i < rb.count; i++ {
+		index := (rb.write + rb.size - rb.count + i) % rb.size
+		if !fn(rb.buffer[index]) {
+			break
+		}
+	}
+}
+
+type SortingRingBuffer[T any] struct {
+	*RingBuffer[T]
+	less func(T, T) bool
+}
+
+func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuffer[T] {
+	return &SortingRingBuffer[T]{
+		RingBuffer: NewRingBuffer[T](size),
+		less:       less,
+	}
+}
+
+func (rb *SortingRingBuffer[T]) Add(value T) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	rb.buffer[rb.write] = value
+	rb.write = (rb.write + 1) % rb.size
+
+	if rb.count < rb.size {
+		rb.count++
+	}
+
+	if rb.count > 1 {
+		for i := 0; i < rb.count-1; i++ {
+			index := (rb.write + rb.size - rb.count + i) % rb.size
+			if rb.less(rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size]) {
+				rb.buffer[index], rb.buffer[(rb.write+rb.size-1)%rb.size] = rb.buffer[(rb.write+rb.size-1)%rb.size], rb.buffer[index]
+			}
+		}
+	}
+}
+
+func (rb *SortingRingBuffer[T]) Get() []T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	result := make([]T, 0, rb.count)
+
+	for i := 0; i < rb.count; i++ {
+		index := (rb.write + rb.size - rb.count + i) % rb.size
+		result = append(result, rb.buffer[index])
+	}
+
+	return result
+}
+
+func (rb *SortingRingBuffer[T]) Scan(fn func(T) bool) {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	for i := 0; i < rb.count; i++ {
+		index := (rb.write + rb.size - rb.count + i) % rb.size
+		if !fn(rb.buffer[index]) {
+			break
+		}
+	}
+}
+
+func (rb *SortingRingBuffer[T]) Last() T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	return rb.buffer[(rb.write+rb.size-1)%rb.size]
+}
+
+func (rb *SortingRingBuffer[T]) First() T {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
 	return rb.buffer[(rb.write+rb.size-rb.count)%rb.size]
