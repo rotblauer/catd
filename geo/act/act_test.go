@@ -1,43 +1,29 @@
 package act
 
 import (
-	"encoding/json"
-	"errors"
-	"github.com/rotblauer/catd/catz"
+	"context"
+	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
-	"io"
 	"testing"
 )
 
 func TestAccelerationStuff(t *testing.T) {
-
 	im := NewImprover()
-
-	testdataPathGZ := "../../testing/testdata/private/2024-09-0_rye.json.gz"
-	gzftw, err := catz.NewGZFileReader(testdataPathGZ)
+	ctx := context.Background()
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE1000))
+	err := <-errs
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer gzftw.Close()
-
-	dec := json.NewDecoder(gzftw)
-	for {
-		ct := cattrack.CatTrack{}
-		err := dec.Decode(&ct)
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			t.Fatal(err)
-		}
+	for ct := range tracks {
 		if err := im.Improve(ct); err != nil {
 			t.Fatal(err)
 		}
 		if im.Cat.ActivityState.IsActive() {
-			t.Log(im.Cat.ActivityState,
-				"acc", im.Cat.WindowAccelerationReportedSum/im.Cat.WindowSpan.Seconds(),
-				"speed", im.Cat.WindowSpeedReportedSum/im.Cat.WindowSpan.Seconds(),
-			)
+			//t.Log(im.Cat.ActivityState,
+			//	"acc", im.Cat.WindowAccelerationReportedSum/im.Cat.WindowSpan.Seconds(),
+			//	"speed", im.Cat.WindowSpeedReportedSum/im.Cat.WindowSpan.Seconds(),
+			//)
 		}
 	}
 }
