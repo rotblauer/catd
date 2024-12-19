@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"sort"
 	"sync"
 )
 
@@ -88,8 +87,9 @@ func (rb *RingBuffer[T]) Scan(fn func(T) bool) {
 
 type SortingRingBuffer[T any] struct {
 	*RingBuffer[T]
-	less func(T, T) bool
-	les  func(a T, b T) int
+	less  func(T, T) bool
+	les   func(a T, b T) int
+	iters int
 }
 
 func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuffer[T] {
@@ -111,97 +111,78 @@ func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuf
 }
 
 func (rb *SortingRingBuffer[T]) Add(value T) {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-
-	prev := (rb.write + rb.size - 1) % rb.size
-	wrote := rb.write
-	rb.buffer[rb.write] = value
-	rb.write = (rb.write + 1) % rb.size
-
-	if rb.count < rb.size {
-		rb.count++
-	}
-
-	once := sync.Once{}
+	rb.RingBuffer.Add(value)
 	if rb.count > 1 {
-		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
-		// I can walk forwards but not backwards.
-		if !sorted {
-			/*
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5997 pr=5996 wrote=5996
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7689 pr=7688 wrote=7688
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5998 pr=5997 wrote=5997
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7709 pr=7708 wrote=7708
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7714 pr=7713 wrote=7713
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6149 pr=6148 wrote=6148
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6154 pr=6153 wrote=6153
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				^C2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7719 pr=7718 wrote=7718
-
-				This is running backwards.
-			*/
-			//ii := 0
-			//for ii = 0; ii < rb.count-1; ii++ {
-			//	wr := (rb.write + rb.size - rb.count + ii) % rb.size
-			//	pr := (rb.write + rb.size - 1) % rb.size // prev
-			//	once.Do(func() {
-			//		//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
-			//	})
-			//	if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
-			//		rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
-			//	}
-			//}
-			//slog.Info("SortRing sorted", "iters", ii)
+		if !rb.less(rb.buffer[(rb.write+rb.size-2)%rb.size], rb.Last()) {
+			rb.Sort()
 		}
-
-		//for i := wrote; !sorted && i >= 0; i-- {
-		//	pr := (wrote + rb.size - 1) % rb.size // prev
-		//	wr := (wrote + rb.size - rb.count + i) % rb.size
-		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
-		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
-		//	}
-		//}
-		//for i := rb.count - 1; !sorted && i > 0; i-- {
-		//	pr := (rb.write + rb.size - 1) % rb.size // prev
-		//	wr := (rb.write + rb.size - rb.count + i) % rb.size
-		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
-		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
-		//	}
-		//}
-
-		//if sorted {
-		//sort.Slice(rb.buffer, func(i, j int) bool {
-		//	ii := (rb.write + rb.size - rb.count + i) % rb.size
-		//	jj := (rb.write + rb.size - 1) % rb.size
-		//	return rb.less(rb.buffer[ii], rb.buffer[jj])
-		//})
-		//}
-
-		//if !sorted {
-		//	slices.SortStableFunc(rb.buffer, rb.les)
-		//}
 	}
 }
 
-func (rb *SortingRingBuffer[T]) Get() []T {
+func (rb *SortingRingBuffer[T]) sort() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-
-	result := make([]T, 0, rb.count)
-
-	for i := 0; i < rb.count; i++ {
-		index := (rb.write + rb.size - rb.count + i) % rb.size
-		result = append(result, rb.buffer[index])
+	if rb.count < 2 {
+		return
 	}
+	back := func(i int) int {
+		return ((rb.write - 1 - i) + rb.size) % rb.size
+	}
+	i := 0
+	rb.iters = 0
+	for i < rb.count-1 {
+		rb.iters++
+		b1, b0 := back(i+1), back(i)
+		sorted := rb.less(rb.buffer[b1], rb.buffer[b0])
+		if sorted {
+			break
+		}
+		i++
+		rb.buffer[b1], rb.buffer[b0] = rb.buffer[b0], rb.buffer[b1]
+	}
+}
 
-	return result
+func (rb *SortingRingBuffer[T]) Sort() {
+	rb.sort()
+	// Giving up.
+	//index := func(i int) int {
+	//	// (rb.write + rb.size - rb.count + i) % rb.size
+	//	return (rb.write + rb.size - rb.count + i) % rb.size
+	//}
+	//sort.SliceStable(rb.buffer[:rb.count], func(i, j int) bool {
+	//	return rb.less(rb.buffer[index(i)], rb.buffer[index(j)])
+	//})
+	//buf := make([]T, rb.count)
+	//for i := 0; i < rb.count; i++ {
+	//	buf[i] = rb.buffer[i]
+	//}
+	//sort.SliceStable(buf, func(i, j int) bool {
+	//	return rb.less(buf[index(i)], buf[index(i)])
+	//})
+	//for i := 0; i < rb.count; i++ {
+	//	rb.buffer[i] = buf[i]
+	//}
+}
+
+func (rb *SortingRingBuffer[T]) IsSorted() bool {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if rb.count < 2 {
+		return true
+	}
+	wrote := (rb.write - 1 + rb.size) % rb.size
+	for ii := 0; ii < rb.count-1; ii++ {
+		rb.iters++
+		target := (rb.write + rb.size - rb.count + ii) % rb.size
+		if !rb.less(rb.buffer[target], rb.buffer[wrote]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (rb *SortingRingBuffer[T]) Get() []T {
+	return rb.RingBuffer.Get()
 }
 
 func (rb *SortingRingBuffer[T]) Scan(fn func(T) bool) {

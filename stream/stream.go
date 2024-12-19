@@ -264,13 +264,9 @@ func RingSort[T any](ctx context.Context, size int, sorter func(a, b T) int, in 
 		}
 		var ring = NewSortingRingBuffer[T](size, less)
 		flush := func() {
-			for _, r := range ring.Get() {
-				select {
-				case <-ctx.Done():
-					return
-				case out <- r:
-				}
-			}
+			Sink(ctx, func(t T) {
+				out <- t
+			}, Slice(ctx, ring.Get()))
 		}
 		defer flush()
 
