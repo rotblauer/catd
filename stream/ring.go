@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"log/slog"
 	"sync"
 )
 
@@ -152,13 +151,13 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 				wr := (rb.write + rb.size - rb.count + ii) % rb.size
 				pr := (rb.write + rb.size - 1) % rb.size // prev
 				once.Do(func() {
-					slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
+					//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
 				})
 				if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
 					rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
 				}
 			}
-			slog.Info("SortRing sorted", "iters", ii)
+			//slog.Info("SortRing sorted", "iters", ii)
 		}
 
 		//for i := wrote; !sorted && i >= 0; i-- {
