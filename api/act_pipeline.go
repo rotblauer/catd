@@ -122,10 +122,10 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	sinkWG.Add(1)
 	sinkErr := make(chan error, expectedErrsN)
 	go func() {
-		c.logger.Info("Act detection waiting on errors")
-		defer c.logger.Debug("Act detection pipeline errors complete")
 		defer sinkWG.Done()
 		defer close(sinkErr)
+		defer c.logger.Debug("Act detection pipeline errors complete")
+		c.logger.Info("Act detection waiting on errors")
 		for i := 0; i < expectedErrsN; i++ {
 			select {
 			case err := <-errCh:
@@ -162,19 +162,15 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 		default:
 			a := activity.FromString(ct.Properties.MustString("Activity", ""))
 			if act.IsActivityActive(a) {
-
 				lastActiveTime = ct.MustTime()
 				lapTracks <- ct
-
 			} else {
-
 				// Flush last lap if cat is sufficiently napping.
 				if !lastActiveTime.IsZero() &&
 					ct.MustTime().Sub(lastActiveTime) > params.DefaultLapConfig.Interval {
-					ls.Flush()
+					ls.Bump()
 					lastActiveTime = time.Time{}
 				}
-
 				napTracks <- ct
 			}
 		}

@@ -20,6 +20,7 @@ type State struct {
 	Tracks   []*cattrack.CatTrack // the points represented by the linestring
 	TimeLast time.Time
 	ch       chan cattrack.CatLap
+	bump     chan struct{}
 }
 
 func NewState(config *params.ActDiscretionConfig) *State {
@@ -31,14 +32,15 @@ func NewState(config *params.ActDiscretionConfig) *State {
 		Tracks:   make([]*cattrack.CatTrack, 0),
 		TimeLast: time.Time{},
 		ch:       make(chan cattrack.CatLap),
+		bump:     make(chan struct{}, 1),
 	}
 }
 
 func (s *State) Add(ct *cattrack.CatTrack) {
-	defer func() {
-		s.TimeLast = ct.MustTime()
-		s.Tracks = append(s.Tracks, ct)
-	}()
+	defer func(t *cattrack.CatTrack) {
+		s.TimeLast = t.MustTime()
+		s.Tracks = append(s.Tracks, t)
+	}(ct)
 	if s.IsDiscontinuous(ct) {
 		s.Flush()
 	}
@@ -64,6 +66,10 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	return !activity.IsContinuous(currentAct, lastAct)
 }
 
+func (s *State) Bump() {
+	s.bump <- struct{}{}
+}
+
 func (s *State) Flush() {
 	if len(s.Tracks) >= 2 {
 		lap := cattrack.NewCatLap(s.Tracks)
@@ -80,18 +86,20 @@ func (s *State) Flush() {
 func (s *State) Stream(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatLap {
 	go func() {
 		defer close(s.ch)
-		for ct := range in {
-			if ct.IsEmpty() {
-				panic("empty track")
-				continue
-			}
-			s.Add(&ct)
+		for {
 			select {
 			case <-ctx.Done():
 				return
-			default:
+			case <-s.bump:
+				s.Flush()
+			case ct, open := <-in:
+				if !open {
+					return
+				}
+				s.Add(&ct)
 			}
 		}
+
 		// Do not flush remaining tracks, these are an incomplete lap.
 		// We'll depend on the caller to decide what to do with them.
 	}()
