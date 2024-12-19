@@ -26,11 +26,11 @@ tdata() {
 #     zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 
-#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+   zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-10"*.gz
 
-    zcat "${HOME}"/tdata/master.json.gz
+#     zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
 
 #  shopt -s globstar;

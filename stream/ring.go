@@ -119,27 +119,49 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 	}
 }
 
-func (rb *SortingRingBuffer[T]) Sort() {
+func (rb *SortingRingBuffer[T]) sort() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	if rb.count > 1 {
-		wrote := (rb.write - 1 + rb.size) % rb.size
-		//offset := rb.size - rb.count
-		for ii := 0; ii < rb.count-1; ii++ {
-			rb.iters++
-			//back := (rb.write + offset + ii) % rb.size
-			back := ((rb.write - 2 - ii) + rb.size) % rb.size
-			// eg. rb.write = 3 (next write index), rb.size = 5, rb.count = 3, offset = 2 => 3 + 2 + 0 % 5 = 0
-			// eg. rb.write = 4 (next write index), rb.size = 5, rb.count = 4, offset = 1 => 4 + 1 + 0 % 5 = 0
-			// eg. rb.write = 5 (next write index), rb.size = 5, rb.count = 5, offset = 0 => 5 + 0 + 0 % 5 = 0
-			if !rb.less(rb.buffer[back], rb.buffer[wrote]) {
-				rb.buffer[back], rb.buffer[wrote] = rb.buffer[wrote], rb.buffer[back]
-				break
-			} else {
-				//break
-			}
-		}
+	if rb.count < 2 {
+		return
 	}
+	back := func(i int) int {
+		return ((rb.write - 1 - i) + rb.size) % rb.size
+	}
+	i := 0
+	rb.iters = 0
+	for i < rb.count-1 {
+		rb.iters++
+		b1, b0 := back(i+1), back(i)
+		sorted := rb.less(rb.buffer[b1], rb.buffer[b0])
+		if sorted {
+			break
+		}
+		i++
+		rb.buffer[b1], rb.buffer[b0] = rb.buffer[b0], rb.buffer[b1]
+	}
+}
+
+func (rb *SortingRingBuffer[T]) Sort() {
+	rb.sort()
+	// Giving up.
+	//index := func(i int) int {
+	//	// (rb.write + rb.size - rb.count + i) % rb.size
+	//	return (rb.write + rb.size - rb.count + i) % rb.size
+	//}
+	//sort.SliceStable(rb.buffer[:rb.count], func(i, j int) bool {
+	//	return rb.less(rb.buffer[index(i)], rb.buffer[index(j)])
+	//})
+	//buf := make([]T, rb.count)
+	//for i := 0; i < rb.count; i++ {
+	//	buf[i] = rb.buffer[i]
+	//}
+	//sort.SliceStable(buf, func(i, j int) bool {
+	//	return rb.less(buf[index(i)], buf[index(i)])
+	//})
+	//for i := 0; i < rb.count; i++ {
+	//	rb.buffer[i] = buf[i]
+	//}
 }
 
 func (rb *SortingRingBuffer[T]) IsSorted() bool {
@@ -192,45 +214,3 @@ func (rb *SortingRingBuffer[T]) Len() int {
 	defer rb.mu.Unlock()
 	return rb.count
 }
-
-/*
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5997 pr=5996 wrote=5996
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7689 pr=7688 wrote=7688
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5998 pr=5997 wrote=5997
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7709 pr=7708 wrote=7708
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7714 pr=7713 wrote=7713
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6149 pr=6148 wrote=6148
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6154 pr=6153 wrote=6153
-	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-	^C2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7719 pr=7718 wrote=7718
-
-	This is running backwards.
-*/
-/*
-	/*
-
-
-		I guess you can acheive that by doing:
-
-		   targetIndex = (arryLength + (index- x)% arryLength ) % arryLength
-
-		where:
-
-		    index: is the location from where you want to look back
-
-		    x: is the number of items you want to look back
-
-		    explanation:
-		     in Modulo arithmetic adding arryLength any number of times to an index and doing a mod % arryLength will not change the position of the index within the array
-		     -(index- x)% arryLength could result in a negative value
-		     -this value would lie between -arryLength and +arryLength (non inclusive)
-		     -now adding arryLength to the resulting value and taking the mod again we get a value between 0 and arryLength
-
-		https://stackoverflow.com/a/66701348
-*/
