@@ -213,6 +213,7 @@ func BatchSort[T any](ctx context.Context, batchSize int, sorter func(a, b T) in
 // before forwarding them on the channel. The 'sorter' function is optional.
 // It is sorta better because it only sorts when necessary, by checking if the
 // last two elements are sorted.
+// Update: It's not really sorta better. Benchmarks show comparable or significantly WORSE thanS plain BatchSort.
 func BatchSortaBetter[T any](ctx context.Context, batchSize int, sorter func(a, b T) int, in <-chan T) <-chan T {
 	out := make(chan T, batchSize)
 	go func() {

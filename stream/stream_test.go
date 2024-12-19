@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/rotblauer/catd/params"
 	"math/rand"
@@ -340,18 +341,19 @@ func genIntsShuffledOffset(n, offset int) []int {
 	return data
 }
 
-var benchmarkBatchSize = 1_00
-
 func BenchmarkSorts(b *testing.B) {
-	b.Run("BatchSort", func(bb *testing.B) {
-		benchmarkSort(bb, BatchSort, benchmarkBatchSize)
-	})
-	b.Run("BatchSortaBetter", func(bb *testing.B) {
-		benchmarkSort(bb, BatchSortaBetter, benchmarkBatchSize)
-	})
-	b.Run("RingSort", func(bb *testing.B) {
-		benchmarkSort(bb, RingSort, benchmarkBatchSize)
-	})
+	sizes := []int{100, 1_000, 10_000}
+	for _, mySize := range sizes {
+		b.Run(fmt.Sprintf("BatchSort-%d", mySize), func(bb *testing.B) {
+			benchmarkSort(bb, BatchSort, mySize)
+		})
+		b.Run(fmt.Sprintf("BatchSortaBetter-%d", mySize), func(bb *testing.B) {
+			benchmarkSort(bb, BatchSortaBetter, mySize)
+		})
+		b.Run(fmt.Sprintf("RingSort-%d", mySize), func(bb *testing.B) {
+			benchmarkSort(bb, RingSort, mySize)
+		})
+	}
 }
 
 func benchmarkSort(bb *testing.B, sorter BatchSorterInt, size int) {

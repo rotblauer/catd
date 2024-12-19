@@ -95,7 +95,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	c.SubscribeFancyLogs()
 
-	// Blocking.
+	// Must get blocking exclusive hold on state.
 	c.logger.Info("Populate blocking on lock state")
 	_, err := c.WithState(false)
 	if err != nil {
@@ -131,9 +131,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	pipedLast := stamped
 	if sort {
-		// ~~Sorting is hard.~~
-		//pipedLast = stream.BatchSort(ctx, params.DefaultBatchSize, cattrack.SortFunc, stamped)
-		pipedLast = stream.BatchSortaBetter(ctx, params.DefaultBatchSize, cattrack.SortCatsFunc, stamped)
+		pipedLast = stream.BatchSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
+		//pipedLast = stream.BatchSortaBetter(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
 		//pipedLast = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
 	}
 

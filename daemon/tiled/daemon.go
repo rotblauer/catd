@@ -243,8 +243,8 @@ func (d *TileD) awaitPendingTileRequests() {
 	results := make(chan result, len(requests))
 
 	// Use work pool.
+	// Running all concurrently slams the RAM.
 	// Running serially is slower than necessary (most sets are small-ish, a few big).
-	// But running all concurrently can/does slam the RAM.
 	workers := 4
 	work := make(chan *TilingRequestArgs, len(requests))
 	for i := 0; i < workers; i++ {
