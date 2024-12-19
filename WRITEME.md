@@ -1,3 +1,29 @@
+```shell
+2024/12/18 21:21:19 INFO Read tracks n=73,219,154 read.last="2019-03-07 14:35:48" tps=8055 bps="3.4 MB" total.bytes="27 GB" running=2h12m10s
+2024/12/18 21:21:21 INFO 📍 Completed nap cat=ia time=2019-03-02T16:52:08-07:00 count=54 duration=18h20m36s area="2 km²" edge="54 m"
+2024/12/18 21:21:21 INFO 🚴 Completed lap cat=ia time=2019-03-03T11:08:45-07:00 count=1414 duration=48m37s meters="10.79 km" activity=Bike
+2024/12/18 21:21:21 INFO 📍 Completed nap cat=ia time=2019-03-03T11:54:28-07:00 count=60 duration=1h35m50s area="14 km²" edge="120 m"
+2024/12/18 21:21:21 INFO 🚴 Completed lap cat=ia time=2019-03-03T13:27:07-07:00 count=1360 duration=36m40s meters="9.8 km" activity=Bike
+2024/12/18 21:21:21 INFO 🚴 Completed lap cat=ia time=2019-03-04T16:51:13-07:00 count=159 duration=5m21s meters="1.22 km" activity=Bike
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x48 pc=0x8572ed]
+
+goroutine 43817 [running]:
+github.com/rotblauer/catd/types/cattrack.ActivityModeNotUnknownNorStationary({0xc0ddac3008, 0x148, 0x0?})
+        /home/ia/dev/rotblauer/catd/types/cattrack/lap.go:139 +0x6d
+github.com/rotblauer/catd/types/cattrack.NewCatLap({0xc0ddac3008, 0x148, 0x1ff})
+        /home/ia/dev/rotblauer/catd/types/cattrack/lap.go:47 +0x125
+github.com/rotblauer/catd/geo/lap.(*State).Flush(0xc05b729c40)
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:69 +0x31
+github.com/rotblauer/catd/geo/lap.(*State).Add(0xc05b729c40, 0x65cc77?)
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:43 +0x6e
+github.com/rotblauer/catd/geo/lap.(*State).Stream.func1()
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:88 +0x19b
+created by github.com/rotblauer/catd/geo/lap.(*State).Stream in goroutine 43693
+        /home/ia/dev/rotblauer/catd/geo/lap/lap.go:81 +0x8f
+
+real    132m34.469s
+```
 
 ```shell
 2024/12/18 02:26:59 INFO 🚗 Completed lap cat=ia time=2020-02-16T13:13:21-07:00 count=1677 duration=31m44s meters="35.25 km" activity=Automotive
@@ -44,6 +70,8 @@ catd \
     --tiled.address localhost:1234 \
     webd
 ```
+
+
 
 ```shell
 catd \

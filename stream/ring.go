@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"sort"
 	"sync"
 )
 
@@ -146,17 +147,17 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 
 				This is running backwards.
 			*/
-			ii := 0
-			for ii = 0; ii < rb.count-1; ii++ {
-				wr := (rb.write + rb.size - rb.count + ii) % rb.size
-				pr := (rb.write + rb.size - 1) % rb.size // prev
-				once.Do(func() {
-					//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
-				})
-				if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
-					rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
-				}
-			}
+			//ii := 0
+			//for ii = 0; ii < rb.count-1; ii++ {
+			//	wr := (rb.write + rb.size - rb.count + ii) % rb.size
+			//	pr := (rb.write + rb.size - 1) % rb.size // prev
+			//	once.Do(func() {
+			//		//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
+			//	})
+			//	if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
+			//		rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
+			//	}
+			//}
 			//slog.Info("SortRing sorted", "iters", ii)
 		}
 
