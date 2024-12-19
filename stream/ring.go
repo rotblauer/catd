@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"log/slog"
 	"sync"
 )
 
@@ -88,8 +87,9 @@ func (rb *RingBuffer[T]) Scan(fn func(T) bool) {
 
 type SortingRingBuffer[T any] struct {
 	*RingBuffer[T]
-	less func(T, T) bool
-	les  func(a T, b T) int
+	less  func(T, T) bool
+	les   func(a T, b T) int
+	iters int
 }
 
 func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuffer[T] {
@@ -123,7 +123,7 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 		rb.count++
 	}
 
-	once := sync.Once{}
+	//once := sync.Once{}
 	if rb.count > 1 {
 		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
 		// I can walk forwards but not backwards.
@@ -148,17 +148,54 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 				This is running backwards.
 			*/
 			ii := 0
+			//for ii = 0; ii < rb.count-1; ii++ {
+			//	rb.iters++
+			//	wr := (rb.write + rb.size - rb.count + ii) % rb.size
+			//	pr := (wrote + rb.size) % rb.size // prev
+			//	once.Do(func() {
+			//		slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
+			//	})
+			//	if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
+			//		rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
+			//	}
+			//}
+			/*
+
+
+				I guess you can acheive that by doing:
+
+				   targetIndex = (arryLength + (index- x)% arryLength ) % arryLength
+
+				where:
+
+				    index: is the location from where you want to look back
+
+				    x: is the number of items you want to look back
+
+				    explanation:
+				     in Modulo arithmetic adding arryLength any number of times to an index and doing a mod % arryLength will not change the position of the index within the array
+				     -(index- x)% arryLength could result in a negative value
+				     -this value would lie between -arryLength and +arryLength (non inclusive)
+				     -now adding arryLength to the resulting value and taking the mod again we get a value between 0 and arryLength
+
+				https://stackoverflow.com/a/66701348
+			*/
 			for ii = 0; ii < rb.count-1; ii++ {
-				wr := (rb.write + rb.size - rb.count + ii) % rb.size
-				pr := (rb.write + rb.size - 1) % rb.size // prev
-				once.Do(func() {
-					slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
-				})
-				if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
-					rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
+				rb.iters++
+				x := ii + 1 // number lookback
+				index := wrote
+				arl := (rb.size - rb.count + 1)
+				pr := (arl + (index-x)%arl) % arl // prev
+				wr := wrote
+				if ii < 10 {
+					//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wrote", wrote, "pr", pr, "wr", wr)
+				}
+				if rb.less(rb.buffer[wr], rb.buffer[pr]) {
+					rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
 				}
 			}
-			slog.Info("SortRing sorted", "iters", ii)
+			//fmt.Println()
+			//slog.Info("SortRing sorted", "iters", ii)
 		}
 
 		//for i := wrote; !sorted && i >= 0; i-- {
