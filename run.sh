@@ -11,8 +11,8 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2017"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2018"*.gz
-#    zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz
-   zcat "${HOME}/tdata/local/yyyy-mm/2019-03"*.gz
+   zcat "${HOME}/tdata/local/yyyy-mm/2019"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2019-03"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2020"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2020-02"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2020"*.gz
@@ -27,7 +27,7 @@ tdata() {
 #     zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 
-   zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-10"*.gz
 
@@ -44,7 +44,7 @@ tdata() {
 }
 
 bump_tileservice() {
-    >&2 echo "Bumping mbtileserver"
+    { >&2 echo "Bumping mbtileserver" ; }
     if ! pgrep mbtileserver | tail -1 | xargs kill -HUP 2> /dev/null
     then nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
     fi

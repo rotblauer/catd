@@ -224,8 +224,6 @@ func TestSortingRingBuffer_SortIsSorted(t *testing.T) {
 	ringBuffer.Add(4)
 	ringBuffer.Add(2)
 
-	ringBuffer.Sort()
-
 	expected := []int{1, 2, 3, 4, 5}
 	actual := ringBuffer.Get()
 	if !reflect.DeepEqual(actual, expected) {
@@ -235,13 +233,9 @@ func TestSortingRingBuffer_SortIsSorted(t *testing.T) {
 		t.Errorf("Expected sorted buffer")
 	}
 
-	t.Logf("SortingRingBuffer iters: %d", ringBuffer.iters)
-
 	ringBuffer.Add(6)
-	ringBuffer.Add(7)
 	ringBuffer.Add(8)
-
-	ringBuffer.Sort()
+	ringBuffer.Add(7)
 
 	expected = []int{4, 5, 6, 7, 8}
 	actual = ringBuffer.Get()

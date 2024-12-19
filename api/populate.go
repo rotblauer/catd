@@ -137,20 +137,20 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		//pipedLast = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
 	}
 
+	// Fork stream into snaps/no-snaps.
+	// Snaps are a different animal than normal cat tracks.
+	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
+		return ct.IsSnap()
+	}, pipedLast)
+
 	// Unbacktrack drops tracks that are older than the last known track,
 	// or otherwise within the window of seen tracks, critically: per cat/uuid.
-	unbacktracked, onCloseBack := c.Unbacktrack(ctx, pipedLast)
+	unbacktracked, onCloseBack := c.Unbacktrack(ctx, noSnaps)
 	defer func() {
 		if err := onCloseBack(); err != nil {
 			c.logger.Error("Failed to close cat window unbacktracker", "error", err)
 		}
 	}()
-
-	// Fork stream into snaps/no-snaps.
-	// Snaps are a different animal than normal cat tracks.
-	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
-		return ct.IsSnap()
-	}, unbacktracked)
 
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
@@ -196,7 +196,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// All non-snaps flow to these channels.
 	storeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	pipelineChan := make(chan cattrack.CatTrack, params.DefaultChannelCap)
-	stream.TeeMany(ctx, noSnaps, storeCh, pipelineChan)
+	stream.TeeMany(ctx, unbacktracked, storeCh, pipelineChan)
 
 	storeErrs := make(chan error, 1)
 	go func() {
@@ -333,7 +333,11 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 
 // sinkStreamToJSONGZWriter sinks a stream of T encoded as JSON to some GZ writer.
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
-	defer slog.Info("Sunk stream to JSON GZ writer")
+	defer func() {
+		if items > 0 || err != nil {
+			slog.Info("Sunk stream to JSON GZ writer", "items", items, "error", err)
+		}
+	}()
 	var gz *gzip.Writer
 	gz, err = gzip.NewWriterLevel(wr, params.DefaultGZipCompressionLevel)
 	if err != nil {
@@ -354,7 +358,11 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-cha
 }
 
 func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
-	defer slog.Info("Sunk stream to JSON writer")
+	defer func() {
+		if items > 0 || err != nil {
+			slog.Info("Sunk stream to JSON writer", "items", items, "error", err)
+		}
+	}()
 	enc := json.NewEncoder(wr)
 	for a := range in {
 		if err := enc.Encode(a); err != nil {
