@@ -13,6 +13,9 @@ import (
 
 // TestFileLocking shows that a syscall.EX lock on a file
 // will NOT block once the file has been closed, I guess because of file descriptor change.
+// This means that the lock is not on the file, but on the file descriptor,
+// and that the lock is invalidated once the file is closed,
+// and that syscall.LOCK_UN is unnecessary.
 // There are no syscall.UN locks in this test.
 func TestFileLocking(t *testing.T) {
 	target := filepath.Join(os.TempDir(), "mytestfile.xyz")
@@ -32,6 +35,7 @@ func TestFileLocking(t *testing.T) {
 	wait.Add(1)
 	go func(f io.WriteCloser) {
 		defer wait.Done()
+		// But do no LOCK_UN the file. Just close it.
 		defer f.Close()
 		time.Sleep(1 * time.Second)
 		if err := json.NewEncoder(f).Encode("test1"); err != nil {
@@ -44,7 +48,7 @@ func TestFileLocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// If this syscall is NOT made, the write will succeed and the test will fail.
+	// If this syscall lock is NOT held, the write will succeed and the test will fail.
 	if err := syscall.Flock(int(ff.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
