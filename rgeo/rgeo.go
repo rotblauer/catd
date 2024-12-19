@@ -1,6 +1,7 @@
 package rgeo
 
 import (
+	"errors"
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/common"
@@ -12,35 +13,6 @@ import (
 	"sort"
 )
 
-//var R_Cities *rgeo.Rgeo
-//var R_Countries *rgeo.Rgeo
-//var R_Provinces *rgeo.Rgeo
-//var R_US_Counties *rgeo.Rgeo
-
-type ReverseGeocoder interface {
-	GetLocation(pt orb.Point) (srgeo.Location, error)
-	GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error)
-}
-
-// rR is the type of our wrapped rgeo.Rgeo instance, which implements the ReverseGeocoder interface.
-type rR srgeo.Rgeo
-
-// r is the instance of our wrapped rgeo.Rgeo instance.
-var r *rR
-
-func (rr *rR) GetLocation(pt orb.Point) (srgeo.Location, error) {
-	return (*srgeo.Rgeo)(rr).ReverseGeocode(pt)
-}
-
-func (rr *rR) GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error) {
-	return (*srgeo.Rgeo)(rr).GetGeometry(pt, dataset)
-}
-
-// rRPC is an instance of configuration information for a remote RgeoD instance.
-// If this value exists, and rR is nil, then R(dataset) will attempt
-// to connect to the remote RgeoD instance rather than use the inproc value.
-var rRPC = params.InProcRgeoDaemonConfig
-
 // R gets a ReverseGeocoder instance.
 // This can be an inproc instance or an RPC instance;
 // an inproc instance will be preferred if it exists (has been Init-ed, see below),
@@ -50,26 +22,114 @@ var rRPC = params.InProcRgeoDaemonConfig
 // These datasets will be/can be reduced/cross-referenced to a single Location value.
 // This function accepts a parameter which is not currently used,
 // but which suggests that dataset services might be differentiated in the future.
-func R(dataset string) ReverseGeocoder {
+func R(datasets ...string) ReverseGeocoder {
+	// Attempt to re-use any existing global services.
+	if rRPC != nil {
+		// RPC clients are relatively disposable.
+		// In fact, should be Closed regularly. (Avoid Gob mem leaks).
+		return rRPC
+	}
+	// If an inproc service exists, return it.
+	// Takes ~20s to init, works great otherwise.
 	if r != nil {
 		return r
 	}
-	if rRPC != nil {
-		rgc, err := NewRPCReverseGeocoder(rRPC)
+
+	// If a (default) configuration exist for an RPC client,
+	// attempt to connect to a remote rgeo daemon
+	if rRPCConf != nil {
+		rgc, err := NewRPCReverseGeocoderClient(rRPCConf)
 		if err == nil {
-			return rgc
+			rRPC = rgc
+			// We found a working, remote RPC client.
+			return rRPC
 		}
-		slog.Error("Failed to connect to remote rgeo daemon", "error", err)
+		slog.Warn("Failed to connect to remote rgeo daemon", "error", err)
 	}
-	panic("R (rgeo) called, but not initialized or available")
+
+	// Everything failed. Load datasets.
+	err := Init(defaultDatasets...)
+	if err != nil {
+		panic(err)
+	}
+	return r
 }
 
-type RPCReverseGeocoder struct {
+// ReverseGeocoder defines an interface shared between an inproc service
+// or a remote RPC service. These are the catd application interface needs.
+type ReverseGeocoder interface {
+	GetLocation(pt Pt) (srgeo.Location, error)
+	GetGeometry(pt Pt, dataset string) (*Plat, error)
+	// TODO Expose Datasets() []string? []func()[]byte?
+}
+
+// r is the instance of our inproc, wrapped, rgeo.Rgeo instance,
+// which implements the defined interface.
+var r *rR
+
+// rR is the type of our wrapped rgeo.Rgeo instance, which implements the ReverseGeocoder interface.
+type rR srgeo.Rgeo
+
+func (rr *rR) GetLocation(pt Pt) (srgeo.Location, error) {
+	opt := orb.Point{pt[0], pt[1]}
+	return (*srgeo.Rgeo)(rr).ReverseGeocode(opt)
+}
+
+func (rr *rR) GetGeometry(pt Pt, dataset string) (*Plat, error) {
+	opt := orb.Point{pt[0], pt[1]}
+	geo, err := (*srgeo.Rgeo)(rr).GetGeometry(opt, dataset)
+	if err != nil {
+		return nil, err
+	}
+	poly, ok := geo.(orb.Polygon)
+	if ok {
+		out := make(Polygon, len(poly))
+		for i, ring := range poly {
+			out[i] = make([][2]float64, len(ring))
+			for j, pt := range ring {
+				out[i][j] = Pt{pt[0], pt[1]}
+			}
+		}
+		p := &Plat{Polygon: out}
+		return p, nil
+	}
+	multiPoly, ok := geo.(orb.MultiPolygon)
+	if ok {
+		out := make(MultiPolygon, len(multiPoly))
+		for i, poly := range multiPoly {
+			out[i] = make([][][2]float64, len(poly))
+			for j, ring := range poly {
+				out[i][j] = make([][2]float64, len(ring))
+				for k, pt := range ring {
+					out[i][j][k] = Pt{pt[0], pt[1]}
+				}
+			}
+		}
+		p := &Plat{MultiPolygon: out}
+		return p, nil
+	}
+	return nil, fmt.Errorf("expected Polygon or MultiPolygon, got %T", geo)
+}
+
+// rRPCConf is an instance of configuration information for a remote RgeoD instance.
+// If this value exists, and rR is nil, then R(dataset) will attempt
+// to connect to the remote RgeoD instance rather than use the inproc value.
+var rRPCConf = params.InProcRgeoDaemonConfig
+
+// rRPC is an instance of RPCReverseGeocoderClient which fulfills the interface
+// via attempts, or attempts to (using the configuration defined by rRPCConf).
+var rRPC *RPCReverseGeocoderClient
+
+type RPCReverseGeocoderClient struct {
 	config *params.RgeoDaemonConfig
 	client *rpc.Client
+
+	// receiver is the string value of the receiver name,
+	// for rpc request method standards, ie. `receiver.method_name` or `Receiver.MethodName`.
+	receiver string
 }
 
-func NewRPCReverseGeocoder(config *params.RgeoDaemonConfig) (*RPCReverseGeocoder, error) {
+func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGeocoderClient, error) {
 	if config == nil {
 		config = params.InProcRgeoDaemonConfig
 	}
@@ -77,30 +137,41 @@ func NewRPCReverseGeocoder(config *params.RgeoDaemonConfig) (*RPCReverseGeocoder
 	if err != nil {
 		return nil, err
 	}
-	return &RPCReverseGeocoder{config: config, client: client}, nil
+	return &RPCReverseGeocoderClient{
+		config: config,
+		client: client,
+		// FIXME Real world, this must be same as service name in daemon.go.
+		// Test world, this must be `MockRPCServer`.
+		receiver: config.Name,
+	}, nil
 }
 
-func (r *RPCReverseGeocoder) GetLocation(pt orb.Point) (srgeo.Location, error) {
+func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (srgeo.Location, error) {
 	var loc srgeo.Location
 	res := &GetLocationResponse{}
-	err := r.client.Call("ReverseGeocode", &GetLocationRequest{pt.Lon(), pt.Lat()}, res)
+	err := r.client.Call(r.receiver+".GetLocation", &pt, res)
 	if err != nil {
 		return loc, err
 	}
-	return res.Location, res.Error
+	if res.Error != "" {
+		return loc, errors.New(res.Error)
+	}
+	return res.Location, nil
 }
 
-func (r *RPCReverseGeocoder) GetGeometry(pt orb.Point, dataset string) (orb.Geometry, error) {
-	var geom = new(orb.Geometry)
+func (r *RPCReverseGeocoderClient) GetGeometry(pt Pt, dataset string) (*Plat, error) {
 	res := &GetGeometryResponse{}
-	err := r.client.Call("GetGeometry", &GetGeometryRequest{Pt(pt), dataset}, res)
+	err := r.client.Call(r.receiver+".GetGeometry", &GetGeometryRequest{pt, dataset}, res)
 	if err != nil {
 		return nil, err
 	}
-	return *geom, res.Error
+	if res.Error != "" {
+		return nil, errors.New(res.Error)
+	}
+	return res.Plat, nil
 }
 
-func (r *RPCReverseGeocoder) Close() error {
+func (r *RPCReverseGeocoderClient) Close() error {
 	return r.client.Close()
 }
 
@@ -111,20 +182,25 @@ var (
 	US_Counties10 = srgeo.US_Counties10
 )
 
-// datasets are the datasets that the reverse geocoder will use.
-var datasets = []func() []byte{
+// defaultDatasets are the datasets that the reverse geocoder will use all the time.
+var defaultDatasets = []func() []byte{
 	Cities10,
 	Countries10,
 	Provinces10,
 	US_Counties10,
 }
 
-const dataSourcePre = "github.com/sams96/rgeo."
-
 var DatasetNamesStable = []string{}
 
 func init() {
-	for _, d := range datasets {
+	doInit()
+}
+
+// doInit is a temporary, defaults-only pseudo function.
+// FIXME
+func doInit() {
+	DatasetNamesStable = []string{}
+	for _, d := range defaultDatasets {
 		DatasetNamesStable = append(DatasetNamesStable, common.ReflectFunctionName(d))
 	}
 	sort.Slice(DatasetNamesStable, func(i, j int) bool {
@@ -133,25 +209,29 @@ func init() {
 	initTilingZoomLevels()
 }
 
-var ErrAlreadyInitialized = fmt.Errorf("rgeo already initialized")
-
-func Init() error {
+func Init(datasets ...func() []byte) error {
+	defer doInit()
 	if r != nil {
 		return ErrAlreadyInitialized
 	}
-
+	if len(datasets) == 0 {
+		datasets = defaultDatasets
+	}
 	r1, err := srgeo.New(datasets...)
 	if err != nil {
 		return err
 	}
 	r = (*rR)(r1)
 
-	// Test: Assert that exported DatasetNamesStable matches actual loaded.
+	// Assert that exported DatasetNamesStable matches actual loaded.
+	doInit()
 	names := r1.DatasetNames()
 	if !slices.Equal(DatasetNamesStable, names) {
-		return fmt.Errorf("DatasetNamesStable does not match actual")
+		return fmt.Errorf("DatasetNamesStable does not match actual, Expected/Got\n%v\n%v", DatasetNamesStable, names)
 	}
 	return nil
 }
 
-type Pt [2]float64
+const dataSourcePre = "github.com/sams96/rgeo."
+
+var ErrAlreadyInitialized = fmt.Errorf("rgeo already initialized")

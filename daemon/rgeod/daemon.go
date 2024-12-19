@@ -3,7 +3,6 @@ package rgeod
 import (
 	"errors"
 	"fmt"
-	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/rgeo"
@@ -67,7 +66,7 @@ func (d *RgeoDaemon) Start() error {
 	}
 
 	d.server = rpc.NewServer()
-	err := d.server.Register(&ReverseGeocode{d})
+	err := d.server.RegisterName(params.InProcRgeoDaemonConfig.Name, &ReverseGeocode{d})
 	if err != nil {
 		return err
 	}
@@ -105,22 +104,32 @@ var ErrNotReady = errors.New("rgeo daemon not ready")
 
 func (r *ReverseGeocode) Ping(common.RPCArgNone, common.RPCArgNone) error {
 	if !r.ready {
+		r.logger.Error("Ping")
 		return ErrNotReady
 	}
+	r.logger.Debug("Ping")
 	return nil
 }
 
 func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.GetLocationResponse) error {
+	defer func() {
+		if res.Error != "" {
+			r.logger.Debug("ReverseGeocode.GetLocation", "request", req, "response", res, "error", res.Error)
+		} else {
+			r.logger.Debug("ReverseGeocode.GetLocation", "request", req, "response", res)
+		}
+	}()
 	if req == nil {
 		return errors.New("request is nil")
 	}
 	if res == nil {
 		return errors.New("response is nil")
 	}
-	pt := orb.Point{req[0], req[1]}
+
+	pt := rgeo.Pt{req[0], req[1]}
 	loc, err := rgeo.R("").GetLocation(pt)
 	if err != nil {
-		res.Error = err
+		res.Error = err.Error()
 		return nil
 	}
 	res.Location = loc
@@ -128,6 +137,13 @@ func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.Get
 }
 
 func (r *ReverseGeocode) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.GetGeometryResponse) error {
+	defer func() {
+		if res.Error != "" {
+			r.logger.Debug("ReverseGeocode.GetGeometry", "request", req, "response", res, "error", res.Error)
+		} else {
+			r.logger.Debug("ReverseGeocode.GetGeometry", "request", req, "response", res)
+		}
+	}()
 	if req == nil {
 		return errors.New("request is nil")
 	}
@@ -137,12 +153,12 @@ func (r *ReverseGeocode) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.Get
 	if res == nil {
 		return errors.New("response is nil")
 	}
-	pt := orb.Point{req.Pt[0], req.Pt[1]}
+	pt := rgeo.Pt{req.Pt[0], req.Pt[1]}
 	geom, err := rgeo.R(req.Dataset).GetGeometry(pt, req.Dataset)
 	if err != nil {
-		res.Error = err
+		res.Error = err.Error()
 		return nil
 	}
-	res.Geometry = geom
+	res.Plat = geom
 	return nil
 }

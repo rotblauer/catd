@@ -44,7 +44,8 @@ var DefaultIndexerT = &cattrack.OffsetIndexT{
 func CatKeyFn(ct cattrack.CatTrack, bucket reducer.Bucket) (string, error) {
 	dataset := DatasetNamesStable[bucket]
 
-	loc, err := R(dataset).GetLocation(ct.Point())
+	pt := ct.Point()
+	loc, err := R(dataset).GetLocation(Pt{pt.Lon(), pt.Lat()})
 	if err != nil {
 		// - Flying cat over bermuda triangle, over ocean = cat without a country, intl waters.
 		// - Country mouse, not city cat = no city rgeocode.
@@ -58,8 +59,10 @@ func TransformCatTrackFn(bucket int) func(ct cattrack.CatTrack) cattrack.CatTrac
 		cp := ct
 		cp.ID = cp.MustTime().Unix()
 		dataset := DatasetNamesStable[bucket]
-		cp.Geometry, _ = R(dataset).GetGeometry(cp.Point(), dataset)
-		loc, _ := R(dataset).GetLocation(cp.Point())
+
+		plat, _ := R(dataset).GetGeometry(Point2Pt(cp.Point()), dataset)
+		cp.Geometry = Plat2Geom(plat)
+		loc, _ := R(dataset).GetLocation(Point2Pt(cp.Point()))
 		key, _ := getReducerKey(loc, dataset)
 		props := map[string]any{
 			"reducer_key":  key,
@@ -75,7 +78,7 @@ func TransformCatTrackFn(bucket int) func(ct cattrack.CatTrack) cattrack.CatTrac
 }
 
 func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, orb.Geometry) {
-	loc, err := R(dataset).GetLocation(pt)
+	loc, err := R(dataset).GetLocation(Point2Pt(pt))
 	if err != nil {
 		return nil, nil
 	}
@@ -88,11 +91,15 @@ func CellDataForPointAtDataset(pt orb.Point, dataset string) (map[string]any, or
 		"County":       loc.County,
 		"City":         loc.City,
 	}
-	g, err := R(dataset).GetGeometry(pt, dataset)
+	plat, err := R(dataset).GetGeometry(Point2Pt(pt), dataset)
+	if plat == nil {
+		return props, nil
+	}
+	poly := Plat2Geom(plat)
 	if err != nil {
 		return props, nil
 	}
-	return props, g
+	return props, poly
 }
 
 func getReducerKey(location rgeo.Location, dataset string) (string, error) {

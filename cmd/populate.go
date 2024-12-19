@@ -137,8 +137,8 @@ Missoula, Montana
 		catBackendC := params.DefaultCatBackendConfig()
 		catBackendC.TileD.Network = optTilingListenNetwork
 		catBackendC.TileD.Address = optTilingListenAddress
-		catBackendC.RgeoD.Network = optRgeoDNetwork
-		catBackendC.RgeoD.Address = optRgeoDAddress
+		catBackendC.RgeoD.Network = params.InProcRgeoDaemonConfig.Network
+		catBackendC.RgeoD.Address = params.InProcRgeoDaemonConfig.Address
 
 		// An in-proc TileDaemon.
 		// Would rather have this as a backgrounded/disowned process, but can't do that yet without a waiter.
@@ -429,7 +429,10 @@ func tryGetOrInitRgeoD(cmd *cobra.Command, args []string) {
 	start := time.Now()
 trying:
 	for ; time.Since(start) < 1*time.Minute; time.Sleep(2 * time.Second) {
-		rpcClient, err := common.DialRPC(optRgeoDNetwork, optRgeoDAddress)
+		rpcClient, err := common.DialRPC(
+			params.InProcRgeoDaemonConfig.Network,
+			params.InProcRgeoDaemonConfig.Address)
+
 		if err == nil {
 			err = rpcClient.Call("ReverseGeocode.Ping", common.ArgNone, nil)
 			_ = rpcClient.Close()
