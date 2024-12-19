@@ -111,134 +111,56 @@ func NewSortingRingBuffer[T any](size int, less func(T, T) bool) *SortingRingBuf
 }
 
 func (rb *SortingRingBuffer[T]) Add(value T) {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-
-	prev := (rb.write + rb.size - 1) % rb.size
-	wrote := rb.write
-	rb.buffer[rb.write] = value
-	rb.write = (rb.write + 1) % rb.size
-
-	if rb.count < rb.size {
-		rb.count++
-	}
-
-	//once := sync.Once{}
+	rb.RingBuffer.Add(value)
 	if rb.count > 1 {
-		sorted := rb.less(rb.buffer[prev], rb.buffer[wrote])
-		// I can walk forwards but not backwards.
-		if !sorted {
-			/*
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5997 pr=5996 wrote=5996
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7689 pr=7688 wrote=7688
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5998 pr=5997 wrote=5997
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7709 pr=7708 wrote=7708
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7714 pr=7713 wrote=7713
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6149 pr=6148 wrote=6148
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6154 pr=6153 wrote=6153
-				2024/12/18 16:39:12 INFO SortRing sorted iters=8999
-				^C2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7719 pr=7718 wrote=7718
-
-				This is running backwards.
-			*/
-			ii := 0
-			//for ii = 0; ii < rb.count-1; ii++ {
-			//	rb.iters++
-			//	wr := (rb.write + rb.size - rb.count + ii) % rb.size
-			//	pr := (wrote + rb.size) % rb.size // prev
-			//	once.Do(func() {
-			//		slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wr", wr, "pr", pr, "wrote", wrote)
-			//	})
-			//	if !rb.less(rb.buffer[wr], rb.buffer[pr]) {
-			//		rb.buffer[wr], rb.buffer[pr] = rb.buffer[pr], rb.buffer[wr]
-			//	}
-			//}
-			/*
-
-
-				I guess you can acheive that by doing:
-
-				   targetIndex = (arryLength + (index- x)% arryLength ) % arryLength
-
-				where:
-
-				    index: is the location from where you want to look back
-
-				    x: is the number of items you want to look back
-
-				    explanation:
-				     in Modulo arithmetic adding arryLength any number of times to an index and doing a mod % arryLength will not change the position of the index within the array
-				     -(index- x)% arryLength could result in a negative value
-				     -this value would lie between -arryLength and +arryLength (non inclusive)
-				     -now adding arryLength to the resulting value and taking the mod again we get a value between 0 and arryLength
-
-				https://stackoverflow.com/a/66701348
-			*/
-			for ii = 0; ii < rb.count-1; ii++ {
-				rb.iters++
-				x := ii + 1 // number lookback
-				index := wrote
-				arl := (rb.size - rb.count + 1)
-				pr := (arl + (index-x)%arl) % arl // prev
-				wr := wrote
-				if ii < 10 {
-					//slog.Info("SortRing sorting...", "size", rb.size, "count", rb.count, "wrote", wrote, "pr", pr, "wr", wr)
-				}
-				if rb.less(rb.buffer[wr], rb.buffer[pr]) {
-					rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
-				}
-			}
-			//fmt.Println()
-			//slog.Info("SortRing sorted", "iters", ii)
+		if !rb.less(rb.buffer[(rb.write+rb.size-2)%rb.size], rb.Last()) {
+			rb.Sort()
 		}
-
-		//for i := wrote; !sorted && i >= 0; i-- {
-		//	pr := (wrote + rb.size - 1) % rb.size // prev
-		//	wr := (wrote + rb.size - rb.count + i) % rb.size
-		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
-		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
-		//	}
-		//}
-		//for i := rb.count - 1; !sorted && i > 0; i-- {
-		//	pr := (rb.write + rb.size - 1) % rb.size // prev
-		//	wr := (rb.write + rb.size - rb.count + i) % rb.size
-		//	if !rb.less(rb.buffer[pr], rb.buffer[wr]) {
-		//		rb.buffer[pr], rb.buffer[wr] = rb.buffer[wr], rb.buffer[pr]
-		//	}
-		//}
-
-		//if sorted {
-		//sort.Slice(rb.buffer, func(i, j int) bool {
-		//	ii := (rb.write + rb.size - rb.count + i) % rb.size
-		//	jj := (rb.write + rb.size - 1) % rb.size
-		//	return rb.less(rb.buffer[ii], rb.buffer[jj])
-		//})
-		//}
-
-		//if !sorted {
-		//	slices.SortStableFunc(rb.buffer, rb.les)
-		//}
 	}
 }
 
-func (rb *SortingRingBuffer[T]) Get() []T {
+func (rb *SortingRingBuffer[T]) Sort() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-
-	result := make([]T, 0, rb.count)
-
-	for i := 0; i < rb.count; i++ {
-		index := (rb.write + rb.size - rb.count + i) % rb.size
-		result = append(result, rb.buffer[index])
+	if rb.count > 1 {
+		wrote := (rb.write - 1 + rb.size) % rb.size
+		//offset := rb.size - rb.count
+		for ii := 0; ii < rb.count-1; ii++ {
+			rb.iters++
+			//back := (rb.write + offset + ii) % rb.size
+			back := ((rb.write - 2 - ii) + rb.size) % rb.size
+			// eg. rb.write = 3 (next write index), rb.size = 5, rb.count = 3, offset = 2 => 3 + 2 + 0 % 5 = 0
+			// eg. rb.write = 4 (next write index), rb.size = 5, rb.count = 4, offset = 1 => 4 + 1 + 0 % 5 = 0
+			// eg. rb.write = 5 (next write index), rb.size = 5, rb.count = 5, offset = 0 => 5 + 0 + 0 % 5 = 0
+			if !rb.less(rb.buffer[back], rb.buffer[wrote]) {
+				rb.buffer[back], rb.buffer[wrote] = rb.buffer[wrote], rb.buffer[back]
+				break
+			} else {
+				//break
+			}
+		}
 	}
+}
 
-	return result
+func (rb *SortingRingBuffer[T]) IsSorted() bool {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+	if rb.count < 2 {
+		return true
+	}
+	wrote := (rb.write - 1 + rb.size) % rb.size
+	for ii := 0; ii < rb.count-1; ii++ {
+		rb.iters++
+		target := (rb.write + rb.size - rb.count + ii) % rb.size
+		if !rb.less(rb.buffer[target], rb.buffer[wrote]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (rb *SortingRingBuffer[T]) Get() []T {
+	return rb.RingBuffer.Get()
 }
 
 func (rb *SortingRingBuffer[T]) Scan(fn func(T) bool) {
@@ -270,3 +192,45 @@ func (rb *SortingRingBuffer[T]) Len() int {
 	defer rb.mu.Unlock()
 	return rb.count
 }
+
+/*
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5997 pr=5996 wrote=5996
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7689 pr=7688 wrote=7688
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=5998 pr=5997 wrote=5997
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7709 pr=7708 wrote=7708
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7714 pr=7713 wrote=7713
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6149 pr=6148 wrote=6148
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=6154 pr=6153 wrote=6153
+	2024/12/18 16:39:12 INFO SortRing sorted iters=8999
+	^C2024/12/18 16:39:12 INFO SortRing sorting... size=9000 count=9000 wr=7719 pr=7718 wrote=7718
+
+	This is running backwards.
+*/
+/*
+	/*
+
+
+		I guess you can acheive that by doing:
+
+		   targetIndex = (arryLength + (index- x)% arryLength ) % arryLength
+
+		where:
+
+		    index: is the location from where you want to look back
+
+		    x: is the number of items you want to look back
+
+		    explanation:
+		     in Modulo arithmetic adding arryLength any number of times to an index and doing a mod % arryLength will not change the position of the index within the array
+		     -(index- x)% arryLength could result in a negative value
+		     -this value would lie between -arryLength and +arryLength (non inclusive)
+		     -now adding arryLength to the resulting value and taking the mod again we get a value between 0 and arryLength
+
+		https://stackoverflow.com/a/66701348
+*/
