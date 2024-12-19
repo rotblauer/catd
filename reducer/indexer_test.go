@@ -58,7 +58,7 @@ func myBucketKeyFn(track cattrack.CatTrack, bucket Bucket) (string, error) {
 
 func TestCellIndexer(t *testing.T) {
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
 	oTracks := cattrack.WithTimeOffset(ctx, tracks)
 
 	first := <-tracks

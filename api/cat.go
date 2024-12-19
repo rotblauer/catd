@@ -82,14 +82,15 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 
 // getOrInitState gets the state if it exists, or initializes it if it doesn't.
 // It is a way for API methods to idempotently declare if and how they need persistent cat resources.
-func (c *Cat) getOrInitState(readOnly bool) {
+func (c *Cat) getOrInitState(readOnly bool) *state.CatState {
 	if c.State == nil {
-		_, err := c.WithState(readOnly)
+		s, err := c.WithState(readOnly)
 		if err != nil {
 			c.logger.Error("Failed to create cat state", "error", err)
-			return
+			return s
 		}
 	}
+	return c.State
 }
 
 func (c *Cat) Close() error {

@@ -1,3 +1,87 @@
+TODO sink to master
+safer directer
+simple popper
+first
+
+this is why there's double laps occasionally
+```shell
+go test -v -race ./api/... |& tee test.out
+```
+
+```shell
+2024/12/19 11:27:59 WARN No RPC configuration, skipping S2 indexing cat=rye level=0
+2024/12/19 11:27:59 INFO Indexing S2 blocking cat=rye            
+2024/12/19 11:28:00 INFO Jamais vu: cat/uuid tracker first rodeo cat=rye track="rye 2024-12-15 17:44:15 [44.9892,-93.25539]+/-20m -1.00m/s" first=2024-12-15T17:44:15.000-07:00 last=2024
+-12-15T17:44:15.000-07:00                                                                   
+==================                                                                          
+WARNING: DATA RACE                                                                          
+Read at 0x00c0044a6058 by goroutine 3898:                                                   
+  github.com/rotblauer/catd/geo/lap.(*State).Flush()             
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:72 +0xb7       
+  github.com/rotblauer/catd/api.(*Cat).CatActPipeline()    
+      /home/ia/dev/rotblauer/catd/api/act_pipeline.go:171 +0x1625                           
+  github.com/rotblauer/catd/api.(*Cat).ProducerPipelines.func3()
+      /home/ia/dev/rotblauer/catd/api/producers.go:54 +0x5d 
+                                                                                            
+Previous write at 0x00c0044a6058 by goroutine 3910:
+  github.com/rotblauer/catd/geo/lap.(*State).Add.func1()                                    
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:42 +0x177
+  github.com/rotblauer/catd/geo/lap.(*State).Add.deferwrap1()
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:43 +0x41
+  runtime.deferreturn()                                                                     
+      /home/ia/go1.22.2.linux-amd64/go/src/runtime/panic.go:602 +0x5d
+  github.com/rotblauer/catd/geo/lap.(*State).Stream.func1()
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:88 +0x1e4
+                                                                                            
+Goroutine 3898 (running) created at:                                                        
+  github.com/rotblauer/catd/api.(*Cat).ProducerPipelines()
+      /home/ia/dev/rotblauer/catd/api/producers.go:54 +0x7b9                                
+  github.com/rotblauer/catd/api.(*Cat).Populate.func8()                                     
+      /home/ia/dev/rotblauer/catd/api/populate.go:214 +0x109                                
+                                              
+Goroutine 3910 (running) created at:                                                        
+  github.com/rotblauer/catd/geo/lap.(*State).Stream()            
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:85 +0x124
+  github.com/rotblauer/catd/api.(*Cat).TrackLaps.func1()         
+      /home/ia/dev/rotblauer/catd/api/lap.go:57 +0x234   
+==================                               
+```
+...
+2024/12/19 10:22:08 INFO Indexing S2 blocking cat=rye                                                                                                                                    
+2024/12/19 10:22:09 INFO Jamais vu: cat/uuid tracker first rodeo cat=rye track="rye 2024-12-15 17:44:15 [44.9892,-93.25539]+/-20m -1.00m/s" first=2024-12-15T17:44:15.000-07:00 last=2024
+-12-15T17:44:15.000-07:00                                                                                                                                                                
+==================                                                                                                                                                                       
+WARNING: DATA RACE                                                                                                                                                                       
+Read at 0x00c0000ad348 by goroutine 3897:                                                                                                                                                
+  github.com/rotblauer/catd/geo/lap.(*State).Flush()                                                                                                                                     
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:68 +0x46                                                                                                                                
+  github.com/rotblauer/catd/api.(*Cat).CatActPipeline()                                                                                                                                  
+      /home/ia/dev/rotblauer/catd/api/act_pipeline.go:174 +0x1625                                                                                                                        
+  github.com/rotblauer/catd/api.(*Cat).ProducerPipelines.func3()                                                                                                                         
+      /home/ia/dev/rotblauer/catd/api/producers.go:54 +0x5d                                                                                                                              
+                                                                                                                                                                                         
+Previous write at 0x00c0000ad348 by goroutine 3907:
+  github.com/rotblauer/catd/geo/lap.(*State).Add.func1()
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:40 +0x171
+  runtime.deferreturn()
+      /home/ia/go1.22.2.linux-amd64/go/src/runtime/panic.go:602 +0x5d
+  github.com/rotblauer/catd/geo/lap.(*State).Stream.func1()
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:88 +0x284
+
+Goroutine 3897 (running) created at:
+  github.com/rotblauer/catd/api.(*Cat).ProducerPipelines()
+      /home/ia/dev/rotblauer/catd/api/producers.go:54 +0x7b9
+  github.com/rotblauer/catd/api.(*Cat).Populate.func8()
+      /home/ia/dev/rotblauer/catd/api/populate.go:214 +0x109
+
+Goroutine 3907 (running) created at:
+  github.com/rotblauer/catd/geo/lap.(*State).Stream()
+      /home/ia/dev/rotblauer/catd/geo/lap/lap.go:81 +0x124
+  github.com/rotblauer/catd/api.(*Cat).TrackLaps.func1()
+      /home/ia/dev/rotblauer/catd/api/lap.go:57 +0x234
+==================
+```
+
 ```shell
 2024/12/18 21:21:19 INFO Read tracks n=73,219,154 read.last="2019-03-07 14:35:48" tps=8055 bps="3.4 MB" total.bytes="27 GB" running=2h12m10s
 2024/12/18 21:21:21 INFO 📍 Completed nap cat=ia time=2019-03-02T16:52:08-07:00 count=54 duration=18h20m36s area="2 km²" edge="54 m"

@@ -33,7 +33,7 @@ func TestCat_Unbacktrack_NoneMissing(t *testing.T) {
 
 func testCat_Unbacktrack_NoneMissing(t *testing.T, cat, gzSource string) {
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, gzSource)
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, gzSource)
 
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()
@@ -104,7 +104,7 @@ func TestCat_Unbacktracked_ReInits(t *testing.T) {
 
 func testCat_Unbacktracked_ReInits(t *testing.T, cat, gzSource string, backtracks, batchSize int) {
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, gzSource)
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, gzSource)
 
 	tc := NewTestCatWriter(t, cat, nil)
 	c := tc.Cat()

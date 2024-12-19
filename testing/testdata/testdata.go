@@ -38,9 +38,10 @@ var Source_RYE202412 = "./private/rye_2024-12.geojson.gz"
 var Source_EDGE1000 = "./private/edge_1000.json.gz"
 var Source_EDGE20241217 = "./private/edge_20241217.json.gz"
 
-func ReadSourceGZ[T any](ctx context.Context, path string) (<-chan T, chan error) {
+func ReadSourceJSONGZ[T any](ctx context.Context, path string) (<-chan T, chan error) {
 	errs := make(chan error, 1)
 	defer close(errs)
+
 	gzr, err := catz.NewGZFileReader(path)
 	if err != nil {
 		errs <- err
@@ -57,5 +58,40 @@ func ReadSourceGZ[T any](ctx context.Context, path string) (<-chan T, chan error
 	if err != nil {
 		errs <- err
 	}
+
 	return stream.Slice(ctx, items), errs
+}
+
+func ReadSourceJSONGZs[T any](ctx context.Context, paths ...string) (<-chan T, chan error) {
+	out := make(chan T, 1)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(out)
+		defer close(errs)
+
+		for _, path := range paths {
+			gzr, err := catz.NewGZFileReader(path)
+			defer gzr.Close() // throwaway error
+			if err != nil {
+				errs <- err
+				return
+			}
+			itemsCh, errCh := stream.NDJSON[T](ctx, gzr)
+			for item := range itemsCh {
+				out <- item
+			}
+			err = <-errCh
+			if err != nil {
+				errs <- err
+				return
+			}
+			err = gzr.Close()
+			if err != nil {
+				errs <- err
+				return
+			}
+		}
+	}()
+
+	return out, errs
 }

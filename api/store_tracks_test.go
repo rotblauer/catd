@@ -18,7 +18,7 @@ func TestCat_StoreTracks(t *testing.T) {
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -45,7 +45,7 @@ func TestCat_StoreTracksYYYYMM(t *testing.T) {
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -66,13 +66,15 @@ func TestCat_StoreTracksYYYYMM(t *testing.T) {
 	assertGZFileValidTracks(t, filepath.Join(c.State.Flat.Path(), "tracks", "2024-12.geojson.gz"))
 }
 
-func TestCat_StoreTracksYYYYMM_ManyTimes(t *testing.T) {
+// TestCat_StoreTracksYYYYMM_Heavy pushes the track time of 444k real tracks ahead
+// by an hour, drawing the YYYY-MM far into the future, causing lots of file write/closes.
+func TestCat_StoreTracksYYYYMM_Heavy(t *testing.T) {
 	tc := NewTestCatWriter(t, "rye", nil)
 	c := tc.Cat()
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_RYE202412))
 
 	firstFakeTime := time.Now().Round(time.Second)
 	fakeTime := firstFakeTime

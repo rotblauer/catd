@@ -16,7 +16,7 @@ import (
 
 func TestSinkStreamToJSONWriter(t *testing.T) {
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
 
 	first := <-tracks
 	if first.IsEmpty() {
@@ -118,7 +118,7 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 	defer tc.CloseAndDestroy()
 
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceGZ[cattrack.CatTrack](ctx, source)
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, source)
 	stream.Blackhole(errs)
 
 	// Collect and count cat's tracks.
