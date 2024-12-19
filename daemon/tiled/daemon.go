@@ -241,6 +241,22 @@ func (d *TileD) awaitPendingTileRequests() {
 		err error
 	}
 	results := make(chan result, len(requests))
+
+	// Use work pool.
+	// Running serially is slower than necessary (most sets are small-ish, a few big).
+	// But running all concurrently can/does slam the RAM.
+	workers := 4
+	work := make(chan *TilingRequestArgs, len(requests))
+	for i := 0; i < workers; i++ {
+		go func(wi int) {
+			for req := range work {
+				d.logger.Info("Picked pending tiling request",
+					"worker", fmt.Sprintf("%d/%d", wi, workers), "args", req.id())
+				err := d.callTiling(req, nil)
+				results <- result{req, err}
+			}
+		}(i)
+	}
 	for _, req := range requests {
 		_, ok := d.tilingRunningM.Load(req.id())
 		for ok {
@@ -248,12 +264,11 @@ func (d *TileD) awaitPendingTileRequests() {
 			time.Sleep(time.Second)
 			_, ok = d.tilingRunningM.Load(req.id())
 		}
-		d.logger.Debug("Spawning pending tiling request", "args", req.id())
-		go func() {
-			err := d.callTiling(req, nil)
-			results <- result{req, err}
-		}()
+		d.logger.Debug("Promoting pending tiling request", "args", req.id())
+		work <- req
 	}
+	close(work)
+
 	for i := 0; i < len(requests); i++ {
 		res := <-results
 		if res.err != nil {
