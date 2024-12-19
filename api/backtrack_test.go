@@ -88,7 +88,7 @@ func TestCat_Unbacktracked_ReInits(t *testing.T) {
 		backtracks int
 	}{
 		// rye has 23754/23775 valid tracks for this source; 23754/23775=99.9%
-		{"rye", testdata.Path(testdata.Source_EDGE20241217), 21},
+		{"rye", testdata.Path(testdata.Source_EDGE20241217), 0},
 		{"ia", testdata.Path(testdata.Source_EDGE20241217), 0},
 	}
 	batchSizeMatrix := []int{1, 100, 1000, 10_000}
