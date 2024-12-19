@@ -7,7 +7,6 @@ import (
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/rgeo"
-	rrgeo "github.com/sams96/rgeo"
 	"log"
 	"log/slog"
 	"net"
@@ -36,7 +35,7 @@ func NewDaemon(config *params.RgeoDaemonConfig) (*RgeoDaemon, error) {
 	logger := slog.With("daemon", "rgeo")
 	if config == nil {
 		logger.Warn("No config provided, using default")
-		config = params.DefaultRgeoDaemonConfig()
+		config = params.InProcRgeoDaemonConfig
 	}
 	return &RgeoDaemon{
 		config:    config,
@@ -52,7 +51,6 @@ func (d *RgeoDaemon) Start() error {
 	d.logger.Info("Rgeo daemon starting...",
 		"network", d.config.ListenerConfig.Network, "address", d.config.ListenerConfig.Address)
 
-	//os.Remove(d.config.Address) // FIXME
 	if strings.HasPrefix(d.config.Network, "unix") {
 		if _, err := os.Stat(d.config.Address); err == nil {
 			d.logger.Info("Found existing socket file, checking response", "address", d.config.Address)
@@ -112,17 +110,7 @@ func (r *ReverseGeocode) Ping(common.RPCArgNone, common.RPCArgNone) error {
 	return nil
 }
 
-type Pt [2]float64
-
-// GetLocationRequest should be [X,Y]::[Lng,Lat].
-type GetLocationRequest Pt
-
-type GetLocationResponse struct {
-	Location rrgeo.Location
-	Error    error
-}
-
-func (r *ReverseGeocode) GetLocation(req *GetLocationRequest, res *GetLocationResponse) error {
+func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.GetLocationResponse) error {
 	if req == nil {
 		return errors.New("request is nil")
 	}
@@ -139,16 +127,7 @@ func (r *ReverseGeocode) GetLocation(req *GetLocationRequest, res *GetLocationRe
 	return nil
 }
 
-type GetGeometryRequest struct {
-	Pt
-	Dataset string
-}
-type GetGeometryResponse struct {
-	Geometry orb.Geometry
-	Error    error
-}
-
-func (r *ReverseGeocode) GetGeometry(req *GetGeometryRequest, res *GetGeometryResponse) error {
+func (r *ReverseGeocode) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.GetGeometryResponse) error {
 	if req == nil {
 		return errors.New("request is nil")
 	}

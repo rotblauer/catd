@@ -14,3 +14,11 @@ func DefaultRgeoDaemonConfig() *RgeoDaemonConfig {
 		RPCPath: "/rgeo_rpc",
 	}
 }
+
+// InProcRgeoDaemonConfig is a configuration structure instance
+// which is shared between
+// - cmd/rgeod.go
+// - daemon/rgeod/daemon.go
+// - rgeo/rgeo.go
+// - cat backending
+var InProcRgeoDaemonConfig = DefaultRgeoDaemonConfig()

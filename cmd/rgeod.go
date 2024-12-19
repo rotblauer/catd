@@ -27,9 +27,6 @@ import (
 	"os"
 )
 
-var optRgeoDNetwork = params.DefaultRgeoDaemonConfig().Network
-var optRgeoDAddress = params.DefaultRgeoDaemonConfig().Address
-
 // rgeodCmd represents the rgeod command
 var rgeodCmd = &cobra.Command{
 	Use:   "rgeod",
@@ -42,9 +39,7 @@ It loads large datasets, and then looks places up for you.
 		setDefaultSlog(cmd, args)
 		slog.Info("rgeod.Run")
 
-		config := params.DefaultRgeoDaemonConfig()
-		config.ListenerConfig.Network = optRgeoDNetwork
-		config.ListenerConfig.Address = optRgeoDAddress
+		config := params.InProcRgeoDaemonConfig
 
 		d, err := rgeod.NewDaemon(config)
 		if err != nil {
@@ -67,8 +62,10 @@ func init() {
 	rgeodListenerFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", rgeodCmd.CommandPath())
 	}
-	rgeodListenerFlags.StringVar(&optRgeoDNetwork, "rgeod.listen.network", optRgeoDNetwork, "Network to listen on")
-	rgeodListenerFlags.StringVar(&optRgeoDAddress, "rgeod.listen.address", optRgeoDAddress, "Address to listen on")
+	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Network, "rgeod.listen.network", params.InProcRgeoDaemonConfig.Network, `Network to listen on
+This flag configures a public inproc configuration structure instance.`)
+	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Address, "rgeod.listen.address", params.InProcRgeoDaemonConfig.Address, `Address to listen on
+This flag configures a public inproc configuration structure instance.`)
 	rgeodCmd.Flags().AddFlagSet(rgeodListenerFlags)
 
 	// Share this flagset with other commands.

@@ -101,6 +101,7 @@ Missoula, Montana
 			Can't background/disown this command, which means populate would need
 			a way to WAIT for these children before quitting with them.
 			Gonna be easier to just use them in proc.
+			Could use exec.Command to fire one off, but that seems extra hacky.
 		*/
 		setDefaultSlog(cmd, args)
 		slog.Info("populate.PreRun")
@@ -418,6 +419,8 @@ func tryGetOrInitRgeoD(cmd *cobra.Command, args []string) {
 		slog.Warn(" 🚧 RgeoD RPC client connection refused, attempting auto-start")
 		// FIXME: Can these be backgrounded/disowned to live beyond cmdPopulate?
 		// Otherwise, have to listen RPC for ReadyToQuit, or there's no time for tiling.
+		// The nice thing, however, about this is that the rgeod daemon will be running
+		// inproc.
 		cmd := &cobra.Command{}
 		*cmd = *rgeodCmd
 		cmd.SetContext(context.Background())

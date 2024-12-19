@@ -19,7 +19,7 @@ type CatRPCServices struct {
 func DefaultCatBackendConfig() *CatRPCServices {
 	return &CatRPCServices{
 		TileD: DefaultTileDaemonConfig(),
-		RgeoD: DefaultRgeoDaemonConfig(),
+		RgeoD: InProcRgeoDaemonConfig,
 	}
 }
 
