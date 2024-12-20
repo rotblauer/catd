@@ -138,6 +138,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// Fork stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
+	// Base 64 images should be stripped, converted into better formats,
+	// stored, and trigger some events, like tiling updates.
+	// We don't want to send snaps to the places normal tracks go.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
 	}, pipedLast)
