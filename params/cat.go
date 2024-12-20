@@ -30,7 +30,7 @@ func DefaultCatDataDir(catID string) string {
 var CatStateBucket = []byte("state")
 var CatSnapBucket = []byte("snaps")
 
-// CatStateBucket* are the names of the buckets in the CatState KV DB.
+// CatStateKey_* are the names of the keys of various state objects in the CatState.
 
 // v9000
 var CatStateKey_ActImprover = []byte("act_improver")

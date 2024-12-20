@@ -263,7 +263,7 @@ func RingSort[T any](ctx context.Context, size int, sorter func(a, b T) int, in 
 		less := func(a, b T) bool {
 			return sorter(a, b) < 0
 		}
-		var ring = NewSortingRingBuffer[T](size, less)
+		var ring = common.NewSortingRingBuffer[T](size, less)
 		flush := func() {
 			Sink(ctx, func(t T) {
 				out <- t

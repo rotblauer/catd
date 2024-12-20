@@ -70,18 +70,17 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 	apiRoutes.Path("/ping").HandlerFunc(pingPong)
 	apiRoutes.Path("/status").HandlerFunc(s.statusReport)
 
-	// TODO Ideally maybe move API URIs to /v2/paths.
-
+	// TODO /v9000 paths?
 	apiJSONRoutes := apiRoutes.NewRoute().Subrouter()
 	jsonMiddleware := contentTypeMiddlewareFunc("application/json")
 	apiJSONRoutes.Use(jsonMiddleware)
 
-	apiJSONRoutes.Path("/last.json").HandlerFunc(lastKnown).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/indexed.json").HandlerFunc(getOffsetIndex).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/catsnaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/s2/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/rgeo/plats.json").HandlerFunc(rGeoCollect).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/last.json").HandlerFunc(catIndex).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/pushed.json").HandlerFunc(catPushed).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/snaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/s2/{level}/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/s2/{level}/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/{cat}/rgeo/{datasetRe}/plats.json").HandlerFunc(rGeoCollect).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/daemon/tiled"
@@ -11,6 +12,7 @@ import (
 	"github.com/rotblauer/catd/rgeo"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -164,7 +166,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 	return err
 }
 
-// S2CollectLevel returns all indexed tracks for a given S2 cell level.
+// RgeoCollectLevel returns all indexed tracks for a given Rgeo level (dataset).
 func (c *Cat) RgeoCollectLevel(ctx context.Context, level int) ([]cattrack.CatTrack, error) {
 	c.getOrInitState(true)
 
@@ -178,4 +180,29 @@ func (c *Cat) RgeoCollectLevel(ctx context.Context, level int) ([]cattrack.CatTr
 	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
 	out = stream.Collect(ctx, dump)
 	return out, <-errs
+}
+
+func (c *Cat) RgeoDumpLevel(wr io.Writer, level int) error {
+	c.getOrInitState(true)
+
+	cellIndexer, err := c.GetDefaultRgeoIndexer()
+	if err != nil {
+		return err
+	}
+	defer cellIndexer.Close()
+
+	enc := json.NewEncoder(wr)
+	dump, errs := cellIndexer.DumpLevel(reducer.Bucket(level))
+	go func() {
+		for track := range dump {
+			if err := enc.Encode(track); err != nil {
+				select {
+				case errs <- err:
+					return
+				default:
+				}
+			}
+		}
+	}()
+	return <-errs
 }

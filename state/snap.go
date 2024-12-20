@@ -94,9 +94,5 @@ func (s *CatState) StoreSnapJSONFile(ct cattrack.CatTrack) error {
 }
 
 func (s *CatState) StoreSnapKV(ct cattrack.CatTrack) error {
-	j, err := json.Marshal(ct)
-	if err != nil {
-		return err
-	}
-	return s.storeKV(params.CatSnapBucket, []byte(ct.MustS3Key()), j)
+	return s.StoreKVMarshalJSON(params.CatSnapBucket, []byte(ct.MustS3Key()), ct)
 }

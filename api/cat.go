@@ -8,6 +8,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"net/rpc"
+	"os"
 )
 
 // Cat is the API representation of a cat.
@@ -75,6 +76,18 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 
 	if c.DataDir == "" {
 		c.DataDir = params.DefaultCatDataDir(c.CatID.String())
+	}
+
+	// Check existence of cat dir.
+	// If read-only, and no cat dir, return error.
+	if readOnly {
+		d, err := os.Stat(c.DataDir)
+		if err != nil {
+			return nil, err
+		}
+		if !d.IsDir() {
+			return nil, os.ErrNotExist
+		}
 	}
 
 	st, err := s.Open(c.DataDir, readOnly)

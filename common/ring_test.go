@@ -1,4 +1,4 @@
-package stream
+package common
 
 import (
 	"reflect"
