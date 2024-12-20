@@ -66,7 +66,7 @@ their first:last track time range.
 
 Examples:
 
-  zcat master.json.gz | catd populate --workers 12 --batch-size 100_000 --sort true
+  zcat master.json.gz | catd populate --workers 12 --batch-size 9_000 --sort true
 
 Notes:
 
@@ -140,6 +140,7 @@ Missoula, Montana
 		catBackendC.TileD.Address = optTilingListenAddress
 		catBackendC.RgeoD.Network = params.InProcRgeoDaemonConfig.Network
 		catBackendC.RgeoD.Address = params.InProcRgeoDaemonConfig.Address
+		catBackendC.RgeoD.ServiceName = params.InProcRgeoDaemonConfig.ServiceName
 
 		// An in-proc TileDaemon.
 		// Would rather have this as a backgrounded/disowned process, but can't do that yet without a waiter.

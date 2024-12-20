@@ -21,7 +21,7 @@ type CatState struct {
 // competing writes or reads to cat state. It must be the one true canonical cat.
 func (c *CatState) Open(catRoot string, readOnly bool) (*CatState, error) {
 
-	if c.State != nil && c.open {
+	if c.State != nil && c.open && readOnly == c.rOnly {
 		return c, nil // Or throw error?
 	}
 	if c.State != nil && !c.open {
@@ -40,7 +40,6 @@ func (c *CatState) Open(catRoot string, readOnly bool) (*CatState, error) {
 	}
 
 	flatCat := catz.NewFlatWithRoot(catRoot)
-
 	if !readOnly {
 		if err := flatCat.MkdirAll(); err != nil {
 			return nil, err
@@ -136,8 +135,6 @@ func (s *State) readKV(bucket []byte, key []byte) ([]byte, error) {
 		// Gotcha! The value returned by Get is only valid in the scope of the transaction.
 		_, err := buf.Write(b.Get(key))
 		return err
-		//got = b.Get(key)
-		//return nil
 	})
 	return buf.Bytes(), err
 	//return got, err

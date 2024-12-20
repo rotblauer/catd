@@ -18,6 +18,9 @@ type Window struct {
 }
 
 func (w *Window) Duration() time.Duration {
+	if w.First.IsZero() || w.Last.IsZero() {
+		return 0
+	}
 	return w.Last.Sub(w.First)
 }
 
@@ -234,7 +237,7 @@ func logUUIDWindowMap(logger *slog.Logger, m uuidWindowMap, prefix string) {
 	windows := []Window{}
 	for uuid, window := range m {
 		windows = append(windows, window)
-		shortWindow := window.Last.Sub(window.First) < time.Hour*1 //24
+		shortWindow := window.Duration() < 24*time.Hour
 		if shortWindow {
 			shortWindows++
 		}
@@ -243,6 +246,9 @@ func logUUIDWindowMap(logger *slog.Logger, m uuidWindowMap, prefix string) {
 			shortWindowsLogged++
 		}
 		logger.Info(prefix+"UUID window", "uuid", uuid, "window", window.String())
+	}
+	if shortWindows > shortWindowsLogMax {
+		logger.Warn(prefix+"UUID window (short)", "count", shortWindows)
 	}
 
 	/*
