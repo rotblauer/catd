@@ -31,16 +31,16 @@ func NewTestCatWriter(t *testing.T, name string, backend *params.CatRPCServices)
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := os.MkdirTemp(TestDatadirRoot, name)
+	tmpCatD, err := os.MkdirTemp(TestDatadirRoot, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := NewCat(conceptual.CatID(name), d, backend)
+	c, err := NewCat(conceptual.CatID(name), tmpCatD, backend)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := c.WithState(false)
-	if err != nil || st == nil {
+	err = c.LockOrLoadState(false)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return (*TestCat)(c)
@@ -51,8 +51,8 @@ func NewTestCatReader(t *testing.T, name, d string, backend *params.CatRPCServic
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := c.WithState(true)
-	if err != nil || st == nil {
+	err = c.LockOrLoadState(true)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return (*TestCat)(c)

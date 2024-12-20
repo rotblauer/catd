@@ -15,7 +15,7 @@ import (
 
 // StoreTracks stores incoming CatTracks for one cat to disk.
 func (c *Cat) StoreTracks(ctx context.Context, in <-chan cattrack.CatTrack) (errCh chan error) {
-	_ = c.getOrInitState(false)
+	c.getOrInitState(false)
 
 	c.logger.Info("Storing cat tracks gz", "cat", c.CatID, "path", c.State.Flat.Path())
 

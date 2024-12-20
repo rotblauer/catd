@@ -96,8 +96,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	c.SubscribeFancyLogs()
 
 	// Must get blocking exclusive hold on state.
+	// TODO
+	// hotkey for maximize tool window
+	// separate state concerns into read v. write?
 	c.logger.Info("Populate blocking on lock state")
-	_, err := c.WithState(false)
+	err := c.LockOrLoadState(false)
 	if err != nil {
 		c.logger.Error("Failed to get or create cat state", "error", err)
 		return err
@@ -129,21 +132,21 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return ct
 	}, sanitized)
 
-	pipedLast := stamped
+	normalized := stamped
 	if sort {
-		pipedLast = stream.BatchSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
-		//pipedLast = stream.BatchSortaBetter(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
-		//pipedLast = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
+		normalized = stream.BatchSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
+		//normalized = stream.BatchSortaBetter(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
+		//normalized = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
 	}
 
-	// Fork stream into snaps/no-snaps.
+	// Fork normalized stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
 	// Base 64 images should be stripped, converted into better formats,
 	// stored, and trigger some events, like tiling updates.
 	// We don't want to send snaps to the places normal tracks go.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
-	}, pipedLast)
+	}, normalized)
 
 	// Unbacktrack drops tracks that are older than the last known track,
 	// or otherwise within the window of seen tracks, critically: per cat/uuid.

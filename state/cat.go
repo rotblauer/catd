@@ -9,71 +9,86 @@ import (
 	"github.com/rotblauer/catd/params"
 	"go.etcd.io/bbolt"
 	"path/filepath"
+	"sync/atomic"
 )
 
 type CatState struct {
-	CatID conceptual.CatID
+	CatID   conceptual.CatID
+	Datadir string
+	rOnly   atomic.Bool
+	isOpen  atomic.Bool
 	*State
+}
+
+func NewCatState(catID conceptual.CatID, datadir string, readOnly bool) *CatState {
+	rOnly := atomic.Bool{}
+	rOnly.Store(readOnly)
+	return &CatState{
+		CatID:   catID,
+		Datadir: datadir,
+		rOnly:   rOnly,
+		isOpen:  atomic.Bool{},
+	}
 }
 
 // Open defines data sources, caches, and encoding for a cat.
 // It should be non-contentious. It must be blocking; it should not permit
 // competing writes or reads to cat state. It must be the one true canonical cat.
-func (c *CatState) Open(catRoot string, readOnly bool) (*CatState, error) {
-
-	if c.State != nil && c.open && readOnly == c.rOnly {
-		return c, nil // Or throw error?
+// It should be as simple and idiot proof as possible.
+func (cs *CatState) Open() error {
+	if cs.isOpen.Load() {
+		return fmt.Errorf("cat state already open")
+	}
+	if cs.State == nil {
+		cs.State = &State{}
 	}
 
-	if c.State != nil && c.Flat != nil && !c.open {
-		// Opening a writable DB conn will block all other cat writers and readers
-		// with essentially a file lock/flock.
-		db, err := bbolt.Open(filepath.Join(c.Flat.Path(), params.CatStateDBName),
-			0600, &bbolt.Options{
-				ReadOnly: readOnly,
-			})
-		if err != nil {
-			return nil, err
+	cs.Flat = catz.NewFlatWithRoot(cs.Datadir)
+	if cs.rOnly.Load() == false {
+		if err := cs.Flat.MkdirAll(); err != nil {
+			return err
 		}
-		c.DB = db
-		c.open = true
-		return c, nil
-	}
-
-	flatCat := catz.NewFlatWithRoot(catRoot)
-	if !readOnly {
-		if err := flatCat.MkdirAll(); err != nil {
-			return nil, err
+	} else {
+		// Test if dir exist in read-only mode.
+		fi, err := cs.Flat.Stat()
+		if err != nil {
+			return err
+		}
+		if !fi.IsDir() {
+			return fmt.Errorf("cat data dir is not a directory")
 		}
 	}
 
 	// Opening a writable DB conn will block all other cat writers and readers
 	// with essentially a file lock/flock.
-	db, err := bbolt.Open(filepath.Join(flatCat.Path(), params.CatStateDBName),
-		0600, &bbolt.Options{
-			ReadOnly: readOnly,
-		})
+	var err error
+	dbPath := filepath.Join(cs.Flat.Path(), params.CatStateDBName)
+	cs.DB, err = bbolt.Open(dbPath, 0600, &bbolt.Options{
+		ReadOnly: cs.rOnly.Load(),
+	})
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("bbolt failed open: %w (db.path=%s, flat.path=%s)",
+			err, dbPath, cs.Flat.Path())
 	}
+	cs.isOpen.Store(true)
 
-	s := &CatState{
-		CatID: c.CatID,
-		State: &State{
-			open: true,
-			DB:   db,
-			Flat: flatCat,
-		},
-	}
-	return s, nil
+	return nil
 }
 
-func (s *State) IsOpen() bool {
-	return s.open
+func (s *CatState) IsOpen() bool {
+	return s.isOpen.Load()
 }
 
-func (s *State) Close() error {
-	s.open = false
+func (s *CatState) IsReadOnly() bool {
+	return s.rOnly.Load()
+}
+
+func (s *CatState) SetReadWrite(rOnly bool) {
+	s.rOnly.Store(rOnly)
+}
+
+func (s *CatState) Close() error {
+	defer s.isOpen.Store(false)
 	if err := s.DB.Close(); err != nil {
 		return err
 	}

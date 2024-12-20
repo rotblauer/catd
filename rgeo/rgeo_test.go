@@ -129,11 +129,6 @@ func testrRPCConf(t *testing.T) {
 	if our == nil {
 		t.Fatal("Expected non-nil value from R()")
 	}
-	//// our is == rRPC; compare pointers.
-	//if our != rRPC {
-	//	t.Fatalf("Expected %p, got %p", rRPC, our)
-	//}
-
 	switch our.(type) {
 	case *RPCReverseGeocoderClient:
 	default:
@@ -157,8 +152,28 @@ func testrRPCConf(t *testing.T) {
 			"USA", "Montana", loc.CountryCode3, loc.Province)
 	}
 
+	// Test that the client has been closed.
+	// RPC clients are single-use, disposable.
+	// Slow, but mem safe that way.
+	if err := ourR.Close(); err == nil || err.Error() != "connection is shut down" {
+		t.Fatalf("Expected error 'connection is shut down', got %q", err)
+	}
+
+	// Get another one and use it without type assertion.
+	ourR2 := R()
+	switch ourR2.(type) {
+	case *RPCReverseGeocoderClient:
+	default:
+		t.Fatalf("Expected *RPCReverseGeocoderClient, got %T", ourR2)
+	}
+	// Test the methods.
+	ourR2T, ok := ourR2.(*RPCReverseGeocoderClient)
+	if !ok {
+		t.Fatalf("Expected *RPCReverseGeocoderClient, got %T", our)
+	}
+
 	// Check get geometry for some location/dataset.
-	plat, err := ourR.GetGeometry(Pt{-105.590250, 47.405611}, "github.com/sams96/rgeo.Provinces10")
+	plat, err := ourR2T.GetGeometry(Pt{-105.590250, 47.405611}, "github.com/sams96/rgeo.Provinces10")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}

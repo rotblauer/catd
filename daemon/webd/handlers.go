@@ -92,7 +92,7 @@ func catIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cat := &api.Cat{CatID: catID}
-	if _, err := cat.WithState(true); err != nil {
+	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
 		return
@@ -121,7 +121,7 @@ func catPushed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cat := &api.Cat{CatID: catID}
-	if _, err := cat.WithState(true); err != nil {
+	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
 		return
@@ -179,7 +179,7 @@ func getCatSnaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cat := &api.Cat{CatID: catID}
-	if _, err := cat.WithState(true); err != nil {
+	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
 		return

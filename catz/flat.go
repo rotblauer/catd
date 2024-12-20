@@ -35,6 +35,10 @@ func (f *Flat) MkdirAll() error {
 	return os.MkdirAll(f.path, 0770)
 }
 
+func (f *Flat) Stat() (os.FileInfo, error) {
+	return os.Stat(f.path)
+}
+
 func (f *Flat) Path() string {
 	return f.path
 }

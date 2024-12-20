@@ -277,8 +277,8 @@ Missoula, Montana
 func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, backend *params.CatRPCServices) {
 	defer done.Done()
 
-	var cat *api.Cat
 	var err error
+	var cat *api.Cat
 
 	first, open := <-catCh
 	if !open {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
@@ -8,7 +9,6 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"log/slog"
 	"net/rpc"
-	"os"
 )
 
 // Cat is the API representation of a cat.
@@ -18,8 +18,7 @@ import (
 // a token (permissions), a CLI-flag, a URL parameter, or even
 // an environment value. Anywhere cat data comes from, that is not the state of this app.
 type Cat struct {
-	CatID conceptual.CatID
-
+	CatID   conceptual.CatID
 	DataDir string
 
 	// Ok, actually we DO have to have/want a conn to state.
@@ -36,12 +35,21 @@ type Cat struct {
 	completedNaps event.FeedOf[cattrack.CatNap]
 }
 
+// NewCat inits a new Cat, but it does not access state.
 func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServices) (*Cat, error) {
+	if catID == "" {
+		return nil, errors.New("catID is required")
+	}
+	logger := slog.With("cat", catID)
+	if datadir == "" {
+		logger.Warn("No data dir provided, using default", "cat", catID)
+		datadir = params.DefaultCatDataDir(catID.String())
+	}
 	c := &Cat{
 		CatID:         catID,
 		DataDir:       datadir,
-		backend:       backend,
-		logger:        slog.With("cat", catID),
+		backend:       backend, // can be nil
+		logger:        logger,
 		completedLaps: event.FeedOf[cattrack.CatLap]{},
 		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
@@ -63,59 +71,38 @@ func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServic
 	return c, nil
 }
 
-// WithState returns a CatState for the Cat.
-// If readOnly is false it will block.
-func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
-	if c.State != nil {
-		if !c.State.IsOpen() {
-			return c.State.Open(c.DataDir, readOnly)
-		}
-		return c.State, nil
+// LockOrLoadState makes sure a Cat has r|w CatState.
+// If readOnly is false it will block unless already open.
+func (c *Cat) LockOrLoadState(readOnly bool) error {
+	if c.CatID == "" {
+		return errors.New("catID is required")
 	}
-	s := &state.CatState{CatID: c.CatID}
-
 	if c.DataDir == "" {
 		c.DataDir = params.DefaultCatDataDir(c.CatID.String())
 	}
-
-	// Check existence of cat dir.
-	// If read-only, and no cat dir, return error.
-	if readOnly {
-		d, err := os.Stat(c.DataDir)
-		if err != nil {
-			return nil, err
-		}
-		if !d.IsDir() {
-			return nil, os.ErrNotExist
-		}
+	if c.State == nil {
+		c.State = state.NewCatState(c.CatID, c.DataDir, readOnly)
+		return c.State.Open()
 	}
-
-	st, err := s.Open(c.DataDir, readOnly)
-	if err != nil {
-		return nil, err
+	if !c.State.IsOpen() {
+		return c.State.Open()
 	}
-	c.State = st
-	return c.State, nil
+	return nil
 }
 
 // getOrInitState gets the state if it exists, or initializes it if it doesn't.
 // It is a way for API methods to idempotently declare if and how they need persistent cat resources.
-func (c *Cat) getOrInitState(readOnly bool) *state.CatState {
+func (c *Cat) getOrInitState(readOnly bool) {
 	if c.State == nil {
-		s, err := c.WithState(readOnly)
-		if err != nil {
-			c.logger.Error("Failed to create cat state", "error", err)
-			return s
-		}
+		c.LockOrLoadState(readOnly)
 	}
-	return c.State
 }
 
 func (c *Cat) Close() error {
-	err := c.State.Close()
-	if err != nil {
-		return err
+	if !c.State.IsOpen() {
+		return errors.New("cat state not open")
 	}
+	return c.State.Close()
 	return nil
 }
 
