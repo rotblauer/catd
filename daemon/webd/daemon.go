@@ -9,6 +9,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 type WebDaemon struct {
@@ -16,6 +17,7 @@ type WebDaemon struct {
 	logger         *slog.Logger
 	melodyInstance *melody.Melody
 	feedPopulated  event.FeedOf[[]*cattrack.CatTrack]
+	started        time.Time
 }
 
 func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
@@ -34,6 +36,7 @@ func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
 // Run starts the HTTP server (ListenAndServe) and waits for it,
 // returning any server error.
 func (s *WebDaemon) Run() error {
+	s.started = time.Now()
 	router := s.NewRouter()
 	http.Handle("/", router)
 	log.Printf("Starting web daemon on %s", s.Config.Address)
@@ -65,7 +68,7 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 
 	// /ping is a simple server healthcheck endpoint
 	apiRoutes.Path("/ping").HandlerFunc(pingPong)
-	apiRoutes.Path("/healthcheck").HandlerFunc(s.healthcheck)
+	apiRoutes.Path("/status").HandlerFunc(s.statusReport)
 
 	// TODO Ideally maybe move API URIs to /v2/paths.
 

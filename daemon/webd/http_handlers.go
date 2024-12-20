@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"time"
 )
 
 func pingPong(w http.ResponseWriter, r *http.Request) {
@@ -23,8 +24,23 @@ func pingPong(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("pong"))
 }
 
-func (s *WebDaemon) healthcheck(w http.ResponseWriter, r *http.Request) {
-	j, err := json.MarshalIndent(s.Config, "", "  ")
+type webDaemonStatus struct {
+	StartedAt time.Time               `json:"started_at"`
+	Uptime    string                  `json:"uptime"`
+	Config    *params.WebDaemonConfig `json:"config"`
+	WSOpen    bool                    `json:"ws_open"`
+	WSConns   int                     `json:"ws_conns"`
+}
+
+func (s *WebDaemon) statusReport(w http.ResponseWriter, r *http.Request) {
+	st := webDaemonStatus{
+		StartedAt: s.started,
+		Uptime:    time.Since(s.started).Round(time.Second).String(),
+		WSOpen:    !s.melodyInstance.IsClosed(),
+		WSConns:   s.melodyInstance.Len(),
+		Config:    s.Config,
+	}
+	j, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		s.logger.Error("Failed to marshal config", "error", err)
 		http.Error(w, "Failed to marshal config", http.StatusInternalServerError)
@@ -38,9 +54,13 @@ func (s *WebDaemon) healthcheck(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// lastKnown returns the most recent track for a cat.
+// Currently this also includes index data from S2/Level0.
 func lastKnown(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
+
+	// HACK: Return the freshest face from an S2 dump at level 0.
 	tracks, err := cat.S2CollectLevel(r.Context(), s2.CellLevel(0))
 	if err != nil {
 		slog.Warn("Failed to get last known", "error", err)
@@ -51,6 +71,7 @@ func lastKnown(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No tracks found", http.StatusNotFound)
 		return
 	}
+
 	// Freshest first.
 	sort.SliceStable(tracks, func(i, j int) bool {
 		return tracks[i].MustTime().Unix() > tracks[j].MustTime().Unix()
@@ -62,30 +83,6 @@ func lastKnown(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to marshal response", http.StatusInternalServerError)
 		return
 	}
-
-	//// Remove TrackStacker (indexed) properties by hand, for now. (?)
-	//for _, p := range []string{
-	//	"Count",
-	//	"VisitCount",
-	//	"FirstTime",
-	//	"LastTime",
-	//	"ActivityMode",
-	//	"TotalTimeOffset",
-	//	"ActivityMode.Automotive",
-	//	"ActivityMode.Bike",
-	//	"ActivityMode.Fly",
-	//	"ActivityMode.Running",
-	//	"ActivityMode.Stationary",
-	//	"ActivityMode.Unknown",
-	//	"ActivityMode.Walking",
-	//} {bs
-	//	bs, err = sjson.DeleteBytes(bs, "properties."+p)
-	//	if err != nil {
-	//		slog.Warn("Failed to remove property", "error", err)
-	//		http.Error(w, "Failed to remove geometry", http.StatusInternalServerError)
-	//		return
-	//	}
-	//}
 
 	if _, err := w.Write(bs); err != nil {
 		slog.Error("Failed to write response", "error", err)
@@ -103,14 +100,13 @@ func getOffsetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer cat.State.Close()
-	indexed := cattrack.OffsetIndexT{}
+	indexed := cattrack.CatTrack{}
 	if err := cat.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, &indexed); err != nil {
-		slog.Warn("Failed to read stacker index", "error", err)
-		http.Error(w, "Failed to read stacker index", http.StatusInternalServerError)
+		slog.Warn("Failed to read offset index", "error", err)
+		http.Error(w, "Failed to read offset index", http.StatusInternalServerError)
 		return
 	}
-	ct := indexed.ApplyToCatTrack(&indexed, cattrack.CatTrack{})
-	if err := json.NewEncoder(w).Encode(ct); err != nil {
+	if err := json.NewEncoder(w).Encode(indexed); err != nil {
 		slog.Warn("Failed to write response", "error", err)
 	}
 }

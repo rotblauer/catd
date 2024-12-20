@@ -31,8 +31,17 @@ var CatStateBucket = []byte("state")
 var CatSnapBucket = []byte("snaps")
 
 // CatStateBucket* are the names of the buckets in the CatState KV DB.
+
+// v9000
 var CatStateKey_ActImprover = []byte("act_improver")
 var CatStateKey_Unbacktracker = []byte("unbacktracker")
 var CatStateKey_Laps = []byte("laps")
 var CatStateKey_Naps = []byte("naps")
 var CatStateKey_OffsetIndexer = []byte("offset_indexer")
+
+// v0
+//var CatStateKey_ActImprover = []byte("act-improver")
+//var CatStateKey_Unbacktracker = []byte("catUUIDWindowMap")
+//var CatStateKey_Laps = []byte("lapstate")
+//var CatStateKey_Naps = []byte("napstate")
+//var CatStateKey_OffsetIndexer = []byte("offsetIndexer")

@@ -161,6 +161,7 @@ func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGe
 }
 
 func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (loc srgeo.Location, err error) {
+	defer r.Close()
 	res := &GetLocationResponse{}
 	err = r.client.Call(r.receiver+".GetLocation", &pt, res)
 	if err != nil {
@@ -173,6 +174,7 @@ func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (loc srgeo.Location, err e
 }
 
 func (r *RPCReverseGeocoderClient) GetGeometry(pt Pt, dataset string) (*Plat, error) {
+	defer r.Close()
 	res := &GetGeometryResponse{}
 	err := r.client.Call(r.receiver+".GetGeometry", &GetGeometryRequest{pt, dataset}, res)
 	if err != nil {
