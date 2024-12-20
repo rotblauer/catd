@@ -2,11 +2,18 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/rotblauer/catd/geo/act"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 )
+
+func (c *Cat) storeActImprover(im *act.Improver) error {
+	return c.State.StoreKVMarshalJSON(params.CatStateBucket, params.CatStateKey_ActImprover, im)
+}
+
+func (c *Cat) restoreActImprover(im *act.Improver) error {
+	return c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_ActImprover, im)
+}
 
 func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
 	c.getOrInitState(false)
@@ -51,20 +58,4 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 	}()
 
 	return out
-}
-
-func (c *Cat) storeActImprover(im *act.Improver) error {
-	b, err := json.Marshal(im)
-	if err != nil {
-		return err
-	}
-	return c.State.StoreKV(params.CatStateBucket, []byte("act-improver"), b)
-}
-
-func (c *Cat) restoreActImprover(im *act.Improver) error {
-	b, err := c.State.ReadKV(params.CatStateBucket, []byte("act-improver"))
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, im)
 }

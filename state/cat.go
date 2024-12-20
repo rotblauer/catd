@@ -87,8 +87,20 @@ func (s *State) StoreKVMarshalJSON(bucket []byte, key []byte, v interface{}) err
 	return s.storeKV(bucket, key, data)
 }
 
+func (s *State) ReadKVUnmarshalJSON(bucket []byte, key []byte, v interface{}) error {
+	data, err := s.readKV(bucket, key)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
+}
+
 func (s *State) StoreKV(bucket []byte, key []byte, value []byte) error {
 	return s.storeKV(bucket, key, value)
+}
+
+func (s *State) ReadKV(bucket []byte, key []byte) ([]byte, error) {
+	return s.readKV(bucket, key)
 }
 
 func (s *State) storeKV(bucket []byte, key []byte, data []byte) error {
@@ -105,18 +117,6 @@ func (s *State) storeKV(bucket []byte, key []byte, data []byte) error {
 		}
 		return b.Put(key, data)
 	})
-}
-
-func (s *State) ReadKVUnmarshalJSON(bucket []byte, key []byte, v interface{}) error {
-	data, err := s.readKV(bucket, key)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, v)
-}
-
-func (s *State) ReadKV(bucket []byte, key []byte) ([]byte, error) {
-	return s.readKV(bucket, key)
 }
 
 func (s *State) readKV(bucket []byte, key []byte) ([]byte, error) {

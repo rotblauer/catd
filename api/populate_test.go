@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/rotblauer/catd/catz"
 	"github.com/rotblauer/catd/conceptual"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -146,7 +147,7 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 
 	defer c.State.Close()
 	old := &cattrack.OffsetIndexT{}
-	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte("offsetIndexer"), old); err != nil {
+	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, old); err != nil {
 		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
 	}
 	j, _ := json.MarshalIndent(old, "", "  ")

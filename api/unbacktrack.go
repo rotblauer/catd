@@ -12,49 +12,8 @@ import (
 	"time"
 )
 
-type Window struct {
-	First time.Time
-	Last  time.Time
-}
-
-func (w *Window) Duration() time.Duration {
-	if w.First.IsZero() || w.Last.IsZero() {
-		return 0
-	}
-	return w.Last.Sub(w.First)
-}
-
-func (w *Window) Contains(t time.Time) bool {
-	return t.After(w.First) && t.Before(w.Last)
-}
-
-func (w *Window) ExtendFromWindow(ww *Window) {
-	if ww.First.Before(w.First) {
-		w.First = ww.First
-	}
-	if ww.Last.After(w.Last) {
-		w.Last = ww.Last
-	}
-}
-
-func (w *Window) Extend(t time.Time) {
-	if t.Before(w.First) {
-		w.First = t
-	}
-	if t.After(w.Last) {
-		w.Last = t
-	}
-}
-
-func (w *Window) String() string {
-	f := "2006.01.02_15:04:05"
-	return fmt.Sprintf("%s from %s to %s",
-		w.Duration().Round(time.Second),
-		w.First.Format(f), w.Last.Format(f))
-}
-
-// Unbacktrack removes tracks that are within the cat's populated window.
-// The cat's window is only allowed to grow, and will grow to include the population window.
+// Unbacktrack removes tracks that are within the cat/UUID's populated window.
+// The cat/UUID's window is only allowed to grow, and will grow to include the population window.
 // Since each cat can have more than one device, leading to more than "simultaneous" population windows,
 // the population window(s) are grouped per UUID.
 //
@@ -75,7 +34,7 @@ For example, if a cat...
 If the other GPS tracker has a different UUID, it will be allowed to populate,
 since the windows are cat/UUID specific.
 
-But still: A Monday's push, then Wednesday, will fail on Tuesday.
+But still: A Monday's push (with tracker ABC-123-DEF-456), then Wednesday, will fail on Tuesday.
 Careful.
 */
 type uuidWindowMap map[string]Window
@@ -126,7 +85,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		logUUIDWindowMap(c.logger, records, "All-time cat ")
 
 		// Store the cat's UUID:window map to the persistent state.
-		err := c.State.StoreKVMarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), records)
+		err := c.State.StoreKVMarshalJSON(params.CatStateBucket, params.CatStateKey_Unbacktracker, records)
 		if err != nil {
 			c.logger.Error("Failed to store UUID window map", "error", err)
 		}
@@ -135,7 +94,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 
 	// Reload the cat's window map from the state.
 	recorded := uuidWindowMap{}
-	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, []byte("catUUIDWindowMap"), &recorded); err != nil {
+	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_Unbacktracker, &recorded); err != nil {
 		c.logger.Warn("Did not read UUID window map (new cat?)", "error", err)
 	} else {
 		for k, v := range recorded {
@@ -274,4 +233,45 @@ func logUUIDWindowMap(logger *slog.Logger, m uuidWindowMap, prefix string) {
 		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=e11021d4-5541-47bf-a3b1-1eded24991f9 window="0s from 2021.01.31_07:42:13 to 2021.01.31_07:42:13"
 	*/
 
+}
+
+type Window struct {
+	First time.Time
+	Last  time.Time
+}
+
+func (w *Window) Duration() time.Duration {
+	if w.First.IsZero() || w.Last.IsZero() {
+		return 0
+	}
+	return w.Last.Sub(w.First)
+}
+
+func (w *Window) Contains(t time.Time) bool {
+	return t.After(w.First) && t.Before(w.Last)
+}
+
+func (w *Window) ExtendFromWindow(ww *Window) {
+	if ww.First.Before(w.First) {
+		w.First = ww.First
+	}
+	if ww.Last.After(w.Last) {
+		w.Last = ww.Last
+	}
+}
+
+func (w *Window) Extend(t time.Time) {
+	if t.Before(w.First) {
+		w.First = t
+	}
+	if t.After(w.Last) {
+		w.Last = t
+	}
+}
+
+func (w *Window) String() string {
+	f := "2006.01.02_15:04:05"
+	return fmt.Sprintf("%s from %s to %s",
+		w.Duration().Round(time.Second),
+		w.First.Format(f), w.Last.Format(f))
 }

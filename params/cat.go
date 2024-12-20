@@ -26,3 +26,13 @@ func DefaultCatBackendConfig() *CatRPCServices {
 func DefaultCatDataDir(catID string) string {
 	return filepath.Join(DefaultDatadirRoot, CatsDir, catID)
 }
+
+var CatStateBucket = []byte("state")
+var CatSnapBucket = []byte("snaps")
+
+// CatStateBucket* are the names of the buckets in the CatState KV DB.
+var CatStateKey_ActImprover = []byte("act_improver")
+var CatStateKey_Unbacktracker = []byte("unbacktracker")
+var CatStateKey_Laps = []byte("laps")
+var CatStateKey_Naps = []byte("naps")
+var CatStateKey_OffsetIndexer = []byte("offset_indexer")

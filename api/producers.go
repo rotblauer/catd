@@ -74,27 +74,26 @@ func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	c.logger.Info("Simple indexer")
 	defer c.logger.Info("Simple indexer complete")
 
-	indexer := &cattrack.OffsetIndexT{}
+	indexerT := &cattrack.OffsetIndexT{}
 	old := &cattrack.OffsetIndexT{}
 
-	stateKey := "offsetIndexer"
-	if err := c.State.ReadKVUnmarshalJSON([]byte("state"), []byte(stateKey), old); err != nil {
+	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, old); err != nil {
 		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
 	}
 
 	for track := range in {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			break
 		default:
 		}
-		indexing := indexer.FromCatTrack(track)
-		next := indexer.Index(old, indexing)
+		indexing := indexerT.FromCatTrack(track)
+		next := indexerT.Index(old, indexing)
 		*old = *next.(*cattrack.OffsetIndexT)
 	}
 
 	c.logger.Info("Simple indexer complete")
-	err := c.State.StoreKVMarshalJSON([]byte("state"), []byte(stateKey), old)
+	err := c.State.StoreKVMarshalJSON([]byte("state"), params.CatStateKey_OffsetIndexer, old)
 	if err != nil {
 		c.logger.Error("Failed to store offsetIndexer state", "error", err)
 		return err

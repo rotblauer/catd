@@ -2,31 +2,37 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/geo/nap"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
 )
 
+func (c *Cat) MustGetNapState() *nap.State {
+	c.getOrInitState(false)
+	ns := nap.NewState(nil)
+	err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_Naps, ns)
+	if err == nil {
+		// FIXME (?) Not sure why do this.
+		if len(ns.Tracks) > 0 {
+			ns.TimeLast = ns.Tracks[len(ns.Tracks)-1].MustTime()
+			ns.Centroid = ns.Tracks[len(ns.Tracks)-1].Geometry.(orb.Point)
+		}
+		c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", ns.TimeLast)
+		return ns
+	}
+	c.logger.Warn("Failed to read nap state (new cat?)", "error", err)
+	return ns
+}
+
+func (c *Cat) StoreNapState(ns *nap.State) error {
+	return c.State.StoreKVMarshalJSON(params.CatStateBucket, params.CatStateKey_Naps, ns)
+}
+
 func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatNap {
 	c.getOrInitState(false)
-
 	out := make(chan cattrack.CatNap)
-	ns := nap.NewState(nil)
-
-	// Attempt to restore lap-builder state.
-	if data, err := c.State.ReadKV(params.CatStateBucket, []byte("napstate")); err == nil && data != nil {
-		if err := json.Unmarshal(data, ns); err != nil {
-			c.logger.Error("Failed to unmarshal nap state", "error", err)
-		} else {
-			if len(ns.Tracks) > 0 {
-				ns.TimeLast = ns.Tracks[len(ns.Tracks)-1].MustTime()
-				ns.Centroid = ns.Tracks[len(ns.Tracks)-1].Geometry.(orb.Point)
-			}
-			c.logger.Info("Restored nap state", "len", len(ns.Tracks), "last", ns.TimeLast)
-		}
-	}
+	ns := c.MustGetNapState()
 
 	c.State.Waiting.Add(1)
 	go func() {
@@ -35,13 +41,10 @@ func (c *Cat) TrackNaps(ctx context.Context, in <-chan cattrack.CatTrack) <-chan
 
 		// Persist lap-builder state on completion.
 		defer func() {
-			data, err := json.Marshal(ns)
-			if err != nil {
-				c.logger.Error("Failed to marshal nap state", "error", err)
-				return
-			}
-			if err := c.State.StoreKV(params.CatStateBucket, []byte("napstate"), data); err != nil {
-				c.logger.Error("Failed to write nap state", "error", err)
+			if err := c.StoreNapState(ns); err != nil {
+				c.logger.Error("Failed to store nap state", "error", err)
+			} else {
+				c.logger.Debug("Stored nap state")
 			}
 		}()
 

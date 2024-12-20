@@ -16,9 +16,10 @@ func init() {
 }
 
 const (
-	RgeoDBName  = "rgeo.db"
-	S2DBName    = "s2.db"
-	TiledDBName = "tile.db"
+	CatStateDBName = "state.db"
+	RgeoDBName     = "rgeo.db"
+	S2DBName       = "s2.db"
+	TiledDBName    = "tile.db"
 
 	CatsDir        = "cats"
 	CatSnapsSubdir = "snaps"
@@ -36,12 +37,8 @@ var DefaultDatadirRoot = func() string {
 	if err != nil {
 		panic(err)
 	}
-	return filepath.Join(home, ".catd")
+	return filepath.Join(home, ".catd") // aka ~/tdata
 }()
-
-var CatStateDBName = "state.db"
-var CatStateBucket = []byte("state")
-var CatSnapBucket = []byte("snaps")
 
 // Optimal is the number that works best for everything.
 const Optimal = 9_000
