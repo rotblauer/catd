@@ -114,9 +114,9 @@ func (r *ReverseGeocode) Ping(common.RPCArgNone, common.RPCArgNone) error {
 func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.GetLocationResponse) error {
 	defer func() {
 		if res.Error != "" {
-			r.logger.Debug("ReverseGeocode.GetLocation", "request", req, "response", res, "error", res.Error)
+			r.logger.Warn("ReverseGeocode.GetLocation", "request", req, "error", res.Error)
 		} else {
-			r.logger.Debug("ReverseGeocode.GetLocation", "request", req, "response", res)
+			r.logger.Debug("ReverseGeocode.GetLocation", "request", req, "response", res.Location)
 		}
 	}()
 	if req == nil {
@@ -139,9 +139,9 @@ func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.Get
 func (r *ReverseGeocode) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.GetGeometryResponse) error {
 	defer func() {
 		if res.Error != "" {
-			r.logger.Debug("ReverseGeocode.GetGeometry", "request", req, "response", res, "error", res.Error)
+			r.logger.Warn("ReverseGeocode.GetGeometry", "request", req, "error", res.Error)
 		} else {
-			r.logger.Debug("ReverseGeocode.GetGeometry", "request", req, "response", res)
+			r.logger.Debug("ReverseGeocode.GetGeometry", "request", req, "response", res.Plat)
 		}
 	}()
 	if req == nil {

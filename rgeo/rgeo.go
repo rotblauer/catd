@@ -11,6 +11,7 @@ import (
 	"net/rpc"
 	"slices"
 	"sort"
+	"sync/atomic"
 )
 
 // R gets a ReverseGeocoder instance.
@@ -24,11 +25,22 @@ import (
 // but which suggests that dataset services might be differentiated in the future.
 func R(datasets ...string) ReverseGeocoder {
 	// Attempt to re-use any existing global services.
-	if rRPC != nil {
-		// RPC clients are relatively disposable.
-		// In fact, should be Closed regularly. (Avoid Gob mem leaks).
-		return rRPC
-	}
+
+	// rRPC is a poor idea in hindsight.
+	// It's a global, it's not thread-safe, and the RPC client
+	// would need refreshing to avoid Gob memory leaks.
+	//
+	//if rRPC != nil {
+	//	// RPC clients are relatively disposable.
+	//	// In fact, should be Closed regularly. (Avoid Gob mem leaks).
+	//	if rRPC.errored.Load() {
+	//		slog.Warn("RPC client errored, closing, attempting to re-init")
+	//		rRPC.Close()
+	//		rRPC = nil
+	//	}
+	//	return rRPC
+	//}
+
 	// If an inproc service exists, return it.
 	// Takes ~20s to init, works great otherwise.
 	if r != nil {
@@ -36,18 +48,21 @@ func R(datasets ...string) ReverseGeocoder {
 	}
 
 	// If a (default) configuration exist for an RPC client,
-	// attempt to connect to a remote rgeo daemon
+	// attempt to connect to a/any/some remote rgeo daemon.
+	// If this works, there's an catd rgeod running externally.
+	// The new client returned will probably be a one-time-use instance.
 	if rRPCConf != nil {
 		rgc, err := NewRPCReverseGeocoderClient(rRPCConf)
 		if err == nil {
-			rRPC = rgc
 			// We found a working, remote RPC client.
-			return rRPC
+			return rgc
 		}
 		slog.Warn("Failed to connect to remote rgeo daemon", "error", err)
 	}
 
 	// Everything failed. Load datasets.
+	// Once datasets are loaded, there's no reason to go back to RPC.
+	slog.Info("Loading rgeo datasets")
 	err := Init(defaultDatasets...)
 	if err != nil {
 		panic(err)
@@ -83,11 +98,11 @@ func (rr *rR) GetGeometry(pt Pt, dataset string) (*Plat, error) {
 	}
 	poly, ok := geo.(orb.Polygon)
 	if ok {
-		out := make(Polygon, len(poly))
+		out := make(orb.Polygon, len(poly))
 		for i, ring := range poly {
-			out[i] = make([][2]float64, len(ring))
+			out[i] = make(orb.Ring, len(ring))
 			for j, pt := range ring {
-				out[i][j] = Pt{pt[0], pt[1]}
+				out[i][j] = orb.Point{pt[0], pt[1]}
 			}
 		}
 		p := &Plat{Polygon: out}
@@ -95,13 +110,13 @@ func (rr *rR) GetGeometry(pt Pt, dataset string) (*Plat, error) {
 	}
 	multiPoly, ok := geo.(orb.MultiPolygon)
 	if ok {
-		out := make(MultiPolygon, len(multiPoly))
+		out := make(orb.MultiPolygon, len(multiPoly))
 		for i, poly := range multiPoly {
-			out[i] = make([][][2]float64, len(poly))
+			out[i] = make([]orb.Ring, len(poly))
 			for j, ring := range poly {
-				out[i][j] = make([][2]float64, len(ring))
+				out[i][j] = make([]orb.Point, len(ring))
 				for k, pt := range ring {
-					out[i][j][k] = Pt{pt[0], pt[1]}
+					out[i][j][k] = orb.Point{pt[0], pt[1]}
 				}
 			}
 		}
@@ -118,7 +133,7 @@ var rRPCConf = params.InProcRgeoDaemonConfig
 
 // rRPC is an instance of RPCReverseGeocoderClient which fulfills the interface
 // via attempts, or attempts to (using the configuration defined by rRPCConf).
-var rRPC *RPCReverseGeocoderClient
+//var rRPC *RPCReverseGeocoderClient
 
 type RPCReverseGeocoderClient struct {
 	config *params.RgeoDaemonConfig
@@ -127,6 +142,7 @@ type RPCReverseGeocoderClient struct {
 	// receiver is the string value of the receiver name,
 	// for rpc request method standards, ie. `receiver.method_name` or `Receiver.MethodName`.
 	receiver string
+	errored  atomic.Bool
 }
 
 func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGeocoderClient, error) {
@@ -146,32 +162,44 @@ func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGe
 	}, nil
 }
 
-func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (srgeo.Location, error) {
-	var loc srgeo.Location
+func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (loc srgeo.Location, err error) {
+	if r.errored.Load() {
+		return loc, errors.New("RPC client errored")
+	}
 	res := &GetLocationResponse{}
-	err := r.client.Call(r.receiver+".GetLocation", &pt, res)
+	err = r.client.Call(r.receiver+".GetLocation", &pt, res)
 	if err != nil {
+		r.errored.Store(true)
 		return loc, err
 	}
 	if res.Error != "" {
+		r.errored.Store(true)
 		return loc, errors.New(res.Error)
 	}
 	return res.Location, nil
 }
 
 func (r *RPCReverseGeocoderClient) GetGeometry(pt Pt, dataset string) (*Plat, error) {
+	if r.errored.Load() {
+		return nil, errors.New("RPC client errored")
+	}
 	res := &GetGeometryResponse{}
 	err := r.client.Call(r.receiver+".GetGeometry", &GetGeometryRequest{pt, dataset}, res)
 	if err != nil {
+		r.errored.Store(true)
 		return nil, err
 	}
 	if res.Error != "" {
+		r.errored.Store(true)
 		return nil, errors.New(res.Error)
 	}
 	return res.Plat, nil
 }
 
 func (r *RPCReverseGeocoderClient) Close() error {
+	if r.client == nil {
+		return nil
+	}
 	return r.client.Close()
 }
 
