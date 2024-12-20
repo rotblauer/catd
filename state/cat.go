@@ -24,7 +24,8 @@ func (c *CatState) Open(catRoot string, readOnly bool) (*CatState, error) {
 	if c.State != nil && c.open && readOnly == c.rOnly {
 		return c, nil // Or throw error?
 	}
-	if c.State != nil && !c.open {
+
+	if c.State != nil && c.Flat != nil && !c.open {
 		// Opening a writable DB conn will block all other cat writers and readers
 		// with essentially a file lock/flock.
 		db, err := bbolt.Open(filepath.Join(c.Flat.Path(), params.CatStateDBName),

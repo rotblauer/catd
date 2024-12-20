@@ -72,6 +72,11 @@ func (c *Cat) WithState(readOnly bool) (*state.CatState, error) {
 		return c.State, nil
 	}
 	s := &state.CatState{CatID: c.CatID}
+
+	if c.DataDir == "" {
+		c.DataDir = params.DefaultCatDataDir(c.CatID.String())
+	}
+
 	st, err := s.Open(c.DataDir, readOnly)
 	if err != nil {
 		return nil, err

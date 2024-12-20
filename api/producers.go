@@ -52,7 +52,7 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	go func() { errs <- c.S2IndexTracks(ctx, g1) }()
 	go func() { errs <- c.RGeoIndexTracks(ctx, g2) }()
 	go func() { errs <- c.CatActPipeline(ctx, vectorPipeCh) }()
-	go func() { errs <- c.SimpleIndexer(ctx, simpleIndexerCh) }()
+	go func() { errs <- c.OffsetIndexer(ctx, simpleIndexerCh) }()
 
 	c.logger.Debug("Producer pipelines waiting for completion")
 
@@ -70,9 +70,10 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	return nil
 }
 
-func (c *Cat) SimpleIndexer(ctx context.Context, in <-chan cattrack.CatTrack) error {
-	c.logger.Info("Simple indexer")
-	defer c.logger.Info("Simple indexer complete")
+// OffsetIndexer is a simple indexer that reduces tracks by count and time offsets.
+func (c *Cat) OffsetIndexer(ctx context.Context, in <-chan cattrack.CatTrack) error {
+	c.logger.Info("Simple offset indexer")
+	defer c.logger.Info("Simple offset indexer complete")
 
 	indexerT := &cattrack.OffsetIndexT{}
 	old := &cattrack.OffsetIndexT{}

@@ -92,7 +92,7 @@ func TestCat_Populate(t *testing.T) {
 		gzSource string
 		// storedCount is all the expected tracks (past validation, deduping, sorting, stamping).
 		storedCount int
-		// Expected values are read from SimpleIndexer, an example OffsetIndexerT implementation
+		// Expected values are read from OffsetIndexer, an example OffsetIndexerT implementation
 		// plugged in to the Producers pipeline.
 		// NOT ALL STORED TRACKS GO TO THE PRODUCER PIPELINE; only good ones.
 		producersCount int

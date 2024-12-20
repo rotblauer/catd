@@ -66,7 +66,7 @@ func (d *RgeoDaemon) Start() error {
 	}
 
 	d.server = rpc.NewServer()
-	service := &ReverseGeocode{d}
+	service := &ReverseGeocodeService{d}
 	err := d.server.RegisterName(params.InProcRgeoDaemonConfig.ServiceName, service)
 	if err != nil {
 		return err
@@ -97,13 +97,17 @@ func (d *RgeoDaemon) Stop() error {
 	return nil
 }
 
-type ReverseGeocode struct {
+var ErrNotReady = errors.New("rgeo daemon not ready")
+
+type ReverseGeocodeService struct {
 	*RgeoDaemon
 }
 
-var ErrNotReady = errors.New("rgeo daemon not ready")
+//func (r *ReverseGeocodeService) methodName(method any) string {
+//	return r.config.ServiceName + "." + common.ReflectFunctionName(method)
+//}
 
-func (r *ReverseGeocode) Ping(common.RPCArgNone, common.RPCArgNone) error {
+func (r *ReverseGeocodeService) Ping(common.RPCArgNone, common.RPCArgNone) error {
 	if !r.ready {
 		r.logger.Error("Ping")
 		return ErrNotReady
@@ -112,7 +116,7 @@ func (r *ReverseGeocode) Ping(common.RPCArgNone, common.RPCArgNone) error {
 	return nil
 }
 
-func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.GetLocationResponse) error {
+func (r *ReverseGeocodeService) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.GetLocationResponse) error {
 	defer func() {
 		if res.Error != "" {
 			r.logger.Warn("ReverseGeocode.GetLocation", "request", req, "error", res.Error)
@@ -137,7 +141,7 @@ func (r *ReverseGeocode) GetLocation(req *rgeo.GetLocationRequest, res *rgeo.Get
 	return nil
 }
 
-func (r *ReverseGeocode) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.GetGeometryResponse) error {
+func (r *ReverseGeocodeService) GetGeometry(req *rgeo.GetGeometryRequest, res *rgeo.GetGeometryResponse) error {
 	defer func() {
 		if res.Error != "" {
 			r.logger.Warn("ReverseGeocode.GetGeometry", "request", req, "error", res.Error)

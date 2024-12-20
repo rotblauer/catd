@@ -74,7 +74,7 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 	apiJSONRoutes.Use(jsonMiddleware)
 
 	apiJSONRoutes.Path("/last.json").HandlerFunc(lastKnown).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/stacked.json").HandlerFunc(getStackerIndex).Methods(http.MethodGet)
+	apiJSONRoutes.Path("/indexed.json").HandlerFunc(getOffsetIndex).Methods(http.MethodGet)
 	apiJSONRoutes.Path("/catsnaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
 	apiJSONRoutes.Path("/s2/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
 	apiJSONRoutes.Path("/s2/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)

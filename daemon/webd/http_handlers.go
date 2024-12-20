@@ -78,7 +78,7 @@ func lastKnown(w http.ResponseWriter, r *http.Request) {
 	//	"ActivityMode.Stationary",
 	//	"ActivityMode.Unknown",
 	//	"ActivityMode.Walking",
-	//} {
+	//} {bs
 	//	bs, err = sjson.DeleteBytes(bs, "properties."+p)
 	//	if err != nil {
 	//		slog.Warn("Failed to remove property", "error", err)
@@ -94,7 +94,7 @@ func lastKnown(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getStackerIndex(w http.ResponseWriter, r *http.Request) {
+func getOffsetIndex(w http.ResponseWriter, r *http.Request) {
 	catID := r.URL.Query().Get("cat")
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
 	if _, err := cat.WithState(true); err != nil {
