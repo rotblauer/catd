@@ -2,8 +2,8 @@ package params
 
 type RgeoDaemonConfig struct {
 	ListenerConfig
-	Name    string
-	RPCPath string
+	ServiceName string
+	RPCPath     string
 }
 
 func DefaultRgeoDaemonConfig() *RgeoDaemonConfig {
@@ -12,8 +12,8 @@ func DefaultRgeoDaemonConfig() *RgeoDaemonConfig {
 			Network: "unix",
 			Address: "/tmp/catd-rgeo.sock",
 		},
-		Name:    "ReverseGeocode",
-		RPCPath: "/rgeo_rpc",
+		ServiceName: "ReverseGeocode",
+		RPCPath:     "/rgeo_rpc",
 	}
 }
 

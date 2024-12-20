@@ -43,30 +43,25 @@ var CatStateDBName = "state.db"
 var CatStateBucket = []byte("state")
 var CatSnapBucket = []byte("snaps")
 
-// DefaultBatchSize is the default batch size for cat push/populate-batches.
-// It is used in several important places.
-// Counterintuitively, maybe, bigger is not always better. But neither is smaller.
-// TODO More work with batch vs. buffer sizes.
-// Have a feeling buffers need to tbe small(er) and batches need to be big(ger).
-// What are they anyways, really? Buffers are the channel size, batches are the
-// number of tracks per batch... (so, what's a "batch"?)...
-// TODO: Make this a flag lol
-
-const BestNumberForEverything = 9_000
+// Optimal is the number that works best for everything.
+const Optimal = 9_000
 
 // DefaultBatchSize is now the default batch size primarily for doing db io.
+// Used by indexers s2 and rgeo for their persistent kv indices.
 var DefaultBatchSize = runtime.NumCPU() * 1_000
 
 // DefaultSortSize is the default size for sorting tracks.
+// Its used by the sorter in Populate.
 var DefaultSortSize = runtime.NumCPU() * 1_000
 
 // DefaultChannelCap is the default channel capacity for channels.
+// Used widely for channels caps.
 var DefaultChannelCap = runtime.NumCPU() * 1_000
 
 // DedupeCacheSize is the default size for the dedupe cache.
 var DedupeCacheSize = int((1 * time.Hour).Seconds())
 
-// Disused since gone gz.
+// Disused since RPC doesn't push in batches anymore.
 //var RPCTrackBatchSize = 111_111 //  9_000 is about 8.3MB max. Give me 100MB max: 111_000
 
 var DefaultGZipCompressionLevel = gzip.BestCompression

@@ -11,7 +11,6 @@ import (
 	"net/rpc"
 	"slices"
 	"sort"
-	"sync/atomic"
 )
 
 // R gets a ReverseGeocoder instance.
@@ -142,7 +141,6 @@ type RPCReverseGeocoderClient struct {
 	// receiver is the string value of the receiver name,
 	// for rpc request method standards, ie. `receiver.method_name` or `Receiver.MethodName`.
 	receiver string
-	errored  atomic.Bool
 }
 
 func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGeocoderClient, error) {
@@ -158,39 +156,29 @@ func NewRPCReverseGeocoderClient(config *params.RgeoDaemonConfig) (*RPCReverseGe
 		client: client,
 		// FIXME Real world, this must be same as service name in daemon.go.
 		// Test world, this must be `MockRPCServer`.
-		receiver: config.Name,
+		receiver: config.ServiceName,
 	}, nil
 }
 
 func (r *RPCReverseGeocoderClient) GetLocation(pt Pt) (loc srgeo.Location, err error) {
-	if r.errored.Load() {
-		return loc, errors.New("RPC client errored")
-	}
 	res := &GetLocationResponse{}
 	err = r.client.Call(r.receiver+".GetLocation", &pt, res)
 	if err != nil {
-		r.errored.Store(true)
 		return loc, err
 	}
 	if res.Error != "" {
-		r.errored.Store(true)
 		return loc, errors.New(res.Error)
 	}
 	return res.Location, nil
 }
 
 func (r *RPCReverseGeocoderClient) GetGeometry(pt Pt, dataset string) (*Plat, error) {
-	if r.errored.Load() {
-		return nil, errors.New("RPC client errored")
-	}
 	res := &GetGeometryResponse{}
 	err := r.client.Call(r.receiver+".GetGeometry", &GetGeometryRequest{pt, dataset}, res)
 	if err != nil {
-		r.errored.Store(true)
 		return nil, err
 	}
 	if res.Error != "" {
-		r.errored.Store(true)
 		return nil, errors.New(res.Error)
 	}
 	return res.Plat, nil

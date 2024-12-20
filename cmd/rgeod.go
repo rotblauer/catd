@@ -59,13 +59,27 @@ var rgeodListenerFlags = pflag.NewFlagSet("rgeod.listen", pflag.ContinueOnError)
 func init() {
 	rootCmd.AddCommand(rgeodCmd)
 
+	// This flagset is shared with other commands,
+	// and writes to the same configuration structures.
 	rgeodListenerFlags.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", rgeodCmd.CommandPath())
 	}
-	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Network, "rgeod.listen.network", params.InProcRgeoDaemonConfig.Network, `Network to listen on
+	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Network,
+		"rgeod.listen.network", params.InProcRgeoDaemonConfig.Network,
+		`Network to listen on
 This flag configures a public inproc configuration structure instance.`)
-	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Address, "rgeod.listen.address", params.InProcRgeoDaemonConfig.Address, `Address to listen on
+
+	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.Address,
+		"rgeod.listen.address", params.InProcRgeoDaemonConfig.Address,
+		`Address to listen on
 This flag configures a public inproc configuration structure instance.`)
+
+	rgeodListenerFlags.StringVar(&params.InProcRgeoDaemonConfig.ServiceName,
+		"rgeod.serviceName", params.InProcRgeoDaemonConfig.ServiceName,
+		`RPC service name
+This is used as MyServiceName.MethodName in RPC calls.
+This flag configures a public inproc configuration structure instance.`)
+
 	rgeodCmd.Flags().AddFlagSet(rgeodListenerFlags)
 
 	// Share this flagset with other commands.

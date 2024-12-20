@@ -273,10 +273,10 @@ func (d *TileD) awaitPendingTileRequests() {
 		res := <-results
 		if res.err != nil {
 			d.logger.Error("Failed to run pending tiling",
-				"i", fmt.Sprintf("%d/%d", i, len(requests)), "req", res.req.id(), "error", res.err)
+				"i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id(), "error", res.err)
 			return
 		}
-		d.logger.Info("Ran pending tiling", "i", fmt.Sprintf("%d/%d", i, len(requests)), "req", res.req.id())
+		d.logger.Info("Ran pending tiling", "i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id())
 	}
 }
 
@@ -850,7 +850,7 @@ func (d *TileD) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) er
 }
 
 func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
-	d.logger.Info("callTiling", "args", args.id())
+	d.logger.Debug("callTiling", "args", args.id())
 
 	d.running.Add(1)
 	defer d.running.Done()
@@ -949,7 +949,7 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 }
 
 func (d *TileD) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
-	d.logger.Info("tiling", "source", args.parsedSourcePath,
+	d.logger.Debug("tiling", "source", args.parsedSourcePath,
 		"args", args.id(), "config", args.TippeConfigName)
 
 	// Sanity check.

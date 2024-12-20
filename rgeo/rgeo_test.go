@@ -108,8 +108,8 @@ func testrRPCConf(t *testing.T) {
 				Network: "unix",
 				Address: sock,
 			},
-			Name:    "MockRPCServer",
-			RPCPath: params.DefaultRgeoDaemonConfig().RPCPath,
+			ServiceName: "MockRPCServer",
+			RPCPath:     params.DefaultRgeoDaemonConfig().RPCPath,
 		}
 	}
 

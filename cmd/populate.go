@@ -47,6 +47,7 @@ var optSortTrackBatches bool
 var optCatWorkersN int = runtime.NumCPU()
 var optAutoTilingOff bool
 var optAutoRgeoDOff bool
+var optWhitelistCats []string
 
 // populateCmd represents the import command
 var populateCmd = &cobra.Command{
@@ -165,13 +166,21 @@ Missoula, Montana
 		// The reader will finish before the workers do. Wait for them.
 		catsWorking := new(sync.WaitGroup)
 
+		whiteCats := make([]conceptual.CatID, len(optWhitelistCats))
+		for i, cat := range optWhitelistCats {
+			whiteCats[i] = conceptual.CatID(cat)
+		}
+		if len(optWhitelistCats) == 0 {
+			whiteCats = nil
+		}
+
 		quitScanner := make(chan struct{}, 3)
 		catChCh, errCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
 			// Small buffer to keep scanner running while workers catch up.
 			// A small buffer is faster than a large one,
 			// but too small is slower. These numbers are magic. Around 5MB/s.
-			optCatWorkersN, 1_111, 111_111)
+			optCatWorkersN, 1_111, 111_111, whiteCats)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -356,6 +365,9 @@ Cat.Populate calls are blocking PER CAT.
 For optimal results, use the number of cats tracked.
 For superoptimal results, use 0, to unlimit the number of cats tracked concurrently.
 `)
+
+	flags.StringSliceVar(&optWhitelistCats, "whitelist", nil,
+		`Only these cats will be populated.`)
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:

@@ -66,7 +66,8 @@ func (d *RgeoDaemon) Start() error {
 	}
 
 	d.server = rpc.NewServer()
-	err := d.server.RegisterName(params.InProcRgeoDaemonConfig.Name, &ReverseGeocode{d})
+	service := &ReverseGeocode{d}
+	err := d.server.RegisterName(params.InProcRgeoDaemonConfig.ServiceName, service)
 	if err != nil {
 		return err
 	}

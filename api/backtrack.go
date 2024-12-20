@@ -245,4 +245,27 @@ func logUUIDWindowMap(logger *slog.Logger, m uuidWindowMap, prefix string) {
 		logger.Info(prefix+"UUID window", "uuid", uuid, "window", window.String())
 	}
 
+	/*
+		...This x2000 is what we're trying to avoid....
+
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=a792e5e4-9d82-4bea-a1c3-8bdac1c1e47b window="0s from 2021.01.31_09:06:55 to 2021.01.31_09:06:55"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=b0443dbb-83a3-4400-b004-05a171ad8d73 window="0s from 2021.01.31_09:02:44 to 2021.01.31_09:02:44"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=d3065db0-c1cc-4460-a12a-b9174954e8fe window="0s from 2021.01.31_09:02:01 to 2021.01.31_09:02:01"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=d36e04ffe5097b8b window="11s from 2021.02.02_09:42:00 to 2021.02.02_09:42:11"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=fd4643d8-2238-4f6b-9914-9caf160284d3 window="0s from 2021.01.31_09:04:34 to 2021.01.31_09:04:34"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=0a252778-00b8-4acd-a7c8-1c5346949f00 window="0s from 2021.01.31_08:46:43 to 2021.01.31_08:46:43"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=1561d1d8-b5c0-43ae-9e6a-f50dfb36a13b window="0s from 2021.01.31_09:08:37 to 2021.01.31_09:08:37"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=4bd775b2-fdb5-40ff-b3b5-52ab5a6317bc window="0s from 2021.01.31_09:09:59 to 2021.01.31_09:09:59"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=df1a8553-8729-4ccc-bac4-ab119531a65e window="0s from 2021.01.31_09:12:52 to 2021.01.31_09:12:52"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=f887a545-e78f-47f8-93ee-95a108b72ec8 window="0s from 2021.01.31_09:26:36 to 2021.01.31_09:26:36"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=12ae3089-3394-497b-be29-f941f26b9f78 window="0s from 2021.01.31_09:07:14 to 2021.01.31_09:07:14"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=2a437960-b5de-4f41-99ea-b578d6a1d568 window="0s from 2021.01.31_08:58:54 to 2021.01.31_08:58:54"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=a75a58e5-5a29-4ddf-b328-bdb655c431dd window="0s from 2021.01.31_09:00:57 to 2021.01.31_09:00:57"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=b9fbb4a4-9cc4-467f-a1cc-300ef9d9cb11 window="0s from 2021.01.31_07:50:27 to 2021.01.31_07:50:27"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=4d3d77eb-a02c-4f69-9b9f-ed185e9492f7 window="0s from 2021.01.31_07:50:12 to 2021.01.31_07:50:12"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=5a8c4209-3fc0-44a6-93af-ec84271575f1 window="0s from 2021.01.31_09:20:00 to 2021.01.31_09:20:00"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=6cc4e475-f665-497a-9699-58122a8815a0 window="0s from 2021.01.31_07:46:03 to 2021.01.31_07:46:03"
+		2024/12/20 04:54:04 INFO Reloaded cat UUID window cat=ia uuid=e11021d4-5541-47bf-a3b1-1eded24991f9 window="0s from 2021.01.31_07:42:13 to 2021.01.31_07:42:13"
+	*/
+
 }
