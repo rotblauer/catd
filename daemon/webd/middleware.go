@@ -14,6 +14,10 @@ import (
 	"unicode/utf8"
 )
 
+// tokenAuthenticationMiddleware is a middleware that checks for a valid token in the Authorization header.
+// If the token is not valid, it returns a 403 Forbidden.
+// If the token is valid, it calls the next middleware (or final handler).
+// If no token is set, it allows all requests.
 func tokenAuthenticationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		validToken := os.Getenv("COTOKEN")

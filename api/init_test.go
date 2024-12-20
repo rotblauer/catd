@@ -9,6 +9,7 @@ import (
 	"github.com/rotblauer/catd/types/cattrack"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,7 +64,14 @@ func (c *TestCat) CloseAndDestroy() error {
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll((*Cat)(c).State.Flat.Path())
+	p := (*Cat)(c).State.Flat.Path()
+	if len(p) < 5 {
+		panic("path too short, refusing rm -rf")
+	}
+	if strings.Count(p, "/") < 3 {
+		panic("path too shallow, refusing rm -rf")
+	}
+	return os.RemoveAll(p)
 }
 
 func assertGZFileValidTracks(t *testing.T, path string) {

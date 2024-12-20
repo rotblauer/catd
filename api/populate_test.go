@@ -144,18 +144,9 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	defer c.State.Close()
-	old := &cattrack.OffsetIndexT{}
-	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, old); err != nil {
-		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
-	}
-	j, _ := json.MarshalIndent(old, "", "  ")
-	if old.Count != wantProdCount {
-		t.Errorf("got %d, want %d", old.Count, wantProdCount)
-		t.Log(string(j))
-	}
 
+	// Then == zcat | wc -l.
 	f, err := c.State.Flat.Joins("tracks").NamedGZReader("2024-12.geojson.gz")
 	if err != nil {
 		t.Fatal(err)
@@ -167,5 +158,23 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 	if got != wantStoreCount {
 		t.Errorf("got %d, want %d", got, wantStoreCount)
 	}
+	f.Close()
 
+	// Make sure we can decode the gz as cattracks again.
+	assertGZFileValidTracks(t, f.Path())
+
+	// Assert == stored tracks via the Simple Index™.
+	// This tests the "producer" pipeline count, not the total.
+	// These are the good clean tracks.
+	last := &cattrack.CatTrack{}
+	err = c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, last)
+	if err != nil {
+		t.Fatalf("failed to read last offset index: %v", err)
+	}
+	count := last.Properties.MustInt("Count", 0)
+	if count != wantProdCount {
+		t.Errorf("got %d, want %d", count, wantProdCount)
+		j, _ := json.MarshalIndent(last, "", "  ")
+		t.Log(string(j))
+	}
 }

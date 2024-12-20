@@ -53,7 +53,6 @@ func s2Dump(w http.ResponseWriter, r *http.Request) {
 	cat := &api.Cat{CatID: conceptual.CatID(catID)}
 
 	// Dump the level to the response writer.
-	setContentTypeJSONStream(w)
 	err := cat.S2DumpLevel(w, s2.CellLevel(l))
 	if err != nil {
 		slog.Warn("Failed to write S2 index dump", "error", err)

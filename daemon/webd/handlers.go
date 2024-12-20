@@ -75,15 +75,6 @@ func handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (conceptual.
 	return catID, true
 }
 
-func setContentTypeJSONStream(w http.ResponseWriter) {
-	/*
-		https://github.com/ipfs/kubo/issues/3737
-		https://stackoverflow.com/questions/57301886/what-is-the-suitable-http-content-type-for-consuming-an-asynchronous-stream-of-d
-		w.Header().Set("Content-Type", "application/stream+json")
-	*/
-	w.Header().Set("Content-Type", "application/x-ndjson")
-}
-
 // catIndex returns the last known, cumulative offset index for a cat.
 // Gives last-known track merged with total track count and time offset data.
 func catIndex(w http.ResponseWriter, r *http.Request) {
@@ -110,12 +101,57 @@ func catIndex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// catPushes writes the last-push tracks for a cat.
-// If ?stream=true the response is a stream of JSON tracks.
-// Else it is a JSON array of the last n [eg. 100] pushed tracks.
+// catPushedJSON writes the last-push tracks for a cat.
+// Writes a JSON array of the last n [eg. 100] pushed tracks.
 // The JSON-array limit is defined only to avoid massive batches during testing;
 // real cats won't push 100k tracks at a time.
-func catPushed(w http.ResponseWriter, r *http.Request) {
+func catPushedJSON(w http.ResponseWriter, r *http.Request) {
+	catID, ok := handleGetCatForRequest(w, r)
+	if !ok {
+		return
+	}
+	cat := &api.Cat{CatID: catID}
+	if err := cat.LockOrLoadState(true); err != nil {
+		slog.Warn("Failed to get cat state", "error", err)
+		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
+		return
+	}
+	defer cat.State.Close()
+
+	lr, err := cat.State.Flat.NamedGZReader(params.LastTracksGZFileName)
+	if err != nil {
+		slog.Warn("Failed to get last tracks", "error", err)
+		http.Error(w, "Failed to get last tracks", http.StatusInternalServerError)
+		return
+	}
+	defer lr.Close()
+
+	// Write a JSON array of the n [eg. 100] last-pushed tracks.
+	limit := 100
+	buf := common.NewRingBuffer[cattrack.CatTrack](limit)
+
+	dec := json.NewDecoder(lr)
+	for {
+		track := cattrack.CatTrack{}
+		if err := dec.Decode(&track); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			slog.Error("Failed to decode track", "error", err)
+			http.Error(w, "Failed to decode track", http.StatusInternalServerError)
+			return
+		}
+		buf.Add(track)
+	}
+	if err := json.NewEncoder(w).Encode(buf.Get()); err != nil {
+		slog.Error("Failed to write response", "error", err)
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+	}
+}
+
+// catPushedNDJSON writes the last-push tracks for a cat.
+// Writes a NDJSON stream of the last batch pushed. No limit.
+func catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
 	catID, ok := handleGetCatForRequest(w, r)
 	if !ok {
 		return
@@ -137,39 +173,11 @@ func catPushed(w http.ResponseWriter, r *http.Request) {
 	defer lr.Close()
 
 	// Stream JSON tracks.
-	if r.URL.Query().Get("stream") == "true" {
-		setContentTypeJSONStream(w)
-		_, err := io.Copy(w, lr)
-		if err != nil {
-			slog.Error("Failed to write response", "error", err)
-			http.Error(w, "Failed to write response", http.StatusInternalServerError)
-			return
-		}
-		return
-	}
-
-	// Write a JSON array of the n [eg. 100] last-pushed tracks.
-	limit := 100
-	buf := common.NewRingBuffer[cattrack.CatTrack](limit)
-
-	w.Header().Set("Content-Type", "application/json")
-
-	dec := json.NewDecoder(lr)
-	for {
-		track := cattrack.CatTrack{}
-		if err := dec.Decode(&track); err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			slog.Error("Failed to decode track", "error", err)
-			http.Error(w, "Failed to decode track", http.StatusInternalServerError)
-			return
-		}
-		buf.Add(track)
-	}
-	if err := json.NewEncoder(w).Encode(buf.Get()); err != nil {
+	_, err = io.Copy(w, lr)
+	if err != nil {
 		slog.Error("Failed to write response", "error", err)
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
 	}
 }
 

@@ -132,6 +132,10 @@ func NewGZFileReader(path string) (*GZFileReader, error) {
 	return &GZFileReader{f: fi, gzr: gzr}, nil
 }
 
+func (g *GZFileReader) Path() string {
+	return g.f.Name()
+}
+
 // LockEX locks a file for exclusive access.
 func (g *GZFileReader) LockEX() error {
 	//if g.closed {

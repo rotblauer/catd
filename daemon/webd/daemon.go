@@ -65,32 +65,38 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 
 	// All API routes use permissive CORS settings.
 	apiRoutes.Use(permissiveCorsMiddleware)
-
-	// /ping is a simple server healthcheck endpoint
 	apiRoutes.Path("/ping").HandlerFunc(pingPong)
 	apiRoutes.Path("/status").HandlerFunc(s.statusReport)
 
-	// TODO /v9000 paths?
-	apiJSONRoutes := apiRoutes.NewRoute().Subrouter()
-	jsonMiddleware := contentTypeMiddlewareFunc("application/json")
-	apiJSONRoutes.Use(jsonMiddleware)
+	/*
+		TODO /v9000 paths?
+		FIXME Which content type for streaming NDJSON?
+		https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type
+		https://www.iana.org/assignments/media-types/media-types.xhtml
+		https://github.com/ipfs/kubo/issues/3737
+		https://stackoverflow.com/questions/57301886/what-is-the-suitable-http-content-type-for-consuming-an-asynchronous-stream-of-d
+		w.Header().Set("Content-Type", "application/stream+json")
+	*/
+	apiJSON := apiRoutes.NewRoute().Subrouter()
+	apiJSON.Use(contentTypeMiddlewareFunc("application/json"))
+	apiNDJSON := apiRoutes.NewRoute().Subrouter()
+	apiNDJSON.Use(contentTypeMiddlewareFunc("application/x-ndjson"))
 
-	apiJSONRoutes.Path("/{cat}/last.json").HandlerFunc(catIndex).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/{cat}/pushed.json").HandlerFunc(catPushed).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/{cat}/snaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/{cat}/s2/{level}/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/{cat}/s2/{level}/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
-	apiJSONRoutes.Path("/{cat}/rgeo/{datasetRe}/plats.json").HandlerFunc(rGeoCollect).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/last.json").HandlerFunc(catIndex).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/pushed.json").HandlerFunc(catPushedJSON).Methods(http.MethodGet)
+	apiNDJSON.Path("/{cat}/pushed.ndjson").HandlerFunc(catPushedNDJSON).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/snaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/s2/{level}/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
+	apiNDJSON.Path("/{cat}/s2/{level}/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/rgeo/{datasetRe}/plats.json").HandlerFunc(rGeoCollect).Methods(http.MethodGet)
 
-	authenticatedAPIRoutes := apiJSONRoutes.NewRoute().Subrouter()
+	authenticatedAPIRoutes := apiJSON.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)
-
 	populateRoutes := authenticatedAPIRoutes.NewRoute().Subrouter()
-
 	populateRoutes.Path("/populate/").HandlerFunc(s.populate).Methods(http.MethodPost)
 	populateRoutes.Path("/populate").HandlerFunc(s.populate).Methods(http.MethodPost)
 
-	// TODO: Proxy to the tiler daemon's RPC server
+	// TODO: Proxy to the tiler daemon's RPC server?
 
 	return router
 }
