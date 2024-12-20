@@ -29,11 +29,11 @@ tdata() {
 
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
-   zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
+#    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
-#     zcat "${HOME}"/tdata/master.json.gz
+    zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
-
+#
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
 #    (( RANDOM % 4 )) && zcat "$f"
