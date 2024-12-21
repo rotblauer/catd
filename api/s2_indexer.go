@@ -14,7 +14,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"sync"
 	"time"
 )
 
@@ -56,12 +55,9 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(catS2.DefaultCellLevels))
 	defer close(sendErrs)
-	logOnce := sync.Once{}
 	for _, level := range catS2.DefaultCellLevels {
-		if !c.IsTilingEnabled() {
-			logOnce.Do(func() {
-				c.logger.Warn("No RPC configuration, skipping S2 indexing", "level", level)
-			})
+		if !c.IsTilingRPCEnabled() {
+			c.logger.Warn("No RPC configuration, skipping S2 tile dumps")
 			break
 		}
 		if level < catS2.CellLevelTilingMinimum ||
@@ -88,16 +84,20 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer S2 errored", "error", err)
 	}
+
 	// Then wait for all our level callbacks to return.
 	for i, sub := range subs {
 		sub.Unsubscribe()
+		// Close the subscription chan (closing the dump).
 		close(chans[i])
+		// Block on receiving some result from the tile push.
 		rpcErr := <-sendErrs
 		if rpcErr != nil {
 			c.logger.Error("Failed to send unique tracks level", "error", rpcErr)
 			return err
 		}
 	}
+	close(sendErrs)
 	return nil
 }
 

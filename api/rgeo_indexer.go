@@ -55,12 +55,6 @@ type CatHandler func(ctx context.Context, in <-chan cattrack.CatTrack) error
 
 // RGeoIndexTracks indexes incoming CatTracks for one cat.
 func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) error {
-	if !c.IsRgeoEnabled() {
-		c.logger.Warn("No Rgeo RPC client configured, skipping Rgeo indexing")
-		stream.Blackhole(in)
-		return nil
-	}
-
 	c.getOrInitState(false)
 
 	c.logger.Info("Rgeo Indexing cat tracks")
@@ -74,16 +68,16 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 		c.logger.Error("Failed to initialize rgeo indexer", "error", err)
 		return err
 	}
-	defer func() {
-		if err := cellIndexer.Close(); err != nil {
-			c.logger.Error("Failed to close indexer", "error", err)
-		}
-	}()
+	defer cellIndexer.Close()
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
 	sendErrs := make(chan error, len(rgeo.DatasetNamesStable))
 	for dataI, dataset := range rgeo.DatasetNamesStable {
+		if !c.IsTilingRPCEnabled() {
+			c.logger.Warn("No RPC configuration, skipping Rgeo tile dumps")
+			break
+		}
 		uniqLevelFeed, err := cellIndexer.FeedOfUniqueTracksForBucket(reducer.Bucket(dataI))
 		if err != nil {
 			c.logger.Error("Failed to get Rgeo feed", "bucket", dataset, "error", err)
@@ -104,6 +98,7 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer Rgeo errored", "error", err)
 	}
+
 	// Then wait for all our level callbacks to return.
 	for i, sub := range subs {
 		sub.Unsubscribe()
@@ -120,7 +115,6 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 
 func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reducer.CellIndexer, bucket reducer.Bucket, in <-chan []cattrack.CatTrack) error {
 	// Block, waiting to see if any unique tracks are sent.
-	// Don't care what these are, actually. Only want to know if any exist on stream close. FIXME?
 	uniqs := 0
 	for i := range in {
 		uniqs += len(i)
@@ -130,7 +124,6 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 		return nil
 	}
 
-	sourceMode := tiled.SourceModeTruncate
 	levelZoomMin := rgeo.TilingZoomLevels[int(bucket)][0]
 	levelZoomMax := rgeo.TilingZoomLevels[int(bucket)][1]
 	levelTippeConfig, _ := params.LookupTippeConfig(params.TippeConfigNamePlats, nil)
@@ -156,7 +149,7 @@ func (c *Cat) tiledDumpRgeoLevelIfUnique(ctx context.Context, cellIndexer *reduc
 		TippeConfigName: "",
 		TippeConfigRaw:  levelTippeConfig,
 		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical},
-		SourceModes:     []tiled.SourceMode{sourceMode},
+		SourceModes:     []tiled.SourceMode{tiled.SourceModeTruncate},
 	}, edit)
 	for err := range errs {
 		if err != nil {

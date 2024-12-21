@@ -291,7 +291,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 // sendToCatTileD sends a batch of features to the Cat RPC client.
 // It is a blocking function.
 func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
-	if !c.IsTilingEnabled() {
+	if !c.IsTilingRPCEnabled() {
 		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 		go stream.Sink(ctx, nil, in) // Black hole, does not block.
 		return nil
@@ -382,7 +382,7 @@ func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan 
 // sendGZippedToCatRPCClient sends a batch of gzipped features to the Cat RPC client.
 // It is a non-blocking function, and registers itself with the Cat Waiting state.
 //func sendGZippedToCatRPCClient[T any](ctx context.Context, c *Cat, args *tiled.PushFeaturesRequestArgs, in <-chan T) error {
-//	if !c.IsTilingEnabled() {
+//	if !c.IsTilingRPCEnabled() {
 //		c.logger.Warn("Cat RPC client not configured (noop)", "method", "PushFeatures")
 //		stream.Sink(ctx, nil, in)
 //		return nil

@@ -55,14 +55,14 @@ func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServic
 		completedNaps: event.FeedOf[cattrack.CatNap]{},
 	}
 
-	if c.IsTilingEnabled() {
+	if c.IsTilingRPCEnabled() {
 		c.logger.Info("Tiled RPC client configured",
 			"network", c.backend.TileD.Network, "address", c.backend.TileD.Address)
 	} else {
 		c.logger.Debug("No Tiled RPC client configured")
 	}
 
-	if c.IsRgeoEnabled() {
+	if c.IsRgeoRPCEnabled() {
 		c.logger.Info("Rgeo RPC client configured",
 			"network", c.backend.RgeoD.Network, "address", c.backend.RgeoD.Address)
 	} else {
@@ -111,11 +111,13 @@ func (c *Cat) IsRPCEnabled() bool {
 	return c.backend != nil
 }
 
-func (c *Cat) IsTilingEnabled() bool {
+func (c *Cat) IsTilingRPCEnabled() bool {
 	return c.IsRPCEnabled() && c.backend.TileD != nil
 }
 
-func (c *Cat) IsRgeoEnabled() bool {
+// IsRgeoRPCEnabled returns true if the cat has an RPC client for rgeo.
+// It does not check if the rgeo service is running, only if the client is configured.
+func (c *Cat) IsRgeoRPCEnabled() bool {
 	return c.IsRPCEnabled() && c.backend.RgeoD != nil
 }
 

@@ -37,15 +37,15 @@ func testPopulate_source(cat, source string) func(t *testing.T) {
 			t.Fatalf("status code not ok")
 		}
 
-		// check this push was stored
+		// check this (last) push was stored
 		catd := filepath.Join(d.Config.DataDir, params.CatsDir, cat)
 		catdLastTracks := filepath.Join(catd, params.LastTracksGZFileName)
 		lastFi, err := os.Stat(catdLastTracks)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if lastFi.Size() == 0 {
-			t.Fatal("last tracks file is empty")
+		if lastFi.Size() < 1000 {
+			t.Fatal("last tracks file is empty or too small")
 		}
 
 		// check this push has a nonempty canonical yyyy-mm track file
@@ -62,8 +62,8 @@ func testPopulate_source(cat, source string) func(t *testing.T) {
 				t.Fatal(err)
 			}
 			size := fi.Size()
-			if size == 0 {
-				t.Fatalf("track file %s is empty", match)
+			if size < 1000 {
+				t.Fatalf("track file %s is empty or too small, size=%d", match, size)
 			}
 			t.Logf("found ok yyyy-mm track file: %v size=%s", match, humanize.Bytes(uint64(size)))
 		}
