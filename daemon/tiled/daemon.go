@@ -168,7 +168,6 @@ func (d *TileDaemon) start(listener net.Listener, service *TileD) {
 	defer func() {
 		if err := d.db.Close(); err != nil {
 			d.logger.Error("TileDaemon failed to close db", "error", err)
-			os.Exit(1)
 		}
 		d.markDone()
 	}()
@@ -768,11 +767,14 @@ func (a *TilingRequestArgs) Validate() error {
 	return nil
 }
 
-// TilingResponse is TODO
 type TilingResponse struct {
 	Success     bool
+	Error       string
 	Elapsed     time.Duration
 	MBTilesPath string
+	// RequestArgs are the arguments that were used to run the tiling.
+	// These will have been modified by the tiler to reflect the actual CLI args for the source file used.
+	// TODO Uglyaf.
 	RequestArgs *TilingRequestArgs
 }
 
@@ -854,11 +856,12 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	d.tilingRunningM.Store(args.id(), args)
 	defer d.tilingRunningM.Delete(args.id())
 
-	defer func(r *TilingResponse) {
-		if r == nil {
-			return
-		}
-		if r.Success {
+	if reply == nil {
+		reply = &TilingResponse{}
+	}
+
+	defer func(rep *TilingResponse) {
+		if rep.Success {
 			if err := d.unpersistPending(args); err != nil {
 				d.logger.Error("Failed to unpersist pending request", "error", err)
 			}
@@ -866,7 +869,10 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	}(reply)
 
 	if args == nil {
-		return fmt.Errorf("nil args")
+		err := errors.New("nil args")
+		reply.Error = err.Error()
+		reply.Success = false
+		return err
 	}
 
 	source, err := d.SourcePathFor(args.SourceSchema, args.Version)
@@ -875,10 +881,6 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	}
 
 	args.parsedSourcePath = source
-
-	if reply == nil {
-		reply = &TilingResponse{}
-	}
 
 	// If we're about to run tippe for the canonical data set,
 	// move the edge data to a backup, since we're about to process
@@ -947,6 +949,10 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 func (d *TileD) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Debug("tiling", "source", args.parsedSourcePath,
 		"args", args.id(), "config", args.TippeConfigName)
+
+	if reply == nil {
+		reply = &TilingResponse{}
+	}
 
 	// Sanity check.
 	// The source file must exist and be a file.
@@ -1037,11 +1043,7 @@ func (d *TileD) tiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Info("🗺 Tiling done", "args", args.id(), "to", mbtilesOutput,
 		"took", elapsed.Round(time.Millisecond))
 
-	if reply == nil {
-		reply = &TilingResponse{
-			RequestArgs: args,
-		}
-	}
+	reply.RequestArgs = args
 	reply.Success = true
 	reply.MBTilesPath = mbtilesOutput
 	d.tilingEvents.Send(*reply)
