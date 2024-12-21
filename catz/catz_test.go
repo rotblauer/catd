@@ -1,7 +1,10 @@
 package catz
 
 import (
+	"bufio"
+	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -65,5 +68,101 @@ func TestFileLocking(t *testing.T) {
 	}
 	if string(read) != "\"test1\"\n\"test2\"\n" {
 		t.Fatalf("unexpected file content:\n%s", read)
+	}
+}
+
+func TestGZFileWriter_Write(t *testing.T) {
+	target := filepath.Join(os.TempDir(), "mytestfile.xyz.gz")
+	os.Truncate(target, 0)
+	defer os.Remove(target)
+
+	// Create some file and write to it, locking, twice, concurrently.
+	w1, err := NewGZFileWriter(target, DefaultGZFileWriterConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w2, err := NewGZFileWriter(target, DefaultGZFileWriterConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wait := sync.WaitGroup{}
+	writeFile := func(w *GZFileWriter, name string, delay time.Duration) {
+		defer wait.Done()
+		defer func() {
+			err := w.Close()
+			if err != nil {
+				t.Fatal(err)
+			}
+		}()
+		for i := 0; i < 10; i++ {
+			if _, err := w.Write([]byte(fmt.Sprintf("%s testing... %d\n", name, i))); err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("%s wrote %d", name, i)
+			time.Sleep(delay)
+		}
+	}
+
+	wait.Add(2)
+	go writeFile(w1, "w1", 50*time.Millisecond)
+	time.Sleep(10 * time.Millisecond) // wait for w1 to lock the file.
+	writeFile(w2, "w2", 10*time.Millisecond)
+	wait.Wait()
+
+	// Read in two ways: with stdlib packages only, then with our own gz reader.
+
+	// Stdlibs only.
+	// (Will throw an error if compression is screwy.)
+	f, err := os.Open(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("read: %s", string(read))
+	err = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = gr.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Our own gz reader.
+	// (Will also throw an error if compression is screwy.)
+	r, err := NewGZFileReader(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scanner := bufio.NewScanner(r.Reader())
+	first, last := "", ""
+	for scanner.Scan() {
+		if first == "" {
+			first = scanner.Text()
+		}
+		last = scanner.Text()
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if first != "w1 testing... 0" {
+		t.Fatalf("unexpected first: %s", first)
+	}
+	if last != "w2 testing... 9" {
+		t.Fatalf("unexpected last: %s", last)
+	}
+	err = r.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
