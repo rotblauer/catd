@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/mux"
-	"github.com/rotblauer/catd/api"
-	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/rgeo"
 	"log/slog"
 	"net/http"
@@ -15,7 +13,7 @@ import (
 )
 
 func (s *WebDaemon) rGeoCollect(w http.ResponseWriter, r *http.Request) {
-	catID, ok := s.handleGetCatForRequest(w, r)
+	cat, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
@@ -48,7 +46,6 @@ func (s *WebDaemon) rGeoCollect(w http.ResponseWriter, r *http.Request) {
 			rgeo.DatasetNamesStable), http.StatusBadRequest)
 		return
 	}
-	cat := &api.Cat{CatID: conceptual.CatID(catID)}
 	indexedTracks, err := cat.RgeoCollectLevel(context.Background(), int(datasetLevel))
 	if err != nil {
 		slog.Warn("Failed to get rgeo index dump", "error", err)

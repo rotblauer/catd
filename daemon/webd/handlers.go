@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rotblauer/catd/api"
-	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
@@ -66,28 +65,30 @@ func getRequestCatID(r *http.Request) conceptual.CatID {
 }
 
 // handleGetCatForRequest looks like middleware.
-func (s *WebDaemon) handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (conceptual.CatID, bool) {
+func (s *WebDaemon) handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (*api.Cat, bool) {
 	catID := getRequestCatID(r)
 	if catID.IsEmpty() {
 		slog.Warn("Missing cat", "url", r.URL)
 		http.Error(w, "Missing cat", http.StatusBadRequest)
-		return "", false
+		return nil, false
 	}
-	return catID, true
+	return &api.Cat{
+		CatID:   catID,
+		DataDir: s.Config.DataDir,
+	}, true
 }
 
 // catIndex returns the last known, cumulative offset index for a cat.
 // Gives last-known track merged with total track count and time offset data.
 // Failure to find such cat results in a 'no cat that' 204 error.
 func (s *WebDaemon) catIndex(w http.ResponseWriter, r *http.Request) {
-	catID, ok := s.handleGetCatForRequest(w, r)
+	cat, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
-	cat := &api.Cat{CatID: catID, DataDir: s.Config.DataDir}
 	if err := cat.LockOrLoadState(true); err != nil {
-		slog.Warn("Failed to get cat state (no cat that?)", "cat", catID, "error", err)
-		http.Error(w, fmt.Sprintf("Failed to get cat state '%s' (no cat that?)", catID.String()), http.StatusNoContent)
+		slog.Warn("Failed to get cat state (no cat that?)", "cat", cat.CatID, "error", err)
+		http.Error(w, fmt.Sprintf("Failed to get cat state '%s' (no cat that?)", cat.CatID.String()), http.StatusNoContent)
 		return
 	}
 	defer cat.State.Close()
@@ -108,11 +109,10 @@ func (s *WebDaemon) catIndex(w http.ResponseWriter, r *http.Request) {
 // The JSON-array limit is defined only to avoid massive batches during testing;
 // real cats won't push 100k tracks at a time.
 func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
-	catID, ok := s.handleGetCatForRequest(w, r)
+	cat, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
-	cat := &api.Cat{CatID: catID}
 	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
@@ -129,9 +129,9 @@ func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
 	defer lr.Close()
 
 	// Write a JSON array of the n [eg. 100] last-pushed tracks.
-	limit := 100
-	buf := common.NewRingBuffer[cattrack.CatTrack](limit)
-
+	//limit := 100
+	//buf := common.NewRingBuffer[cattrack.CatTrack](limit)
+	tracks := []cattrack.CatTrack{}
 	dec := json.NewDecoder(lr)
 	for {
 		track := cattrack.CatTrack{}
@@ -143,9 +143,14 @@ func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Failed to decode track", http.StatusInternalServerError)
 			return
 		}
-		buf.Add(track)
+		tracks = append(tracks, track)
+		//buf.Add(track)
 	}
-	if err := json.NewEncoder(w).Encode(buf.Get()); err != nil {
+	//if err := json.NewEncoder(w).Encode(buf.Get()); err != nil {
+	//	slog.Error("Failed to write response", "error", err)
+	//	http.Error(w, "Failed to write response", http.StatusInternalServerError)
+	//}
+	if err := json.NewEncoder(w).Encode(tracks); err != nil {
 		slog.Error("Failed to write response", "error", err)
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
 	}
@@ -154,11 +159,10 @@ func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
 // catPushedNDJSON writes the last-push tracks for a cat.
 // Writes a NDJSON stream of the last batch pushed. No limit.
 func (s *WebDaemon) catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
-	catID, ok := s.handleGetCatForRequest(w, r)
+	cat, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
-	cat := &api.Cat{CatID: catID}
 	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
@@ -184,11 +188,10 @@ func (s *WebDaemon) catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *WebDaemon) getCatSnaps(w http.ResponseWriter, r *http.Request) {
-	catID, ok := s.handleGetCatForRequest(w, r)
+	cat, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
-	cat := &api.Cat{CatID: catID}
 	if err := cat.LockOrLoadState(true); err != nil {
 		slog.Warn("Failed to get cat state", "error", err)
 		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)

@@ -3,9 +3,11 @@ package webd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/common"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -76,17 +78,13 @@ func TestWebDaemon_catIndex_NoCatThat(t *testing.T) {
 	}
 }
 
-// TestWebDaemon_catIndex_Populated tests the catIndex handler with a populated index.
-// It will not test the populate handler. Instead, it pushes tracks
-// through api.Populate (direct). The index is then queried.
-// WebDaemon can run on data it's never seen before.
-func TestWebDaemon_catIndex_Populated(t *testing.T) {
-	tc := api.NewTestCatWriter(t, "rye", nil)
+func prefillPopulate(t *testing.T, catName, source string) *api.TestCat {
+	defer common.SlogResetLevel(slog.Level(slog.LevelWarn + 1))()
+	tc := api.NewTestCatWriter(t, catName, nil)
 	c := tc.Cat()
-	defer tc.CloseAndDestroy()
-
+	//defer tc.CloseAndDestroy()
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, source)
 
 	peek := <-tracks
 	if peek.IsEmpty() {
@@ -96,7 +94,7 @@ func TestWebDaemon_catIndex_Populated(t *testing.T) {
 
 	err := c.Populate(ctx, true, stream.Filter[cattrack.CatTrack](ctx,
 		func(track cattrack.CatTrack) bool {
-			return track.CatID() == "rye"
+			return track.CatID() == conceptual.CatID(catName)
 		}, tracks))
 	if err != nil {
 		t.Fatal(err)
@@ -114,8 +112,17 @@ func TestWebDaemon_catIndex_Populated(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("cat data dir", c.DataDir, fi.Size())
+	return tc
+}
 
-	d, _ := newTestWebDaemon(c.DataDir)
+// TestWebDaemon_catIndex_Populated tests the catIndex handler with a populated index.
+// It will not test the populate handler. Instead, it pushes tracks
+// through api.Populate (direct). The index is then queried.
+// WebDaemon can run on data it's never seen before.
+func TestWebDaemon_catIndex_Populated(t *testing.T) {
+	tc := prefillPopulate(t, "rye", testdata.Path(testdata.Source_EDGE20241217))
+	defer tc.CloseAndDestroy()
+	d, _ := newTestWebDaemon(tc.DataDir)
 	req := httptest.NewRequest("GET", "http://catsonmaps.org/xxx/last.json", nil)
 	w := httptest.NewRecorder()
 	req = mux.SetURLVars(req, map[string]string{"cat": "rye"})
@@ -137,5 +144,39 @@ func TestWebDaemon_catIndex_Populated(t *testing.T) {
 	if gjson.GetBytes(body, "properties.Count").Int() != int64(count) {
 		t.Errorf("body has wrong count Expected/Got\n%d\n%d\n", count, gjson.Get(string(body), "properties.Count").Int())
 	}
-	t.Log(string(body))
+	if t.Failed() {
+		t.FailNow()
+	}
+	t.Log(string(body[:100]) + " ...")
+}
+
+func TestWebDaemon_catPushedJSON(t *testing.T) {
+	tc := prefillPopulate(t, "rye", testdata.Path(testdata.Source_EDGE1000))
+	defer tc.CloseAndDestroy()
+	d, _ := newTestWebDaemon(tc.DataDir)
+	req := httptest.NewRequest("GET", "http://catsonmaps.org/xxx/pushed.json", nil)
+	w := httptest.NewRecorder()
+	req = mux.SetURLVars(req, map[string]string{"cat": "rye"})
+	d.catPushedJSON(w, req)
+	resp := w.Result()
+	t.Log(resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status code not 200")
+	}
+	totalStored := 999
+	stored := gjson.GetBytes(body, "#").Int()
+	if stored != int64(totalStored) {
+		t.Errorf("body has wrong count Expected/Got\n%d\n%d\n", totalStored, stored)
+		t.Log(string(body))
+	}
+	for i := 0; i < totalStored; i++ {
+		if gjson.GetBytes(body, fmt.Sprintf("%d.type", i)).String() != "Feature" {
+			t.Errorf("track does not contain type Feature")
+		}
+		ti := gjson.GetBytes(body, fmt.Sprintf("%d.properties.Time", i)).Time()
+		if ti.IsZero() {
+			t.Errorf("track has zero time")
+		}
+	}
 }
