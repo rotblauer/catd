@@ -88,6 +88,7 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer S2 errored", "error", err)
 	}
+	// Then wait for all our level callbacks to return.
 	for i, sub := range subs {
 		sub.Unsubscribe()
 		close(chans[i])

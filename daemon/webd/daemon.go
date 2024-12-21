@@ -20,17 +20,21 @@ type WebDaemon struct {
 	started        time.Time
 }
 
-func NewWebDaemon(config *params.WebDaemonConfig) *WebDaemon {
+func NewWebDaemon(config *params.WebDaemonConfig) (*WebDaemon, error) {
 	logger := slog.With("daemon", "web")
 	if config == nil {
 		logger.Warn("No config provided, using default")
 		config = params.DefaultWebDaemonConfig()
 	}
+	if config.DataDir == "" {
+		config.DataDir = params.DefaultDatadirRoot
+		logger.Warn("No data dir provided, using default", "datadir", config.DataDir)
+	}
 	return &WebDaemon{
 		Config:        config,
 		logger:        logger,
 		feedPopulated: event.FeedOf[[]*cattrack.CatTrack]{},
-	}
+	}, nil
 }
 
 // Run starts the HTTP server (ListenAndServe) and waits for it,
@@ -62,9 +66,9 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 	router.Use(loggingMiddleware)
 
 	apiRoutes := router.NewRoute().Subrouter()
+	apiRoutes.Use(permissiveCorsMiddleware)
 
 	// All API routes use permissive CORS settings.
-	apiRoutes.Use(permissiveCorsMiddleware)
 	apiRoutes.Path("/ping").HandlerFunc(pingPong)
 	apiRoutes.Path("/status").HandlerFunc(s.statusReport)
 
@@ -77,18 +81,21 @@ func (s *WebDaemon) NewRouter() *mux.Router {
 		https://stackoverflow.com/questions/57301886/what-is-the-suitable-http-content-type-for-consuming-an-asynchronous-stream-of-d
 		w.Header().Set("Content-Type", "application/stream+json")
 	*/
+	// Middleware only runs on a route match.
+	// https://github.com/gorilla/mux/issues/429
+	// wtf.
 	apiJSON := apiRoutes.NewRoute().Subrouter()
 	apiJSON.Use(contentTypeMiddlewareFunc("application/json"))
 	apiNDJSON := apiRoutes.NewRoute().Subrouter()
 	apiNDJSON.Use(contentTypeMiddlewareFunc("application/x-ndjson"))
 
-	apiJSON.Path("/{cat}/last.json").HandlerFunc(catIndex).Methods(http.MethodGet)
-	apiJSON.Path("/{cat}/pushed.json").HandlerFunc(catPushedJSON).Methods(http.MethodGet)
-	apiNDJSON.Path("/{cat}/pushed.ndjson").HandlerFunc(catPushedNDJSON).Methods(http.MethodGet)
-	apiJSON.Path("/{cat}/snaps.json").HandlerFunc(getCatSnaps).Methods(http.MethodGet)
-	apiJSON.Path("/{cat}/s2/{level}/tracks.json").HandlerFunc(s2Collect).Methods(http.MethodGet)
-	apiNDJSON.Path("/{cat}/s2/{level}/tracks.ndjson").HandlerFunc(s2Dump).Methods(http.MethodGet)
-	apiJSON.Path("/{cat}/rgeo/{datasetRe}/plats.json").HandlerFunc(rGeoCollect).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/last.json").HandlerFunc(s.catIndex).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/pushed.json").HandlerFunc(s.catPushedJSON).Methods(http.MethodGet)
+	apiNDJSON.Path("/{cat}/pushed.ndjson").HandlerFunc(s.catPushedNDJSON).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/snaps.json").HandlerFunc(s.getCatSnaps).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/s2/{level}/tracks.json").HandlerFunc(s.s2Collect).Methods(http.MethodGet)
+	apiNDJSON.Path("/{cat}/s2/{level}/tracks.ndjson").HandlerFunc(s.s2Dump).Methods(http.MethodGet)
+	apiJSON.Path("/{cat}/rgeo/{datasetRe}/plats.json").HandlerFunc(s.rGeoCollect).Methods(http.MethodGet)
 
 	authenticatedAPIRoutes := apiJSON.NewRoute().Subrouter()
 	authenticatedAPIRoutes.Use(tokenAuthenticationMiddleware)

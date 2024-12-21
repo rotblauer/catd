@@ -3,24 +3,23 @@ package webd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/s2"
-	"github.com/rotblauer/catd/stream"
-	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
 	"io"
 	"log/slog"
-	"math"
 	"net/http"
 	"sort"
 	"time"
 )
 
 func pingPong(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("pong"))
 }
@@ -37,9 +36,11 @@ func (s *WebDaemon) statusReport(w http.ResponseWriter, r *http.Request) {
 	st := webDaemonStatus{
 		StartedAt: s.started,
 		Uptime:    time.Since(s.started).Round(time.Second).String(),
-		WSOpen:    !s.melodyInstance.IsClosed(),
-		WSConns:   s.melodyInstance.Len(),
 		Config:    s.Config,
+	}
+	if s.melodyInstance != nil {
+		st.WSOpen = !s.melodyInstance.IsClosed()
+		st.WSConns = s.melodyInstance.Len()
 	}
 	j, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
@@ -47,7 +48,6 @@ func (s *WebDaemon) statusReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to marshal config", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(j)
 	if err != nil {
 		s.logger.Error("Failed to write response", "error", err)
@@ -65,7 +65,8 @@ func getRequestCatID(r *http.Request) conceptual.CatID {
 	return conceptual.CatID(catID)
 }
 
-func handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (conceptual.CatID, bool) {
+// handleGetCatForRequest looks like middleware.
+func (s *WebDaemon) handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (conceptual.CatID, bool) {
 	catID := getRequestCatID(r)
 	if catID.IsEmpty() {
 		slog.Warn("Missing cat", "url", r.URL)
@@ -77,15 +78,16 @@ func handleGetCatForRequest(w http.ResponseWriter, r *http.Request) (conceptual.
 
 // catIndex returns the last known, cumulative offset index for a cat.
 // Gives last-known track merged with total track count and time offset data.
-func catIndex(w http.ResponseWriter, r *http.Request) {
-	catID, ok := handleGetCatForRequest(w, r)
+// Failure to find such cat results in a 'no cat that' 204 error.
+func (s *WebDaemon) catIndex(w http.ResponseWriter, r *http.Request) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
-	cat := &api.Cat{CatID: catID}
+	cat := &api.Cat{CatID: catID, DataDir: s.Config.DataDir}
 	if err := cat.LockOrLoadState(true); err != nil {
-		slog.Warn("Failed to get cat state", "error", err)
-		http.Error(w, "Failed to get cat state", http.StatusInternalServerError)
+		slog.Warn("Failed to get cat state (no cat that?)", "cat", catID, "error", err)
+		http.Error(w, fmt.Sprintf("Failed to get cat state '%s' (no cat that?)", catID.String()), http.StatusNoContent)
 		return
 	}
 	defer cat.State.Close()
@@ -105,8 +107,8 @@ func catIndex(w http.ResponseWriter, r *http.Request) {
 // Writes a JSON array of the last n [eg. 100] pushed tracks.
 // The JSON-array limit is defined only to avoid massive batches during testing;
 // real cats won't push 100k tracks at a time.
-func catPushedJSON(w http.ResponseWriter, r *http.Request) {
-	catID, ok := handleGetCatForRequest(w, r)
+func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
@@ -151,8 +153,8 @@ func catPushedJSON(w http.ResponseWriter, r *http.Request) {
 
 // catPushedNDJSON writes the last-push tracks for a cat.
 // Writes a NDJSON stream of the last batch pushed. No limit.
-func catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
-	catID, ok := handleGetCatForRequest(w, r)
+func (s *WebDaemon) catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
@@ -181,8 +183,8 @@ func catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getCatSnaps(w http.ResponseWriter, r *http.Request) {
-	catID, ok := handleGetCatForRequest(w, r)
+func (s *WebDaemon) getCatSnaps(w http.ResponseWriter, r *http.Request) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}
@@ -209,77 +211,6 @@ func getCatSnaps(w http.ResponseWriter, r *http.Request) {
 	//	http.Error(w, "Failed to write response", http.StatusInternalServerError)
 	//	return
 	//}
-}
-
-// populate is a handler for the /populate endpoint.
-// It is where Cat Tracks get posted and persisted for-ev-er.
-// Due to legacy support requirements it supports a variety of input formats.
-// Android (GCPS) posts a GeoJSON FeatureCollection.
-// iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
-func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
-
-	var body []byte
-	var err error
-
-	if r.Body == nil {
-		s.logger.Error("No request body", "method", r.Method, "url", r.URL)
-		http.Error(w, "Please send a request body", 500)
-		return
-	}
-
-	// TODO.
-	// Could potentially use a streaming JSON decoder here.
-	// customizeableTrackHat sends array of trackpoints.
-	// gcps sends a feature collection.
-	// Like herding cats.
-	body, err = io.ReadAll(r.Body)
-	if err != nil {
-		s.logger.Error("Failed to read request body", "error", err)
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-
-	truncatedBytes := string(body)[:int(math.Min(80, float64(len(body))))]
-	s.logger.Debug("Decoding", "body.len", len(body), "bytes: ", truncatedBytes)
-
-	features, err := types.DecodeCatTracksShotgun(body)
-	if err != nil || len(features) == 0 {
-		s.logger.Error("Failed to decode", "error", err)
-		http.Error(w, "Failed to decode", http.StatusUnprocessableEntity)
-		return
-	}
-
-	// TODO: Assert/ensure WHICH CAT, ie. conceptual cat.
-	catID := features[0].CatID()
-	cat, err := api.NewCat(catID, params.DefaultCatDataDir(catID.String()), s.Config.CatBackendConfig)
-	if err != nil {
-		s.logger.Error("Failed to create cat", "error", err)
-		http.Error(w, "Failed to create cat", http.StatusInternalServerError)
-		return
-	}
-
-	// Collect values for streaming.
-	featureVals := make([]cattrack.CatTrack, len(features))
-	for i, f := range features {
-		featureVals[i] = *f
-	}
-
-	ctx := r.Context()
-	err = cat.Populate(ctx, true, stream.Slice(ctx, featureVals))
-	if err != nil {
-		s.logger.Error("Failed to populate", "error", err)
-		http.Error(w, "Failed to populate", http.StatusInternalServerError)
-		return
-	}
-
-	// This weirdness is to satisfy the legacy clients,
-	// but it's not an API pattern I like.
-	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte("[]")); err != nil {
-		s.logger.Warn("Failed to write response", "error", err)
-	}
-
-	s.feedPopulated.Send(features)
 }
 
 // lastKnown2 returns the most recent track for a cat using the S2 index.

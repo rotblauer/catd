@@ -13,11 +13,7 @@ import (
 	"testing"
 )
 
-var TestDatadirRoot = filepath.Join(os.TempDir(), "catd_test")
-
-func init() {
-	params.DefaultDatadirRoot = TestDatadirRoot
-}
+var TestDatadirRoot = filepath.Join(os.TempDir(), "catd_api_test")
 
 type TestCat Cat
 

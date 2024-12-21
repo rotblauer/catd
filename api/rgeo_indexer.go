@@ -104,6 +104,7 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 	if err := cellIndexer.Index(ctx, in); err != nil {
 		c.logger.Error("CellIndexer Rgeo errored", "error", err)
 	}
+	// Then wait for all our level callbacks to return.
 	for i, sub := range subs {
 		sub.Unsubscribe()
 		close(chans[i])

@@ -36,16 +36,18 @@ var webdCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		setDefaultSlog(cmd, args)
 		slog.Info("webd.Run")
-
 		backend := params.DefaultCatBackendConfig()
-
-		server := webd.NewWebDaemon(&params.WebDaemonConfig{
+		server, err := webd.NewWebDaemon(&params.WebDaemonConfig{
+			DataDir: params.DefaultDatadirRoot,
 			ListenerConfig: params.ListenerConfig{
 				Address: optHTTPAddr,
 				Network: "tcp",
 			},
 			CatBackendConfig: backend,
 		})
+		if err != nil {
+			log.Fatalln(err)
+		}
 
 		if err := server.Run(); err != nil {
 			log.Fatalln(err)

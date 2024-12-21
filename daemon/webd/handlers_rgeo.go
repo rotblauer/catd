@@ -14,8 +14,8 @@ import (
 	"strings"
 )
 
-func rGeoCollect(w http.ResponseWriter, r *http.Request) {
-	catID, ok := handleGetCatForRequest(w, r)
+func (s *WebDaemon) rGeoCollect(w http.ResponseWriter, r *http.Request) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return
 	}

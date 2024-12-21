@@ -200,11 +200,9 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 		return err
 	}
 	ci.caches[level] = cache
-
-	indexT := ci.indexerTForBucket(level)
-
+	defer ci.caches[level].Purge()
+	indexT := ci.indexerTForBucket(level) // Generic indexer, zero value.
 	mapIDUnique := make(map[string]cattrack.CatTrack)
-
 	for _, ct := range tracks {
 		ct := ct
 		key, err := ci.Config.BucketKeyFn(ct, level)
@@ -216,7 +214,6 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 		ct.SetPropertySafe("reducer_key", key)
 
 		var old, next cattrack.Indexer
-
 		v, exists := cache.Get(key)
 		if exists {
 			old = v
@@ -224,12 +221,7 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 
 		ict := indexT.FromCatTrack(ct)
 		next = indexT.Index(old, ict)
-		if next == nil {
-			panic("indexer method Index returned nil Indexer")
-		}
-
 		cache.Add(key, next)
-
 		nextTrack := indexT.ApplyToCatTrack(next, ct)
 
 		// Overwrite the unique cache with the new value.
@@ -237,7 +229,8 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 		mapIDUnique[key] = nextTrack
 	}
 
-	var outTracks []cattrack.CatTrack
+	var indexedTracks = make([]cattrack.CatTrack, cache.Len())
+	var uniqTracks = make([]cattrack.CatTrack, 0)
 
 	gzr := new(gzip.Reader)
 	gzw := gzip.NewWriter(new(bytes.Buffer))
@@ -248,30 +241,24 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 		if err != nil {
 			return err
 		}
-		for _, k := range cache.Keys() {
+		for i, k := range cache.Keys() {
 			nextIdxr, ok := cache.Peek(k)
 			if !ok {
 				panic("cache key not found")
 			}
-
 			track := mapIDUnique[k]
-
 			var old cattrack.Indexer
 			v := b.Get([]byte(k))
 
 			// Non-nil value means non-unique track/index.
 			if v != nil {
-
-				// Strike this value from the unique map.
-				delete(mapIDUnique, k)
-
-				ct := cattrack.CatTrack{}
-
-				in := bytes.NewBuffer(v)
+				delete(mapIDUnique, k)   // Strike this value from the unique map; db hit.
+				in := bytes.NewBuffer(v) // Decode the value from the db.
 				err := gzr.Reset(in)
 				if err != nil {
 					return fmt.Errorf("gzip reader: %w", err)
 				}
+				ct := cattrack.CatTrack{}
 				err = json.NewDecoder(gzr).Decode(&ct)
 				if err != nil {
 					return fmt.Errorf("json decode read: %w %d %s",
@@ -281,19 +268,19 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 				if err != nil {
 					return fmt.Errorf("gzip reader close: %w", err)
 				}
-
+				// Load the old value into the indexer.
 				old = indexT.FromCatTrack(ct)
 			}
 
 			next := indexT.Index(old, nextIdxr)
 			nextTrack := indexT.ApplyToCatTrack(next, track)
-			outTracks = append(outTracks, nextTrack)
+			indexedTracks[i] = nextTrack // = append(indexedTracks, nextTrack) // Send the latest version of all indexed cells.
 
+			// Encode and store.
 			encoded, err := json.Marshal(nextTrack)
 			if err != nil {
 				return fmt.Errorf("json marshal write: %w", err)
 			}
-
 			out := new(bytes.Buffer)
 			gzw.Reset(out)
 			gzw.Write(encoded)
@@ -311,23 +298,11 @@ func (ci *CellIndexer) index(level Bucket, tracks []cattrack.CatTrack) error {
 	if err != nil {
 		return err
 	}
-
-	ci.indexFeeds[level].Send(outTracks)
-
-	var uniqTracks []cattrack.CatTrack
+	ci.indexFeeds[level].Send(indexedTracks)
 	for _, ct := range mapIDUnique {
 		uniqTracks = append(uniqTracks, ct)
 	}
 	ci.uniqIndexFeeds[level].Send(uniqTracks)
-
-	// Optionally, write (append) the unique (first) tracks to a flat file.
-	//enc := json.NewEncoder(ci.FlatFiles[level].Writer())
-	//for _, ct := range uniqTracks {
-	//	if err := enc.Encode(ct); err != nil {
-	//		return err
-	//	}
-	//}
-
 	return nil
 }
 

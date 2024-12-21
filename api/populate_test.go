@@ -139,7 +139,7 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 		t.Fatal(err)
 	}
 
-	// Gotcha: Populate will have closed the state. Must reopen.
+	// Populate will have closed the state. Must reopen.
 	err = c.LockOrLoadState(true)
 	if err != nil {
 		t.Fatal(err)

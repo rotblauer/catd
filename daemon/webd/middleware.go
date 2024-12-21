@@ -14,6 +14,24 @@ import (
 	"unicode/utf8"
 )
 
+/*
+// MiddlewareFunc is a function which receives an http.Handler and returns another http.Handler.
+// Typically, the returned handler is a closure which does something with the http.ResponseWriter and http.Request passed
+// to it, and then calls the handler passed as parameter to the MiddlewareFunc.
+type MiddlewareFunc func(http.Handler) http.Handler
+
+// middleware interface is anything which implements a MiddlewareFunc named Middleware.
+type middleware interface {
+	Middleware(handler http.Handler) http.Handler
+}
+
+// Middleware allows MiddlewareFunc to implement the middleware interface.
+func (mw MiddlewareFunc) Middleware(handler http.Handler) http.Handler {
+	return mw(handler)
+}
+*/
+// PS No testing required :$ https://stackoverflow.com/questions/37143935/how-should-i-unit-test-middleware-packages-with-gorilla-context
+
 // tokenAuthenticationMiddleware is a middleware that checks for a valid token in the Authorization header.
 // If the token is not valid, it returns a 403 Forbidden.
 // If the token is valid, it calls the next middleware (or final handler).

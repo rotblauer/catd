@@ -13,8 +13,8 @@ import (
 	"strconv"
 )
 
-func handleS2ParseCatLevel(w http.ResponseWriter, r *http.Request) (conceptual.CatID, s2.CellLevel, bool) {
-	catID, ok := handleGetCatForRequest(w, r)
+func (s *WebDaemon) handleS2ParseCatLevel(w http.ResponseWriter, r *http.Request) (conceptual.CatID, s2.CellLevel, bool) {
+	catID, ok := s.handleGetCatForRequest(w, r)
 	if !ok {
 		return "", 0, false
 	}
@@ -45,8 +45,8 @@ func handleS2ParseCatLevel(w http.ResponseWriter, r *http.Request) (conceptual.C
 }
 
 // s2Dump streams the S2 indices for a cat at a given level.
-func s2Dump(w http.ResponseWriter, r *http.Request) {
-	catID, l, ok := handleS2ParseCatLevel(w, r)
+func (s *WebDaemon) s2Dump(w http.ResponseWriter, r *http.Request) {
+	catID, l, ok := s.handleS2ParseCatLevel(w, r)
 	if !ok {
 		return
 	}
@@ -62,8 +62,8 @@ func s2Dump(w http.ResponseWriter, r *http.Request) {
 }
 
 // s2Collect writes a JSON array of the S2 indices for a cat at a given level.
-func s2Collect(w http.ResponseWriter, r *http.Request) {
-	catID, l, ok := handleS2ParseCatLevel(w, r)
+func (s *WebDaemon) s2Collect(w http.ResponseWriter, r *http.Request) {
+	catID, l, ok := s.handleS2ParseCatLevel(w, r)
 	if !ok {
 		return
 	}

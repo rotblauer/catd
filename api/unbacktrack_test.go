@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
@@ -15,8 +16,8 @@ import (
 // TestCat_Unbacktrack_NoneMissing tests that, for a single stream,
 // no tracks are missing when unbacktracking.
 func TestCat_Unbacktrack_NoneMissing(t *testing.T) {
-	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
-	defer slog.SetLogLoggerLevel(oldLevel)
+	defer common.SlogResetLevel(slog.Level(slog.LevelWarn + 1))()
+
 	cases := []struct {
 		gzSource string
 		cat      string
@@ -79,8 +80,8 @@ loop:
 // produces an expected number of unbacktracked tracks.
 // This tests the Unbacktracker's ability to load and store persistent state correctly.
 func TestCat_Unbacktracked_ReInits(t *testing.T) {
-	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
-	defer slog.SetLogLoggerLevel(oldLevel)
+	defer common.SlogResetLevel(slog.Level(slog.LevelWarn + 1))()
+
 	cases := []struct {
 		cat      string
 		gzSource string

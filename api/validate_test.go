@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/rotblauer/catd/catz"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
@@ -16,8 +17,8 @@ import (
 )
 
 func TestCat_Validate(t *testing.T) {
-	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelError + 1))
-	defer slog.SetLogLoggerLevel(oldLevel)
+	defer common.SlogResetLevel(slog.Level(slog.LevelError + 1))()
+
 	cases := []struct {
 		cat      string
 		gzSource string
@@ -98,8 +99,7 @@ func testCat_Validate(t *testing.T, cat, gzSource string) {
 }
 
 func TestCat_dedupe(t *testing.T) {
-	oldLevel := slog.SetLogLoggerLevel(slog.Level(slog.LevelWarn + 1))
-	defer slog.SetLogLoggerLevel(oldLevel)
+	defer common.SlogResetLevel(slog.Level(slog.LevelWarn + 1))()
 
 	source := testdata.Path(testdata.Source_EDGE20241217)
 	gzr, err := catz.NewGZFileReader(source)

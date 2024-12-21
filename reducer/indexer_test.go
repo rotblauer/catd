@@ -106,7 +106,10 @@ func TestCellIndexer(t *testing.T) {
 			}
 		}
 
-		for _, track := range indexed {
+		for i, track := range indexed {
+			if track.IsEmpty() {
+				t.Fatal("empty track", i)
+			}
 			keyWant, _ := myBucketKeyFn(track, level)
 			keyGot := track.Properties.MustString("reducer_key", "")
 			if keyGot != keyWant {
