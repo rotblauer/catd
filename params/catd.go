@@ -21,7 +21,12 @@ const (
 	S2DBName       = "s2.db"
 	TiledDBName    = "tile.db"
 
-	CatsDir        = "cats"
+	// CatsDir is the cats/ subdirectory name, nested directly under the datadir root.
+	CatsDir = "cats"
+	// CatTracksDir is the cats/<catID>/"tracks"/ subdirectory name, nested under the catID.
+	// This is used only with YYYY-MM storage.
+	CatTracksDir = "tracks"
+	// CatSnapsDir is the cats/<catID>/"snaps"/ subdirectory name, nested under the catID.
 	CatSnapsSubdir = "snaps"
 
 	MasterTracksGZFileName = "master.geojson.gz"

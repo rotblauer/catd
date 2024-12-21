@@ -63,7 +63,7 @@ func TestCat_StoreTracksYYYYMM(t *testing.T) {
 	}
 
 	assertGZFileValidTracks(t, filepath.Join(c.State.Flat.Path(), params.LastTracksGZFileName))
-	assertGZFileValidTracks(t, filepath.Join(c.State.Flat.Path(), "tracks", "2024-12.geojson.gz"))
+	assertGZFileValidTracks(t, filepath.Join(c.State.Flat.Path(), params.CatTracksDir, "2024-12.geojson.gz"))
 }
 
 // TestCat_StoreTracksYYYYMM_Heavy pushes the track time of 444k real tracks ahead
@@ -110,7 +110,7 @@ func TestCat_StoreTracksYYYYMM_Heavy(t *testing.T) {
 	}
 
 	assertGZFileValidTracks(t, filepath.Join(c.State.Flat.Path(), params.LastTracksGZFileName))
-	matches, err := filepath.Glob(filepath.Join(c.State.Flat.Path(), "tracks", "*.geojson.gz"))
+	matches, err := filepath.Glob(filepath.Join(c.State.Flat.Path(), params.CatTracksDir, "*.geojson.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,10 +119,10 @@ func TestCat_StoreTracksYYYYMM_Heavy(t *testing.T) {
 	}
 	foundFirst, foundFuture := false, false
 	for _, path := range matches {
-		if strings.Contains(path, filepath.Join("tracks", firstFakeTime.Format("2006-01")+".geojson.gz")) {
+		if strings.Contains(path, filepath.Join(params.CatTracksDir, firstFakeTime.Format("2006-01")+".geojson.gz")) {
 			foundFirst = true
 		}
-		if strings.Contains(path, filepath.Join("tracks", fakeTime.Format("2006-01")+".geojson.gz")) {
+		if strings.Contains(path, filepath.Join(params.CatTracksDir, fakeTime.Format("2006-01")+".geojson.gz")) {
 			foundFuture = true
 		}
 		assertGZFileValidTracks(t, path)

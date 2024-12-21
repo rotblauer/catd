@@ -23,8 +23,16 @@ func DefaultCatBackendConfig() *CatRPCServices {
 	}
 }
 
+// DefaultCatDataDir returns the default datadir for a cat
+// rooted in the params.DefaultDatadirRoot.
 func DefaultCatDataDir(catID string) string {
-	return filepath.Join(DefaultDatadirRoot, CatsDir, catID)
+	return DefaultCatDataDirRooted(DefaultDatadirRoot, catID)
+}
+
+// DefaultCatDataDirRooted returns the default datadir for a cat
+// rooted in the given dataDirRoot.
+func DefaultCatDataDirRooted(dataDirRoot string, catID string) string {
+	return filepath.Join(dataDirRoot, CatsDir, catID)
 }
 
 var CatStateBucket = []byte("state")

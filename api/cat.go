@@ -36,6 +36,7 @@ type Cat struct {
 }
 
 // NewCat inits a new Cat, but it does not access state.
+// The given datadir should be the CAT datadir (not the daemon datadir).
 func NewCat(catID conceptual.CatID, datadir string, backend *params.CatRPCServices) (*Cat, error) {
 	if catID == "" {
 		return nil, errors.New("catID is required")

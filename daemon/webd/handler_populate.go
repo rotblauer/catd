@@ -2,6 +2,7 @@ package webd
 
 import (
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -50,7 +51,7 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Assert/ensure WHICH CAT, ie. conceptual cat.
 	catID := features[0].CatID()
-	cat, err := api.NewCat(catID, s.Config.DataDir, s.Config.CatBackendConfig)
+	cat, err := api.NewCat(catID, params.DefaultCatDataDirRooted(s.Config.DataDir, catID.String()), s.Config.CatBackendConfig)
 	if err != nil {
 		s.logger.Error("Failed to create cat", "error", err)
 		http.Error(w, "Failed to create cat", http.StatusInternalServerError)
@@ -78,5 +79,6 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		s.logger.Warn("Failed to write response", "error", err)
 	}
 
+	// Watch out. This could send a lot of features...
 	s.feedPopulated.Send(features)
 }

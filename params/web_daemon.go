@@ -28,20 +28,21 @@ func DefaultTestWebDaemonConfig() *WebDaemonConfig {
 			Network: "tcp",
 			Address: "localhost:3333",
 		},
-		CatBackendConfig: &CatRPCServices{
-			TileD: &TileDaemonConfig{
-				ListenerConfig: ListenerConfig{
-					Network: "tcp",
-					Address: "localhost:3334",
-				},
-			},
-			RgeoD: &RgeoDaemonConfig{
-				ListenerConfig: ListenerConfig{
-					Network: "unix",
-					Address: "/tmp/catd-rgeo.sock",
-				},
-			},
-		},
+		CatBackendConfig: nil,
+		//CatBackendConfig: &CatRPCServices{
+		//	TileD: &TileDaemonConfig{
+		//		ListenerConfig: ListenerConfig{
+		//			Network: "tcp",
+		//			Address: "localhost:3334",
+		//		},
+		//	},
+		//	RgeoD: &RgeoDaemonConfig{
+		//		ListenerConfig: ListenerConfig{
+		//			Network: "unix",
+		//			Address: "/tmp/catd-rgeo.sock",
+		//		},
+		//	},
+		//},
 	}
 	return d
 }

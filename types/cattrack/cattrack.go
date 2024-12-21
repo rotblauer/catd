@@ -7,6 +7,7 @@ import (
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
+	"math"
 	"strings"
 	"time"
 )
@@ -86,20 +87,22 @@ func (ct *CatTrack) Time() (time.Time, error) {
 	// CatTracks only deals in tracks with a granularity of 1 second.r
 	// Prefer the UnixTime property, but if it's not there, fall back to Time,
 	// which should be a string in RFC3339 format.
-	ut, ok := ct.Properties["UnixTime"]
+	unix, ok := ct.Properties["UnixTime"]
 	if ok {
-		if v, ok := ut.(float64); ok {
+		if v, ok := unix.(int64); ok { // int64
+			return time.Unix(v, 0), nil
+		} else if v, ok := unix.(float64); ok { // float64
 			return time.Unix(int64(v), 0), nil
 		}
 	}
-	pt, ok := ct.Properties["Time"]
+	rfc3339, ok := ct.Properties["Time"]
 	if !ok {
 		return time.Time{}, fmt.Errorf("missing Time property")
 	}
-	if v, ok := pt.(time.Time); ok {
+	if v, ok := rfc3339.(time.Time); ok {
 		return v, nil
 	}
-	ts, ok := pt.(string)
+	ts, ok := rfc3339.(string)
 	if !ok {
 		return time.Time{}, fmt.Errorf("property Time is not a string")
 	}
@@ -217,22 +220,33 @@ func (ct *CatTrack) Validate() error {
 		return fmt.Errorf("uuid not a string")
 	}
 
+	if t, err := ct.Time(); err != nil {
+		return fmt.Errorf("invalid time: %v", err)
+	} else if t.IsZero() {
+		return fmt.Errorf("zero time")
+	}
+
 	// If the track has both Time and UnixTime properties,
 	// they must be within 1 second of each other.
-	if tTime := ct.Properties.MustString("Time", ""); tTime != "" {
-		if uTime := ct.Properties.MustInt("UnixTime", 0); uTime != 0 {
-			tTimeT, err := time.Parse(time.RFC3339, tTime)
-			if err != nil {
-				return fmt.Errorf("invalid time: %v", err)
-			}
-			uTimeT := time.Unix(int64(uTime), 0)
-			if tTimeT.Sub(uTimeT) > time.Second || uTimeT.Sub(tTimeT) > time.Second {
-				return fmt.Errorf("time and unixtime mismatch")
-			}
+	pTime, pTimeOK := ct.Properties["Time"]
+	pUnixTime, pUnixTimeOK := ct.Properties["UnixTime"]
+	if pTimeOK && pUnixTimeOK {
+		var rfc3339, unix time.Time
+		if v, ok := pTime.(string); ok {
+			rfc3339, _ = time.Parse(time.RFC3339, v)
+		} else if v, ok := pTime.(time.Time); ok {
+			rfc3339 = v
 		}
-	}
-	if _, err := ct.Time(); err != nil {
-		return fmt.Errorf("invalid time: %v", err)
+		if v, ok := pUnixTime.(int64); ok {
+			unix = time.Unix(v, 0)
+		} else if v, ok := pUnixTime.(float64); ok {
+			unix = time.Unix(int64(v), 0)
+		}
+		delta := unix.Sub(rfc3339).Seconds()
+		if math.Abs(delta) > 1 {
+			return fmt.Errorf("time and unixtime mismatch (> +/- 1 second) Δ=%v rfc3339=%v unix=%v",
+				delta, rfc3339, unix)
+		}
 	}
 
 	if v, ok := ct.Properties["Accuracy"]; !ok {
