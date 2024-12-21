@@ -53,8 +53,18 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
+	// sendErrs will get closed once all the level callbacks have returned.
+	// If we defer the close, and one of the callbacks errors, another
+	// callback may attempt to use the channel, causing a panic.
 	sendErrs := make(chan error, len(catS2.DefaultCellLevels))
-	defer close(sendErrs)
+	defer func() {
+		// Drain, then close, the sendErrs ch.
+		go func() {
+			defer close(sendErrs)
+			for range sendErrs {
+			}
+		}()
+	}()
 	for _, level := range catS2.DefaultCellLevels {
 		if !c.IsTilingRPCEnabled() {
 			c.logger.Warn("No RPC configuration, skipping S2 tile dumps")
@@ -97,7 +107,6 @@ func (c *Cat) S2IndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) er
 			return err
 		}
 	}
-	close(sendErrs)
 	return nil
 }
 

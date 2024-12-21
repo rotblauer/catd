@@ -72,7 +72,18 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 
 	subs := []event.Subscription{}
 	chans := []chan []cattrack.CatTrack{}
+	// sendErrs will get closed once all the level callbacks have returned.
+	// If we defer the close, and one of the callbacks errors, another
+	// callback may attempt to use the channel, causing a panic.
 	sendErrs := make(chan error, len(rgeo.DatasetNamesStable))
+	defer func() {
+		// Drain, then close, the sendErrs ch.
+		go func() {
+			defer close(sendErrs)
+			for range sendErrs {
+			}
+		}()
+	}()
 	for dataI, dataset := range rgeo.DatasetNamesStable {
 		if !c.IsTilingRPCEnabled() {
 			c.logger.Warn("No RPC configuration, skipping Rgeo tile dumps")
@@ -109,7 +120,6 @@ func (c *Cat) RGeoIndexTracks(ctx context.Context, in <-chan cattrack.CatTrack) 
 			return err
 		}
 	}
-	close(sendErrs)
 	return nil
 }
 
