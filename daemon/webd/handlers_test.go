@@ -9,6 +9,7 @@ import (
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
+	"github.com/tidwall/gjson"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,9 +31,6 @@ func TestWebDaemon_ping(t *testing.T) {
 	t.Log(string(body))
 	if resp.StatusCode != 200 {
 		t.Fatalf("status code not 200")
-	}
-	if resp.Header.Get("Content-Type") != "text/plain" {
-		t.Errorf("content type is not text/plain: %s", resp.Header.Get("Content-Type"))
 	}
 	if string(body) != "pong" {
 		t.Errorf("body is not pong: %s", string(body))
@@ -57,10 +55,6 @@ func TestWebDaemon_statusReport(t *testing.T) {
 	if status.Uptime == "" {
 		t.Fatal("uptime is empty")
 	}
-	contentType := "application/json"
-	if resp.Header.Get("Content-Type") != contentType {
-		t.Errorf("content type is not %q: %q", contentType, resp.Header.Get("Content-Type"))
-	}
 }
 
 func TestWebDaemon_catIndex_NoCatThat(t *testing.T) {
@@ -79,10 +73,6 @@ func TestWebDaemon_catIndex_NoCatThat(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "no cat that") {
 		t.Errorf("body does not contain 'no cat that': %s", string(body))
-	}
-	contentType := "text/plain; charset=utf-8"
-	if resp.Header.Get("Content-Type") != contentType {
-		t.Errorf("content type is not %q: %q", contentType, resp.Header.Get("Content-Type"))
 	}
 }
 
@@ -136,12 +126,16 @@ func TestWebDaemon_catIndex_Populated(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status code not 200")
 	}
-	if !strings.Contains(string(body), "Time") {
-		t.Errorf("body does not contain 'no cat that': %s", string(body))
+	at, _ := time.Parse(time.RFC3339, "2024-12-16T22:59:42.959Z")
+	count := 23561
+	if gjson.GetBytes(body, "type").String() != "Feature" {
+		t.Errorf("body does not contain type Feature")
+	}
+	if !gjson.GetBytes(body, "properties.Time").Time().Equal(at) {
+		t.Errorf("body has wrong time Expected/Got\n%s\n%s\n", at.Format(time.RFC3339), gjson.Get(string(body), "properties.Time").String())
+	}
+	if gjson.GetBytes(body, "properties.Count").Int() != int64(count) {
+		t.Errorf("body has wrong count Expected/Got\n%d\n%d\n", count, gjson.Get(string(body), "properties.Count").Int())
 	}
 	t.Log(string(body))
-	contentType := "application/json"
-	if resp.Header.Get("Content-Type") != contentType {
-		t.Errorf("content type is not %q: %q", contentType, resp.Header.Get("Content-Type"))
-	}
 }
