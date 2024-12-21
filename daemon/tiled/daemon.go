@@ -269,6 +269,9 @@ func (d *TileD) awaitPendingTileRequests() (nextPending int) {
 
 	for i := 0; i < len(requests); i++ {
 		res := <-results
+		// Normally, the pending request is removed from the cache by eviction.
+		// Here, we need manually remove the completed request from the pending cache.
+		d.pendingTTLCache.Delete(res.req.id())
 		if res.err != nil {
 			d.logger.Error("Failed to run pending tiling",
 				"i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id(), "error", res.err)
@@ -722,6 +725,11 @@ const (
 	sourceVersionBackup    TileSourceVersion = "backup"
 )
 
+// TilingRequestArgs are the arguments to a tiling request.
+// So far, only the tiler itself will call this method -
+// when it handles a PushFeatures requests successfully.
+// The PushFeatures request delegates associated tiling requests,
+// based on source versions (edge v. canonical).
 type TilingRequestArgs struct {
 	SourceSchema
 
@@ -767,6 +775,7 @@ func (a *TilingRequestArgs) Validate() error {
 	return nil
 }
 
+// TilingResponse is the response to a tiling request.
 type TilingResponse struct {
 	Success     bool
 	Error       string
