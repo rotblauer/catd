@@ -95,7 +95,7 @@ func (d *TileDaemon) tipFromReader(reader io.Reader, args *TilingRequestArgs) er
 			d.logger.Warn("Failed to copy reader to tippe", "source", args.id(), "error", err)
 			return
 		}
-		d.logger.Info("Piped gz data to tippecanoe", "source", args.id(), "size", humanize.Bytes(uint64(n)))
+		d.logger.Debug("Piped gz data to tippecanoe", "source", args.id(), "size", humanize.Bytes(uint64(n)))
 	}()
 
 	log.Println(fmt.Sprintf("+ %s %s", tippe.Path, strings.Join(tippe.Args, " ")))

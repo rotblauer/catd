@@ -160,50 +160,49 @@ func (d *TileDaemon) Start() error {
 	})
 	go d.pendingTTLCache.Start()
 	d.ready = true
-	go func() {
-		defer func() {
-			if err := d.db.Close(); err != nil {
-				d.logger.Error("TileDaemon failed to close db", "error", err)
-				os.Exit(1)
-			}
-			d.markDone()
-		}()
-		d.logger.Info("TileDaemon RPC HTTP server started",
-			slog.Group("listen", "network", d.Config.ListenerConfig.Network, "address", d.Config.ListenerConfig.Address))
+	go d.start(listen, service)
+	return nil
+}
 
-		// Block until interrupted
-		<-d.interrupt
-		d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
-
-		d.interrupted.Store(true)
-
-		if err := listen.Close(); err != nil {
-			d.logger.Error("TileDaemon failed to close listener", "error", err)
-		}
-
+func (d *TileDaemon) start(listener net.Listener, service *TileD) {
+	defer func() {
 		if err := d.db.Close(); err != nil {
 			d.logger.Error("TileDaemon failed to close db", "error", err)
+			os.Exit(1)
 		}
-
-		// Running pending tiling is important for `import` porting in.
-		d.pendingTTLCache.Stop()
-		d.running.Wait()
-
-		// Run all pending tiling on shutdown.
-		// This is a blocking operation, graceful though it may be, and long though it may be.
-		// A real server (and not development) should probably just abort these stragglers.
-		if d.Config.AwaitPendingOnShutdown {
-			service.awaitPendingTileRequests()
-		}
-
-		d.logger.Info("TileDaemon interrupted", "awaiting", "running")
-		d.running.Wait()
-		d.logger.Info("TileDaemon exiting")
-		server = nil
-		return
-
+		d.markDone()
 	}()
-	return nil
+	d.logger.Info("TileDaemon RPC HTTP server started",
+		slog.Group("listen", "network", d.Config.ListenerConfig.Network, "address", d.Config.ListenerConfig.Address))
+
+	// Block until interrupted
+	<-d.interrupt
+	d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
+
+	d.interrupted.Store(true)
+
+	// Close the listener, stop receiving external requests.
+	if err := listener.Close(); err != nil {
+		d.logger.Error("TileDaemon failed to close listener", "error", err)
+	}
+
+	// Running pending tiling is important for `import` porting in.
+	d.pendingTTLCache.Stop()
+	d.running.Wait()
+
+	// Run all pending tiling on shutdown.
+	// This is a blocking operation, graceful though it may be, and long though it may be.
+	// A real server (and not development) should probably just abort these stragglers.
+	if d.Config.AwaitPendingOnShutdown {
+		for service.awaitPendingTileRequests() > 0 {
+			d.logger.Info("TileDaemon awaiting pending requests", "awaiting", "true", "remaining", d.pendingTTLCache.Len())
+		}
+	}
+
+	d.logger.Info("TileDaemon interrupted", "awaiting", "running")
+	d.running.Wait()
+	d.logger.Info("TileDaemon exiting")
+	return
 }
 
 func (d *TileDaemon) markDone() {
@@ -211,7 +210,7 @@ func (d *TileDaemon) markDone() {
 	close(d.done)
 }
 
-func (d *TileD) awaitPendingTileRequests() {
+func (d *TileD) awaitPendingTileRequests() (nextPending int) {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
 	for _, key := range keys {
@@ -220,7 +219,7 @@ func (d *TileD) awaitPendingTileRequests() {
 
 		// Only run edge requests if we're not skipping edge.
 		// Edge runs may trigger canonical (if DNE, or run duration exceeds threshold).
-		if !d.Config.SkipEdge && req.Version != SourceVersionEdge {
+		if d.Config.SkipEdge && req.Version == SourceVersionEdge {
 			continue
 		}
 		requests = append(requests, req)
@@ -276,8 +275,9 @@ func (d *TileD) awaitPendingTileRequests() {
 				"i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id(), "error", res.err)
 			return
 		}
-		d.logger.Info("Ran pending tiling", "i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id())
+		d.logger.Debug("Ran pending tiling", "i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id())
 	}
+	return d.pendingTTLCache.Len()
 }
 
 // pending registers unique source files for tiling.
@@ -838,10 +838,6 @@ func (d *TileD) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) er
 		}
 		return err
 	}
-
-	// If the source is already enqueued for tiling
-	// it is either waiting to run or currently running.
-	// Short circuit.
 
 	// Queue the source and call.
 	d.pending(args)
