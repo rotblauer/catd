@@ -54,6 +54,11 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case t := <-first:
+		if t.IsEmpty() {
+			s.logger.Error("Empty first track", "method", r.Method, "url", r.URL)
+			http.Error(w, "Empty first track", http.StatusBadRequest)
+			return
+		}
 		catID = t.CatID()
 		cat, err = api.NewCat(catID, params.DefaultCatDataDirRooted(s.Config.DataDir, catID.String()), s.Config.CatBackendConfig)
 		if err != nil {
@@ -79,8 +84,7 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// This weirdness is to satisfy the legacy clients,
-	// but it's not an API pattern I like.
+	// This weirdness satisfies the legacy clients.
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("[]")); err != nil {
 		s.logger.Warn("Failed to write response", "error", err)
