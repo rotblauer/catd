@@ -12,8 +12,6 @@ du -sh /tmp/catd
 zcat master.json.gz | catd populate ...
 ...
 2024/12/20 05:09:20 INFO Populate graceful dismount
-1
-Bumping mbtileserver
 
 real    578m42.584s
 user    4261m58.449s

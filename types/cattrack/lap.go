@@ -39,7 +39,8 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		return nil
 	}
 
-	f := geojson.NewFeature(orb.LineString{})
+	ff := geojson.NewFeature(orb.LineString{})
+	f := (*CatTrack)(ff)
 
 	first, last := tracks[0], tracks[len(tracks)-1]
 
@@ -82,7 +83,7 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		}
 
 		prev := tracks[i-1]
-		meters := geo.Distance(track.Point(), prev.Point())
+		meters := geo.Distance(prev.Point(), track.Point())
 		distanceTraversed += meters
 
 		seconds := track.MustTime().Sub(prev.MustTime()).Seconds()

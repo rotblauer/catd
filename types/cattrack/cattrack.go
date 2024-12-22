@@ -1,6 +1,7 @@
 package cattrack
 
 import (
+	"errors"
 	"fmt"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geojson"
@@ -12,6 +13,17 @@ import (
 	"time"
 )
 
+// CatTrack is a track a cat makes.
+// It's an alias of geojson.Feature, with definite point geometry, and a time property.
+// (This might want to - someday - become a more generic type of type;
+// for example, a struct with a geojson.Feature embedded, or pure []byte's.)
+// A geojson.Feature is a data structure with a type, geometry, and properties,
+// which implements a special encoding spec (GeoJSON), which is conventional for geographic data.
+// Notably, a geojson.Feature has no concept of time, but a CatTrack is
+// as much a point in time as it is a point in space.
+// catd and Cat Tracks use `properties.Time` and `properties.UnixTime` almost interchangeably,
+// and they're in use constantly. UnixTime is preferred, since it represents 1-second granularity,
+// which Cat Tracks asserts.
 type CatTrack geojson.Feature
 
 // NewCatTrack creates and initializes a GeoJSON feature given the required attributes.
@@ -24,14 +36,20 @@ func NewCatTrack(geometry orb.Geometry) *CatTrack {
 }
 
 type SinkerFn func(track CatTrack)
+type SinkerErrFn func(track CatTrack) error
 type TransformerFn func(track CatTrack) CatTrack
+type TransformerErrFn func(track CatTrack) (CatTrack, error)
 
+// SetPropertySafe sets a property on a track in a thread safe way.
+// Thread safe is not atomic, nor guaranteed stable.
+// Unexpected side effects may occur.
 func (ct *CatTrack) SetPropertySafe(key string, val any) {
 	p := ct.Properties.Clone()
 	p[key] = val
 	ct.Properties = p
 }
 
+// SetPropertiesSafe sets properties in thread safety. See SetPropertySafe.
 func (ct *CatTrack) SetPropertiesSafe(props map[string]interface{}) {
 	p := ct.Properties.Clone()
 	for k, v := range props {
@@ -40,17 +58,20 @@ func (ct *CatTrack) SetPropertiesSafe(props map[string]interface{}) {
 	ct.Properties = p
 }
 
+// DeletePropertySafe deletes properties in thread safety. See SetPropertySafe.
 func (ct *CatTrack) DeletePropertySafe(key string) {
 	p := ct.Properties.Clone()
 	delete(p, key)
 	ct.Properties = p
 }
 
+// MarshalJSON implements the json.Marshaler interface.
 func (ct CatTrack) MarshalJSON() ([]byte, error) {
 	f := geojson.Feature(ct)
 	return f.MarshalJSON()
 }
 
+// UnmarshalJSON implements the json.Unmarshaler interface.
 func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 	f, err := geojson.UnmarshalFeature(data)
 	if err != nil {
@@ -60,33 +81,33 @@ func (ct *CatTrack) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func NewCatTrackFromFeature(f *geojson.Feature) *CatTrack {
-	return (*CatTrack)(f)
-}
-
+// Copy returns a deep copy of the track.
 func (ct *CatTrack) Copy() *CatTrack {
 	cp := &CatTrack{}
 	*cp = *ct
 	return cp
 }
 
-func (ct *CatTrack) IsEmpty() bool {
-	return ct == nil ||
-		ct.Geometry == nil ||
+// IsEmpty is useful for dealing with zero-value tracks.
+func (ct CatTrack) IsEmpty() bool {
+	return ct.Geometry == nil ||
 		ct.Properties == nil ||
 		len(ct.Properties) == 0
 }
 
+// CatID conceptually returns the CatID of the track.
 func (ct *CatTrack) CatID() conceptual.CatID {
 	return conceptual.CatID(names.AliasOrSanitizedName(
 		ct.Properties.MustString("Name", names.UknownName)))
 }
 
+// Time
+// Here's a big deal.
+// Cat Tracks only deals in tracks with a granularity of 1 second.
+// Cat Tracks prefers the UnixTime property, but if it's not there, falls back to Time,
+// which should be a string in RFC3339 format.
+// If both times exist, they must be within 1 second of each other.
 func (ct *CatTrack) Time() (time.Time, error) {
-	// Here's a big deal.
-	// CatTracks only deals in tracks with a granularity of 1 second.r
-	// Prefer the UnixTime property, but if it's not there, fall back to Time,
-	// which should be a string in RFC3339 format.
 	unix, ok := ct.Properties["UnixTime"]
 	if ok {
 		if v, ok := unix.(int64); ok { // int64
@@ -116,6 +137,7 @@ func (ct *CatTrack) Time() (time.Time, error) {
 	return t, nil
 }
 
+// MustTime gets the time or panics.
 func (ct *CatTrack) MustTime() time.Time {
 	t, err := ct.Time()
 	if err != nil {
@@ -124,6 +146,7 @@ func (ct *CatTrack) MustTime() time.Time {
 	return t
 }
 
+// MustTimeOffset gets the time offset between two tracks, assuming a track happens before b track.
 func MustTimeOffset(a, b CatTrack) time.Duration {
 	if a.IsEmpty() || b.IsEmpty() {
 		return time.Second
@@ -131,6 +154,10 @@ func MustTimeOffset(a, b CatTrack) time.Duration {
 	return b.MustTime().Sub(a.MustTime())
 }
 
+// MustContinuousTimeOffset is more than it seems.
+// It returns the time offset between two tracks, but with magic/opinionated/adhoc caveats.
+// If the offset is more than 24 hours, it resets to 1 second.
+// If the offset is negative, it resets to 0.
 func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 	offset := MustTimeOffset(a, b)
 
@@ -150,10 +177,14 @@ func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 	return offset
 }
 
+// Point returns the Point a cat is or was at.
 func (ct *CatTrack) Point() orb.Point {
 	return ct.Geometry.Bound().Center()
 }
 
+// Sanitize normalizes and streamlines a track.
+// It sets an Alias (cat alias/catID/conceptual.CatID/nee-Name) property unless already set.
+// It removes unnecessary properties, and sets a zero-value ID.
 func Sanitize(ct CatTrack) CatTrack {
 	// Mutate the ID to a zero-value constant in case the client decides to fill it.
 	// CatTracks does not use this ID for anything, and we want to avoid false-negative
@@ -162,6 +193,20 @@ func Sanitize(ct CatTrack) CatTrack {
 	if ct.Properties["Alias"] == nil {
 		ct.Properties["Alias"] = names.AliasOrSanitizedName(ct.Properties.MustString("Name", ""))
 	}
+	// DELETE any properties without values; JSON nulls.
+	// Some clients report empty properties, which is not a problem,
+	// and not all client report the same properties.
+	// All this does (...or should do!) is save a little space.
+	for k, v := range ct.Properties {
+		if v == nil {
+			delete(ct.Properties, k)
+		}
+	}
+	// The bounding box of a point is useless.
+	// Only the GCPS client includes this, as an artifcat of its geojson lib.
+	if ct.BBox != nil {
+		ct.BBox = nil
+	}
 	return ct
 }
 
@@ -169,9 +214,12 @@ func (ct *CatTrack) IsValid() bool {
 	return ct.Validate() == nil
 }
 
+// Validate checks the track for basic validity.
+// It returns the first error it encounters.
+// TODO: JSON schema?
 func (ct *CatTrack) Validate() error {
-	if ct == nil {
-		return fmt.Errorf("nil track")
+	if ct.Type != "Feature" {
+		return fmt.Errorf("not a feature")
 	}
 
 	// Geometry is a point.
@@ -261,16 +309,15 @@ func (ct *CatTrack) Validate() error {
 			}
 		}
 	}
-	// TODO: Validate more. Expected/required types. JSON Schema?
 	return nil
 }
 
-// SortFunc implements the slices.SortFunc for CatTrack slices.
+// SlicesSortFunc implements the slices.SortFunc for CatTrack slices.
 // Sorting is done by time (chronologically, at 1 second granularity);
 // then, in case of equivalence, by accuracy.
 // > cmp(a, b) should return a negative number when a < b,
 // > a positive number when a > b, and zero when a == b
-func SortCatsFunc(a, b CatTrack) int {
+func SlicesSortFunc(a, b CatTrack) int {
 	aUUID := a.Properties.MustString("UUID", "a")
 	bUUID := b.Properties.MustString("UUID", "b")
 	if aUUID < bUUID {
@@ -329,16 +376,17 @@ func (ct *CatTrack) ValidateSnap() error {
 		return fmt.Errorf("not a snap")
 	}
 	if ct.HasRawB64Image() {
-		if ct.Properties.MustString("imgB64", "") == "" {
+		if "" == ct.Properties.MustString("imgB64", "") {
 			return fmt.Errorf("empty imgB64 data")
 		}
-	}
-	if ct.HasS3URL() {
-		if ct.Properties.MustString("imgS3", "") == "" {
+		return nil
+	} else if ct.HasS3URL() {
+		if "" == ct.Properties.MustString("imgS3", "") {
 			return fmt.Errorf("empty imgS3 URL")
 		}
+		return nil
 	}
-	return nil
+	return errors.New("no image data rly?") // don't get here / panic
 }
 
 func (ct *CatTrack) HasRawB64Image() bool {

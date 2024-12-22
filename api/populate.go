@@ -134,9 +134,9 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	normalized := stamped
 	if sort {
-		normalized = stream.BatchSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
-		//normalized = stream.BatchSortaBetter(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
-		//normalized = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SortCatsFunc, stamped)
+		normalized = stream.BatchSort(ctx, params.DefaultSortSize, cattrack.SlicesSortFunc, stamped)
+		//normalized = stream.BatchSortaBetter(ctx, params.DefaultSortSize, cattrack.SlicesSortFunc, stamped)
+		//normalized = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SlicesSortFunc, stamped)
 	}
 
 	// Fork normalized stream into snaps/no-snaps.

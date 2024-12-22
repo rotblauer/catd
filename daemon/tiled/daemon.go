@@ -209,6 +209,10 @@ func (d *TileDaemon) markDone() {
 	close(d.done)
 }
 
+// awaitPendingTileRequests awaits pending tiling requests, ie. on shutdown.
+// Since a successful tiling request can call another (eg. edge -> canonical),
+// this may add requests to the queue; so it returns the number pending
+// requests in the TTL cache/queue after one cycle through the cache.
 func (d *TileD) awaitPendingTileRequests() (nextPending int) {
 	keys := d.pendingTTLCache.Keys()
 	requests := []*TilingRequestArgs{}
@@ -269,7 +273,7 @@ func (d *TileD) awaitPendingTileRequests() (nextPending int) {
 
 	for i := 0; i < len(requests); i++ {
 		res := <-results
-		// Normally, the pending request is removed from the cache by eviction.
+		// Normally, the pending request is removed from the cache by a TTL eviction.
 		// Here, we need manually remove the completed request from the pending cache.
 		d.pendingTTLCache.Delete(res.req.id())
 		if res.err != nil {
@@ -309,6 +313,8 @@ type storePending struct {
 
 // unpersistPending removes a pending request from the database.
 // It is called exclusively by the function responsible for running the request (d.callTiling).
+// FIXME: This is not thoroughly implemented. Maybe should become simply `unpending`,
+// and also try to remove TTL cache item (for awaitPending shutdowns).
 func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 	return d.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("pending"))
@@ -870,11 +876,11 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	}
 
 	defer func(rep *TilingResponse) {
-		if rep.Success {
-			if err := d.unpersistPending(args); err != nil {
-				d.logger.Error("Failed to unpersist pending request", "error", err)
-			}
+		//if rep.Success {
+		if err := d.unpersistPending(args); err != nil {
+			d.logger.Error("Failed to unpersist pending request", "error", err)
 		}
+		//}
 	}(reply)
 
 	if args == nil {
