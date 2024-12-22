@@ -8,7 +8,6 @@ require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
-	github.com/google/pprof v0.0.0-20230207041349-798e818bf904
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -19,7 +18,9 @@ require (
 	github.com/olahol/melody v1.2.1
 	github.com/paulmach/orb v0.11.1
 	github.com/sams96/rgeo v1.2.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/cobra v1.8.1
+	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	github.com/tidwall/gjson v1.18.0
 	go.etcd.io/bbolt v1.3.11
@@ -48,7 +49,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.0 // indirect

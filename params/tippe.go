@@ -67,7 +67,13 @@ var DefaultTippeConfigs = &struct {
 
 var (
 	TippeCommonArgs = CLIFlagsT{
-		"--single-precision",
+
+		// BUG I believe there is a bug or something
+		// where single-precision is working backwards from what's intended.
+		// Instead of reducing the precision of the output, it's increasing it to annoying long decimals.
+		// I pass 3.14 (using github.com/shopspring/decimal package), I get 3.1399999999999997.
+		// eg. Laps' Mean_Calculated_Speed, etc.
+		//"--single-precision",
 
 		// FIXME Doesn't generate ids...?
 		// Or generates dupe features with different ids?
@@ -89,7 +95,7 @@ var (
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
 
-		"--include", "Name",
+		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Activity",
 		"--include", "RawPointCount",
@@ -119,7 +125,7 @@ var (
 		"--drop-rate", "1",
 		"--minimum-zoom", "3",
 		"--maximum-zoom", "18",
-		"--include", "Name",
+		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Time_Start_Unix",
 		"--include", "Duration",

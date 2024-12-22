@@ -77,7 +77,8 @@ run() {
     --verbosity 0 \
     --workers 0 \
     --sort true \
-    --tiled.skip-edge
+    --tiled.skip-edge \
+    --whitelist ia
 #     --tiled.pending-after 15s \
 #     --tiled.await-pending
 
