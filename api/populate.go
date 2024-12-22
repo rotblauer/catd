@@ -94,11 +94,7 @@ func (c *Cat) SubscribeFancyLogs() {
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
 
 	c.SubscribeFancyLogs()
-
-	// Must get blocking exclusive hold on state.
-	// TODO
-	// hotkey for maximize tool window
-	// separate state concerns into read v. write?
+	
 	c.logger.Info("Populate blocking on lock state")
 	err := c.LockOrLoadState(false)
 	if err != nil {

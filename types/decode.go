@@ -101,7 +101,7 @@ func DecodeCatTracksShotgun(data []byte) (out []*cattrack.CatTrack, err error) {
 	return
 }
 
-// ScanJSONMessages reads a stream of JSON messages from an io.Reader,
+// ScanJSONMessages reads a stream of JSON message/s from an io.Reader,
 // and calls onEach for each decoded message.
 // If the stream is encoded as a JSON array, this function will attempt
 // to call onEach for each element in the array.

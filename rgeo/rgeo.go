@@ -61,11 +61,12 @@ func R(datasets ...string) ReverseGeocoder {
 
 	// Everything failed. Load datasets.
 	// Once datasets are loaded, there's no reason to go back to RPC.
-	slog.Info("Loading rgeo datasets")
+	slog.Info("Loading rgeo datasets...")
 	err := Init(defaultDatasets...)
 	if err != nil {
 		panic(err)
 	}
+	slog.Info("Loaded rgeo datasets")
 	return r
 }
 

@@ -1,7 +1,9 @@
 package webd
 
 import (
+	"bufio"
 	"encoding/json"
+	"fmt"
 	"github.com/rotblauer/catd/api"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
@@ -23,6 +25,10 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	buf := bufio.NewReader(r.Body)
+	peek, _ := buf.Peek(80)
+	s.logger.Info("Peeked request body", "peek", fmt.Sprintf("%s...", peek))
+
 	var cat *api.Cat
 	var catID conceptual.CatID
 
@@ -35,7 +41,7 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		defer close(errs)
 		s.logger.Debug("Scanning cat pop request")
 		defer s.logger.Debug("Scanned cat pop request")
-		er := types.ScanJSONMessages(r.Body, func(message json.RawMessage) error {
+		er := types.ScanJSONMessages(buf, func(message json.RawMessage) error {
 			return types.DecodingJSONTrackObject(message, func(ct *cattrack.CatTrack) error {
 				if n == 0 {
 					s.logger.Info("First track", "track", ct)
