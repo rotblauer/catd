@@ -89,8 +89,8 @@ func (ct *CatTrack) Copy() *CatTrack {
 }
 
 // IsEmpty is useful for dealing with zero-value tracks.
-func (ct CatTrack) IsEmpty() bool {
-	return ct.Geometry == nil ||
+func (ct *CatTrack) IsEmpty() bool {
+	return ct == nil || ct.Geometry == nil ||
 		ct.Properties == nil ||
 		len(ct.Properties) == 0
 }

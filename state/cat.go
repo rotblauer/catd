@@ -95,6 +95,18 @@ func (s *CatState) Close() error {
 	return nil
 }
 
+func (s *State) ScanKV(bucket []byte, fn func(k, v []byte) error) error {
+	return s.DB.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(bucket)
+		if b == nil {
+			return fmt.Errorf("no state bucket")
+		}
+		return b.ForEach(func(k, v []byte) error {
+			return fn(k, v)
+		})
+	})
+}
+
 func (s *State) StoreKVMarshalJSON(bucket []byte, key []byte, v interface{}) error {
 	data, err := json.Marshal(v)
 	if err != nil {

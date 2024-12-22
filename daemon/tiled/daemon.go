@@ -915,9 +915,9 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 
 	// TODO
 	//// Try reload mbtileserver.
-	//if out, err := d.mbtileserverHUP(); err != nil {
-	//	d.logger.Warn("Failed to HUP mbtileserver", "error", err, "output", string(out))
-	//}
+	if out, err := d.mbtileserverHUP(); err != nil {
+		d.logger.Warn("Failed to HUP mbtileserver", "error", err, "output", string(out))
+	}
 
 	// We can safely return now if this was canon;
 	// there's no magic after the canon run.

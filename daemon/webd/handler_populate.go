@@ -1,13 +1,12 @@
 package webd
 
 import (
+	"encoding/json"
 	"github.com/rotblauer/catd/api"
+	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
-	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
-	"io"
-	"math"
 	"net/http"
 )
 
@@ -17,55 +16,63 @@ import (
 // Android (GCPS) posts a GeoJSON FeatureCollection.
 // iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
 func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
-
-	var body []byte
 	var err error
-
 	if r.Body == nil {
 		s.logger.Error("No request body", "method", r.Method, "url", r.URL)
 		http.Error(w, "Please send a request body", 500)
 		return
 	}
 
-	// TODO.
-	// Could potentially use a streaming JSON decoder here.
-	// customizeableTrackHat sends array of trackpoints.
-	// gcps sends a feature collection.
-	// Like herding cats.
-	body, err = io.ReadAll(r.Body)
-	if err != nil {
-		s.logger.Error("Failed to read request body", "error", err)
-		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-		return
+	var cat *api.Cat
+	var catID conceptual.CatID
+
+	first := make(chan cattrack.CatTrack, 1)
+	tracks := make(chan cattrack.CatTrack, params.DefaultChannelCap)
+	errs := make(chan error, 1)
+	n := 0
+	go func() {
+		defer close(tracks)
+		defer close(errs)
+		s.logger.Debug("Scanning cat pop request")
+		defer s.logger.Debug("Scanned cat pop request")
+		er := types.ScanJSONMessages(r.Body, func(message json.RawMessage) error {
+			return types.DecodingJSONTrackObject(message, func(ct *cattrack.CatTrack) error {
+				if n == 0 {
+					s.logger.Info("First track", "track", ct)
+					first <- *ct
+				}
+				n++
+				tracks <- *ct
+				return nil
+			})
+		})
+		if er != nil {
+			s.logger.Error("Failed to scan cat pop message/s", "error", er)
+		}
+		errs <- er
+	}()
+
+	select {
+	case t := <-first:
+		catID = t.CatID()
+		cat, err = api.NewCat(catID, params.DefaultCatDataDirRooted(s.Config.DataDir, catID.String()), s.Config.CatBackendConfig)
+		if err != nil {
+			s.logger.Error("Failed to get/create cat", "error", err)
+			http.Error(w, "Failed to get/create cat", http.StatusInternalServerError)
+			return
+		}
+	case err := <-errs:
+		if err != nil {
+			s.logger.Error("Failed to scan messages", "error", err)
+			http.Error(w, "Failed to scan messages", http.StatusInternalServerError)
+			return
+		}
 	}
 
-	truncatedBytes := string(body)[:int(math.Min(80, float64(len(body))))]
-	s.logger.Debug("Decoding", "body.len", len(body), "bytes: ", truncatedBytes)
-
-	features, err := types.DecodeCatTracksShotgun(body)
-	if err != nil || len(features) == 0 {
-		s.logger.Error("Failed to decode", "error", err)
-		http.Error(w, "Failed to decode", http.StatusUnprocessableEntity)
-		return
-	}
-
-	// TODO: Assert/ensure WHICH CAT, ie. conceptual cat.
-	catID := features[0].CatID()
-	cat, err := api.NewCat(catID, params.DefaultCatDataDirRooted(s.Config.DataDir, catID.String()), s.Config.CatBackendConfig)
-	if err != nil {
-		s.logger.Error("Failed to create cat", "error", err)
-		http.Error(w, "Failed to create cat", http.StatusInternalServerError)
-		return
-	}
-
-	// Collect values for streaming.
-	featureVals := make([]cattrack.CatTrack, len(features))
-	for i, f := range features {
-		featureVals[i] = *f
-	}
+	s.logger.Info("Populating", "cat", catID, "tracks", n)
 
 	ctx := r.Context()
-	err = cat.Populate(ctx, true, stream.Slice(ctx, featureVals))
+	err = cat.Populate(ctx, true, tracks)
 	if err != nil {
 		s.logger.Error("Failed to populate", "error", err)
 		http.Error(w, "Failed to populate", http.StatusInternalServerError)
@@ -78,7 +85,4 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write([]byte("[]")); err != nil {
 		s.logger.Warn("Failed to write response", "error", err)
 	}
-
-	// Watch out. This could send a lot of features...
-	s.feedPopulated.Send(features)
 }
