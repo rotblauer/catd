@@ -94,7 +94,7 @@ func (c *Cat) SubscribeFancyLogs() {
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
 
 	c.SubscribeFancyLogs()
-	
+
 	c.logger.Info("Populate blocking on lock state")
 	err := c.LockOrLoadState(false)
 	if err != nil {
@@ -219,18 +219,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		}
 	}()
 
-	//// P.S. Don't send all tracks to tiled unless development.
-	//sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-	//	SourceSchema: tiled.SourceSchema{
-	//		CatID:      c.CatID,
-	//		SourceName: "tracks",
-	//		LayerName:  "tracks",
-	//	},
-	//	TippeConfigName: params.TippeConfigNameTracks,
-	//	Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-	//	SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//}, sendTiledCh)
-
 	// Block on any store errors, returning first.
 	c.logger.Info("Blocking on store cat tracks+snaps gz")
 	handledErrorsN := 0
@@ -336,7 +324,7 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer func() {
 		if items > 0 || err != nil {
-			slog.Info("Sunk stream to JSON GZ writer", "items", items, "error", err)
+			slog.Debug("Sunk stream to JSON GZ writer", "items", items, "error", err)
 		}
 	}()
 	var gz *gzip.Writer
@@ -361,7 +349,7 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-cha
 func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer func() {
 		if items > 0 || err != nil {
-			slog.Info("Sunk stream to JSON writer", "items", items, "error", err)
+			slog.Debug("Sunk stream to JSON writer", "items", items, "error", err)
 		}
 	}()
 	enc := json.NewEncoder(wr)

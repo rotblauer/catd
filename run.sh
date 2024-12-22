@@ -77,10 +77,10 @@ run() {
     --verbosity 0 \
     --workers 0 \
     --sort true \
-    --tiled.skip-edge \
+    --tiled.pending-after 15s \
+    --tiled.await-pending \
     --whitelist ia
-#     --tiled.pending-after 15s \
-#     --tiled.await-pending
+#     --tiled.skip-edge \
 
 
   zcat $(find /tmp/catd/cats/rye/tracks/*.gz | head -1) | wc -l

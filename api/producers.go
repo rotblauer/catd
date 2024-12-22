@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -36,13 +37,49 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	// Clean and improve tracks for pipeline handlers.
 	cleaned := c.CleanTracks(ctx, in)
-	improved := c.ImprovedActTracks(ctx, cleaned)
-	woffsets := cattrack.WithTimeOffset(ctx, improved)
+
+	wOffsets := cattrack.WithTimeOffset(ctx, cleaned)
+	offsetsDebug, offsetsPass := stream.Tee[cattrack.CatTrack](ctx, wOffsets)
+
+	//// P.S. Don't send all tracks to tiled unless development?
+	go func() {
+		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "tracks",
+				LayerName:  "tracks",
+			},
+			TippeConfigName: params.TippeConfigNameTracks,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, offsetsDebug); err != nil {
+			c.logger.Error("Failed to send tracks", "error", err)
+		}
+	}()
+
+	improved := c.ImprovedActTracks(ctx, offsetsPass)
+	improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
+
+	//// P.S. Don't send all tracks to tiled unless development?
+	go func() {
+		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "tracks-improved",
+				LayerName:  "tracks-improved",
+			},
+			TippeConfigName: params.TippeConfigNameTracks,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, improvedDebug); err != nil {
+			c.logger.Error("Failed to send tracks", "error", err)
+		}
+	}()
 
 	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	simpleIndexerCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
-	stream.TeeMany(ctx, woffsets, areaPipeCh, vectorPipeCh, simpleIndexerCh)
+	stream.TeeMany(ctx, improvedPass, areaPipeCh, vectorPipeCh, simpleIndexerCh)
 
 	groundedArea := stream.Filter[cattrack.CatTrack](ctx, clean.FilterGrounded, areaPipeCh)
 	g1, g2 := stream.Tee(ctx, groundedArea)

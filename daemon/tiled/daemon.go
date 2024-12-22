@@ -151,7 +151,8 @@ func (d *TileDaemon) Start() error {
 		d.logger.Info("Pending tiling request up", "args", item.Value().id())
 		// Reset pending if an equivalent request is still running.
 		if _, ok := d.tilingRunningM.Load(item.Key()); ok {
-			d.pending(item.Value())
+			d.logger.Warn("Pending tiling request already running, skipping", "args", item.Value().id())
+			//d.pending(item.Value())
 			return
 		}
 		if err := service.callTiling(item.Value(), nil); err != nil {
@@ -916,7 +917,7 @@ func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error
 	// TODO
 	//// Try reload mbtileserver.
 	if out, err := d.mbtileserverHUP(); err != nil {
-		d.logger.Warn("Failed to HUP mbtileserver", "error", err, "output", string(out))
+		d.logger.Debug("Failed to HUP mbtileserver", "error", err, "output", string(out))
 	}
 
 	// We can safely return now if this was canon;

@@ -143,7 +143,7 @@ var (
 	TippeTracksArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "500000", // num bytes/tile,default: 500kb=500000
 		"--minimum-zoom", "3",
-		"--maximum-zoom", "18",
+		"--maximum-zoom", "17",
 		"--cluster-densest-as-needed",
 		"--calculate-feature-density",
 		"--cluster-distance", "1",
@@ -157,6 +157,8 @@ var (
 		"--include", "Accuracy",
 		"--include", "Heading",
 		"--include", "UnixTime",
+		"--include", "Time",
+		"--include", "TimeOffset",
 		"-EUnixTime:max",
 		"-EElevation:max",
 		"-ESpeed:max", // mean",
