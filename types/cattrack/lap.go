@@ -47,7 +47,7 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	// FIXME: Another list iteration and awkward type assertions.
 	f.Properties["Activity"] = ActivityModeNotUnknownNorStationary(tracks).String()
 
-	f.Properties["Name"] = first.Properties.MustString("Name")
+	f.Properties["Alias"] = first.CatID().String()
 	f.Properties["UUID"] = first.Properties.MustString("UUID")
 	f.Properties["RawPointCount"] = len(tracks) // unsimplified
 
@@ -100,23 +100,26 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		}
 	}
 
-	statsMustFloat := func(fn func() (float64, error)) float64 {
-		out, _ := fn()
+	statsMustFloat := func(fn func() (float64, error), def float64) float64 {
+		out, err := fn()
+		if err != nil {
+			return def
+		}
 		return out
 	}
 
-	installStats := func(key string, data []float64, precision int) {
+	installStats := func(key string, data []float64, def float64, precision int) {
 		statsData := stats.Float64Data(data)
-		f.Properties[key+"_Mean"] = common.DecimalToFixed(statsMustFloat(statsData.Mean), precision)
-		f.Properties[key+"_Median"] = common.DecimalToFixed(statsMustFloat(statsData.Median), precision)
-		f.Properties[key+"_Min"] = common.DecimalToFixed(statsMustFloat(statsData.Min), precision)
-		f.Properties[key+"_Max"] = common.DecimalToFixed(statsMustFloat(statsData.Max), precision)
+		f.Properties[key+"_Mean"] = common.DecimalToFixed(statsMustFloat(statsData.Mean, def), precision)
+		f.Properties[key+"_Median"] = common.DecimalToFixed(statsMustFloat(statsData.Median, def), precision)
+		f.Properties[key+"_Min"] = common.DecimalToFixed(statsMustFloat(statsData.Min, def), precision)
+		f.Properties[key+"_Max"] = common.DecimalToFixed(statsMustFloat(statsData.Max, def), precision)
 	}
 
-	installStats("Accuracy", accuracies, 0)
-	installStats("Elevation", elevations, 0)
-	installStats("Speed_Reported", reportedSpeeds, 2)
-	installStats("Speed_Calculated", calculatedSpeeds, 2)
+	installStats("Accuracy", accuracies, 50, 0)
+	installStats("Elevation", elevations, 0, 0)
+	installStats("Speed_Reported", reportedSpeeds, 0, 2)
+	installStats("Speed_Calculated", calculatedSpeeds, 0, 2)
 
 	f.Properties["Distance_Traversed"] = math.Round(distanceTraversed)
 	f.Properties["Distance_Absolute"] = math.Round(geo.Distance(tracks[0].Point(), tracks[len(tracks)-1].Point()))

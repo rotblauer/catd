@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/catz"
+	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/testing/testdata"
 	"github.com/rotblauer/catd/types/cattrack"
+	"log/slog"
 	"path/filepath"
 	"testing"
 )
@@ -108,10 +110,11 @@ func TestCat_Populate(t *testing.T) {
 }
 
 func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProdCount int) {
-	//opdbs := params.DefaultBatchSize
+	defer common.SlogResetLevel(slog.Level(slog.LevelWarn + 1))()
+	//old := params.DefaultBatchSize
 	//params.DefaultBatchSize = 100
 	//defer func() {
-	//	params.DefaultBatchSize = opdbs
+	//	params.DefaultBatchSize = old
 	//}()
 
 	tc := NewTestCatWriter(t, cat, nil)
@@ -172,8 +175,9 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 		t.Fatalf("failed to read last offset index: %v", err)
 	}
 	count := last.Properties.MustInt("Count", 0)
-	if count != wantProdCount {
-		t.Errorf("got %d, want %d", count, wantProdCount)
+	// Use a rough, minimum count. Tinkering with any of the cleaners (eg. Teleportation) can change this, a little.
+	if count < wantProdCount {
+		t.Errorf("got %d, want >= %d", count, wantProdCount)
 		j, _ := json.MarshalIndent(last, "", "  ")
 		t.Log(string(j))
 	}

@@ -488,7 +488,13 @@ func (p *Improver) improve(ct WrappedTrack) error {
 				return nil
 			} else if meanSpeed > common.SpeedOfCyclingMin {
 				//p.Cat.setActivityState(p.Cat.Cycling, ctTime)
-				//return nil
+				return nil
+			}
+			if meanSpeed < common.SpeedOfWalkingSlow {
+				p.Cat.setActivityState(act, ctTime)
+				return nil
+			} else {
+				return nil
 			}
 		}
 

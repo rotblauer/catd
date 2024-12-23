@@ -32,7 +32,7 @@ tdata() {
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
 #     zcat "${HOME}"/tdata/master.json.gz
-   zcat "${HOME}"/tdata/{devop,edge}.json.gz
+#    zcat "${HOME}"/tdata/{devop,edge}.json.gz
 #
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -41,6 +41,9 @@ tdata() {
 #    for f in $(seq -f "%02g" 5 10); do
 #      zcat "${HOME}/tdata/local/yyyy-mm/2024-${f}"*.gz
 #    done
+      for f in $(seq -f "%02g" 22 24); do
+        zcat "${HOME}/tdata/local/yyyy-mm/20${f}"*.gz
+      done
 }
 
 bump_tileservice() {
@@ -77,8 +80,7 @@ run() {
     --verbosity 0 \
     --workers 0 \
     --sort true \
-    --tiled.skip-edge \
-    --whitelist ia
+    --tiled.skip-edge
 #     --tiled.pending-after 15s \
 #     --tiled.await-pending \
 

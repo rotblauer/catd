@@ -135,6 +135,86 @@ func TestRingBuffer_AddAndGet(t *testing.T) {
 	}
 }
 
+func TestRingBuffer_Head(t *testing.T) {
+	ringBuffer := NewRingBuffer[int](5)
+	ringBuffer.Add(1)
+	ringBuffer.Add(2)
+	ringBuffer.Add(3)
+
+	expected := []int{1, 2, 3}
+	actual := ringBuffer.Head(3)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(4)
+	ringBuffer.Add(5)
+	ringBuffer.Add(6)
+
+	expected = []int{2, 3, 4}
+	actual = ringBuffer.Head(3)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+	expected = ringBuffer.Get()[:3] // same same
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(8)
+
+	actual = ringBuffer.Head(3)
+	expected = []int{4, 5, 6}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+	expected = ringBuffer.Get()[:3] // same same
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+}
+
+func TestRingBuffer_Tail(t *testing.T) {
+	ringBuffer := NewRingBuffer[int](5)
+	ringBuffer.Add(1)
+	ringBuffer.Add(2)
+	ringBuffer.Add(3)
+
+	expected := []int{1, 2, 3}
+	actual := ringBuffer.Tail(3)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(4)
+	ringBuffer.Add(5)
+	ringBuffer.Add(6)
+
+	expected = []int{4, 5, 6}
+	actual = ringBuffer.Tail(3)
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+	expected = ringBuffer.Get()[2:] // same same
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+
+	ringBuffer.Add(7)
+	ringBuffer.Add(8)
+
+	actual = ringBuffer.Tail(3)
+	expected = []int{6, 7, 8}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+	expected = ringBuffer.Get()[2:] // same same
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Expected %v, but got %v", expected, actual)
+	}
+}
+
 func TestRingBufferConcurrent(t *testing.T) {
 	ringBuffer := NewRingBuffer[int](3)
 	var wg sync.WaitGroup

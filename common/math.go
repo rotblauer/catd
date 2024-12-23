@@ -14,6 +14,12 @@ func decimalToFixed(num float64, precision int) float64 {
 }
 
 func DecimalToFixed(num float64, precision int) float64 {
+	if math.IsNaN(num) {
+		return num
+	}
+	if math.IsInf(num, 0) {
+		return num
+	}
 	d := decimal.NewFromFloat(num)
 	d = d.Truncate(int32(precision))
 	f, _ := d.Float64()

@@ -54,6 +54,45 @@ func (rb *RingBuffer[T]) Get() []T {
 	return result
 }
 
+// Head returns the first (first in) n elements in the buffer.
+func (rb *RingBuffer[T]) Head(n int) []T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if n > rb.count {
+		n = rb.count
+	}
+
+	result := make([]T, 0, n)
+
+	for i := 0; i < n; i++ {
+		index := (rb.write + rb.size - rb.count + i) % rb.size
+		result = append(result, rb.buffer[index])
+	}
+
+	return result
+}
+
+// Tail returns the last (last in) n elements in the buffer.
+func (rb *RingBuffer[T]) Tail(n int) []T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if n > rb.count {
+		n = rb.count
+	}
+	start := rb.count - n
+
+	result := make([]T, 0, n)
+
+	for i := start; i < rb.count; i++ {
+		index := (rb.write + rb.size - rb.count + i) % rb.size
+		result = append(result, rb.buffer[index])
+	}
+
+	return result
+}
+
 // Len returns the current number of elements in the buffer.
 func (rb *RingBuffer[T]) Len() int {
 	rb.mu.Lock()
