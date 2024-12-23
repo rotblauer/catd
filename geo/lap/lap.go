@@ -36,6 +36,7 @@ func NewState(config *params.ActDiscretionConfig) *State {
 	}
 }
 
+// Add appends a CatTrack to the lap builder, and flushes the current lap if necessary (discontinuous).
 func (s *State) Add(ct *cattrack.CatTrack) {
 	defer func(t *cattrack.CatTrack) {
 		s.TimeLast = t.MustTime()
@@ -66,10 +67,12 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	return !activity.IsContinuous(currentAct, lastAct)
 }
 
+// Bump signals the lap builder to flush the current lap.
 func (s *State) Bump() {
 	s.bump <- struct{}{}
 }
 
+// Flush emits a CatLap if there are enough points to do so, and resets the lap builder.
 func (s *State) Flush() {
 	if len(s.Tracks) >= 2 {
 		lap := cattrack.NewCatLap(s.Tracks)

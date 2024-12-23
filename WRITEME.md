@@ -1,7 +1,12 @@
+TODO
+test Populate handles errors without racing/stalling
+
 TODO sink to master
 safer directer
 simple popper
 first
+
+---
 
 this is why there's double laps occasionally
 ```shell

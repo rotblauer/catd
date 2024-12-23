@@ -171,9 +171,8 @@ func (d *TileDaemon) start(listener net.Listener, service *TileD) {
 
 	// Block until interrupted
 	<-d.interrupt
-	d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
-
 	d.interrupted.Store(true)
+	d.logger.Info("TileDaemon interrupted", "awaiting", "pending")
 
 	// Close the listener, stop receiving external requests.
 	if err := listener.Close(); err != nil {
@@ -302,8 +301,6 @@ func (d *TileDaemon) pending(args *TilingRequestArgs) {
 
 // unPending removes a pending request from the database.
 // It is called exclusively by the function responsible for running the request (d.callTiling).
-// FIXME: This is not thoroughly implemented. Maybe should become simply `unPending`,
-// and also try to remove TTL cache item (for awaitPending shutdowns).
 func (d *TileDaemon) unPending(args *TilingRequestArgs) error {
 	d.pendingTTLCache.Delete(args.id())
 	return d.db.Update(func(tx *bbolt.Tx) error {
