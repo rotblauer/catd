@@ -120,7 +120,7 @@ func (s *WebDaemon) catPushedJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cat.State.Close()
 
-	lr, err := cat.State.Flat.NamedGZReader(params.LastTracksGZFileName)
+	lr, err := cat.State.Flat.NewGZFileReader(params.LastTracksGZFileName)
 	if err != nil {
 		slog.Warn("Failed to get last tracks", "error", err)
 		http.Error(w, "Failed to get last tracks", http.StatusInternalServerError)
@@ -170,7 +170,7 @@ func (s *WebDaemon) catPushedNDJSON(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cat.State.Close()
 
-	lr, err := cat.State.Flat.NamedGZReader(params.LastTracksGZFileName)
+	lr, err := cat.State.Flat.NewGZFileReader(params.LastTracksGZFileName)
 	if err != nil {
 		slog.Warn("Failed to get last tracks", "error", err)
 		http.Error(w, "Failed to get last tracks", http.StatusInternalServerError)

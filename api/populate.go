@@ -69,6 +69,7 @@ func (c *Cat) SubscribeFancyLogs() {
 			)
 		}
 	}()
+
 	// And naps...
 	onNaps := make(chan cattrack.CatNap)
 	c.completedNaps.Subscribe(onNaps)

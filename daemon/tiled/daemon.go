@@ -510,7 +510,7 @@ func (d *TileD) writeGZ(source string, writeConfig *catz.GZFileWriterConfig, jso
 		// Any error occurring during write is returned immediately.
 		// This might log a double-close error, but worth it to ensure that it will always get closed.
 		if err != nil {
-			err := gzw.MustClose()
+			err := gzw.TryClose()
 			if err != nil {
 				d.logger.Error("Failed to close gz writer", "error", err)
 			}

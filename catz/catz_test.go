@@ -14,17 +14,17 @@ import (
 	"time"
 )
 
-// TestFileLocking shows that a syscall.EX lock on a file
+// TestFileLocking shows that a syscall.EX tryLock on a file
 // will NOT block once the file has been closed, I guess because of file descriptor change.
-// This means that the lock is not on the file, but on the file descriptor,
-// and that the lock is invalidated once the file is closed,
+// This means that the tryLock is not on the file, but on the file descriptor,
+// and that the tryLock is invalidated once the file is closed,
 // and that syscall.LOCK_UN is unnecessary.
 // There are no syscall.UN locks in this test.
 func TestFileLocking(t *testing.T) {
 	target := filepath.Join(os.TempDir(), "mytestfile.xyz")
 	defer os.Remove(target)
 
-	// Create some file and lock EX it.
+	// Create some file and tryLock EX it.
 	f, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0600)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +51,7 @@ func TestFileLocking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// If this syscall lock is NOT held, the write will succeed and the test will fail.
+	// If this syscall tryLock is NOT held, the write will succeed and the test will fail.
 	if err := syscall.Flock(int(ff.Fd()), syscall.LOCK_EX); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestGZFileWriter_Write(t *testing.T) {
 
 	wait.Add(2)
 	go writeFile(w1, "w1", 50*time.Millisecond)
-	time.Sleep(10 * time.Millisecond) // wait for w1 to lock the file.
+	time.Sleep(10 * time.Millisecond) // wait for w1 to tryLock the file.
 	writeFile(w2, "w2", 10*time.Millisecond)
 	wait.Wait()
 

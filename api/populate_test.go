@@ -150,7 +150,7 @@ func testCat_Populate(t *testing.T, cat, source string, wantStoreCount, wantProd
 	defer c.State.Close()
 
 	// Then == zcat | wc -l.
-	f, err := c.State.Flat.Joins(params.CatTracksDir).NamedGZReader("2024-12.geojson.gz")
+	f, err := c.State.Flat.Joins(params.CatTracksDir).NewGZFileReader("2024-12.geojson.gz")
 	if err != nil {
 		t.Fatal(err)
 	}

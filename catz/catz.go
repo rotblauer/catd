@@ -6,14 +6,16 @@ import (
 	"github.com/rotblauer/catd/params"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 )
 
 type GZFileWriter struct {
+	path   string
 	f      *os.File
 	gzw    *gzip.Writer
-	locked bool
-	closed bool
+	locked atomic.Bool
+	closed atomic.Bool
 
 	GZFileWriterConfig
 }
@@ -47,14 +49,15 @@ func NewGZFileWriter(path string, config *GZFileWriterConfig) (*GZFileWriter, er
 		return nil, err
 	}
 	g := &GZFileWriter{
-		f:   fi,
-		gzw: gzw,
+		path: path,
+		f:    fi,
+		gzw:  gzw,
 	}
 	return g, nil
 }
 
 func (g *GZFileWriter) Write(p []byte) (int, error) {
-	g.lock()
+	g.tryLock()
 	return g.gzw.Write(p)
 }
 
@@ -64,30 +67,28 @@ func (g *GZFileWriter) Writer() *gzip.Writer {
 
 // lock locks the file for exclusive access.
 // The lock will be invalidated if and when the file is closed.
-func (g *GZFileWriter) lock() {
-	if g.locked || g.closed || g.f == nil {
+func (g *GZFileWriter) tryLock() {
+	if g.locked.Load() || g.closed.Load() || g.f == nil {
 		return
 	}
 	fd := g.f.Fd()
 	_ = syscall.Flock(int(fd), syscall.LOCK_EX)
-	g.locked = true
+	g.locked.Store(true)
 }
 
 // unlock unlocks the file. It is a no-op if the file is not locked.
 // It is not required if the file is closed.
 func (g *GZFileWriter) unlock() {
-	if !g.locked || g.closed || g.f == nil {
+	if !g.locked.Load() || g.closed.Load() || g.f == nil {
 		return
 	}
 	fd := g.f.Fd()
 	_ = syscall.Flock(int(fd), syscall.LOCK_UN)
-	g.locked = false
+	g.locked.Store(false)
 }
 
 func (g *GZFileWriter) Close() error {
-	defer func() {
-		g.closed = true
-	}()
+	defer g.closed.Store(true)
 	defer g.unlock()
 	err := g.gzw.Flush()
 	if err != nil {
@@ -97,6 +98,7 @@ func (g *GZFileWriter) Close() error {
 	if err != nil {
 		return err
 	}
+	g.unlock()
 	err = g.f.Close()
 	if err != nil {
 		return err
@@ -104,32 +106,33 @@ func (g *GZFileWriter) Close() error {
 	return nil
 }
 
-func (g *GZFileWriter) MustClose() error {
-	g.closed = true
-	defer g.unlock()
+func (g *GZFileWriter) TryClose() error {
+	defer g.closed.Store(true)
 	_ = g.gzw.Flush()
 	_ = g.gzw.Close()
 	_ = g.f.Sync()
+	g.unlock()
 	return g.f.Close()
 }
 
-func (g *GZFileWriter) MaybeClose() {
-	g.closed = true
-	defer g.unlock()
+func (g *GZFileWriter) CloseNoReply() {
+	defer g.closed.Store(true)
 	_ = g.gzw.Flush()
 	_ = g.gzw.Close()
 	_ = g.f.Sync()
+	g.unlock()
 	_ = g.f.Close()
 }
 
 func (g *GZFileWriter) Path() string {
-	return g.f.Name()
+	return g.path
 }
 
 type GZFileReader struct {
+	path   string
+	closed atomic.Bool
 	f      *os.File
 	gzr    *gzip.Reader
-	closed bool
 }
 
 func NewGZFileReader(path string) (*GZFileReader, error) {
@@ -145,11 +148,11 @@ func NewGZFileReader(path string) (*GZFileReader, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &GZFileReader{f: fi, gzr: gzr}, nil
+	return &GZFileReader{path: path, f: fi, gzr: gzr}, nil
 }
 
 func (g *GZFileReader) Path() string {
-	return g.f.Name()
+	return g.path
 }
 
 // lockEX locks a file for exclusive access.
@@ -192,12 +195,10 @@ func (g *GZFileReader) Reader() *gzip.Reader {
 // Close satisfies the io.Closer interface.
 // It closes the gzip reader and the file.
 func (g *GZFileReader) Close() error {
-	if g.closed {
+	if g.closed.Load() {
 		return nil
 	}
-	defer func() {
-		g.closed = true
-	}()
+	defer g.closed.Store(true)
 	if err := g.unlock(); err != nil {
 		return err
 	}
@@ -211,14 +212,14 @@ func (g *GZFileReader) Close() error {
 }
 
 func (g *GZFileReader) MustClose() error {
-	g.closed = true
+	defer g.closed.Store(true)
 	_ = g.unlock()
 	_ = g.gzr.Close()
 	return g.f.Close()
 }
 
 func (g *GZFileReader) MaybeClose() {
-	if g.closed {
+	if g.closed.Load() {
 		return
 	}
 	_ = g.Close()
