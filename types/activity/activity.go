@@ -87,7 +87,14 @@ func IsContinuous(a, b Activity) bool {
 	if a == TrackerStateUnknown || b == TrackerStateUnknown {
 		return true
 	}
+
+	//if a.IsActive() && b.IsActive() {
+	//	return true
+	//}
+	//return a == b
+
 	return a == b
+
 	//if a == TrackerStateStationary && b >= TrackerStateWalking {
 	//	return false
 	//}

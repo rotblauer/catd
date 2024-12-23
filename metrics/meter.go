@@ -23,23 +23,9 @@ type Meter interface {
 	Stop()
 }
 
-// GetOrRegisterMeter returns an existing Meter or constructs and registers a
-// new StandardMeter.
-// Be sure to unregister the meter from the registry once it is of no use to
-// allow for garbage collection.
-func GetOrRegisterMeter(name string, r Registry) Meter {
-	if nil == r {
-		r = DefaultRegistry
-	}
-	return r.GetOrRegister(name, NewMeter).(Meter)
-}
-
 // NewMeter constructs a new StandardMeter and launches a goroutine.
 // Be sure to call Stop() once the meter is of no use to allow for garbage collection.
 func NewMeter() Meter {
-	if !Enabled {
-		return NilMeter{}
-	}
 	m := newStandardMeter()
 	arbiter.Lock()
 	defer arbiter.Unlock()
@@ -54,19 +40,8 @@ func NewMeter() Meter {
 // NewInactiveMeter returns a meter but does not start any goroutines. This
 // method is mainly intended for testing.
 func NewInactiveMeter() Meter {
-	if !Enabled {
-		return NilMeter{}
-	}
 	m := newStandardMeter()
 	return m
-}
-
-// NewRegisteredMeter constructs and registers a new StandardMeter
-// and launches a goroutine.
-// Be sure to unregister the meter from the registry once it is of no use to
-// allow for garbage collection.
-func NewRegisteredMeter(name string, r Registry) Meter {
-	return GetOrRegisterMeter(name, r)
 }
 
 // meterSnapshot is a read-only copy of the meter's internal values.
@@ -93,14 +68,6 @@ func (m *meterSnapshot) Rate15() float64 { return m.rate15 }
 // RateMean returns the meter's mean rate of events per second at the time the
 // snapshot was taken.
 func (m *meterSnapshot) RateMean() float64 { return m.rateMean }
-
-// NilMeter is a no-op Meter.
-type NilMeter struct{}
-
-func (NilMeter) Count() int64            { return 0 }
-func (NilMeter) Mark(n int64)            {}
-func (NilMeter) Snapshot() MeterSnapshot { return (*emptySnapshot)(nil) }
-func (NilMeter) Stop()                   {}
 
 // StandardMeter is the standard implementation of a Meter.
 type StandardMeter struct {

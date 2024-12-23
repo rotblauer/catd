@@ -64,6 +64,7 @@ type Cat struct {
 	ActivityAlternateState      activity.Activity
 	ActivityAlternateStateStart time.Time
 
+	Current    activity.Mode
 	Unknown    activity.Mode
 	Stationary activity.Mode
 	Walking    activity.Mode
@@ -417,27 +418,28 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	p.Cat.push(ct)
 
 	// The activity modes, by time, in descending order.
-	sortedActsKnown := p.Cat.SortedActsKnown()
+	//sortedActsKnown := p.Cat.SortedActsKnown()
 	sortedActsAll := p.Cat.SortedActsAll()
 
-	if p.isNapLapTransition(ct) {
-		// Nap -> Lap
-		if !IsActivityActive(p.Cat.ActivityState) {
-			for _, act := range sortedActsKnown {
-				if act.Activity.IsActive() && act.Scalar > 0 {
-					p.Cat.setActivityState(act, ctTime)
-					return nil
-				}
-			}
-
-			// TODO/FIXME? Default nap -> lap.activity.
-			p.Cat.setActivityState(p.Cat.Walking, ctTime)
-			return nil
-		}
-		// Lap -> Nap
-		p.Cat.setActivityState(p.Cat.Stationary, ctTime)
-		return nil
-	}
+	// This is definitely an UN-improver. Don't use, but remember.
+	//if p.isNapLapTransition(ct) {
+	//	// Nap -> Lap
+	//	if !IsActivityActive(p.Cat.ActivityState) {
+	//		for _, act := range sortedActsKnown {
+	//			if act.Activity.IsActive() && act.Scalar > 0 {
+	//				p.Cat.setActivityState(act, ctTime)
+	//				return nil
+	//			}
+	//		}
+	//
+	//		// TODO/FIXME? Default nap -> lap.activity.
+	//		p.Cat.setActivityState(p.Cat.Walking, ctTime)
+	//		return nil
+	//	}
+	//	// Lap -> Nap
+	//	p.Cat.setActivityState(p.Cat.Stationary, ctTime)
+	//	return nil
+	//}
 
 	// No transition: but is cat is acting as cat was acting...?
 	// Maybe revise the activity state.
@@ -450,6 +452,20 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	for i, act := range sortedActsAll {
 		if act.Scalar <= 0 {
 			continue
+		}
+
+		// Blend running:walking, driving:cycling, preferring a long-term incumbent
+		// until a continuing alternative overtakes the majority of the incumbent.
+		// Note that above, in the case of a repeat activity mode (same state as current),
+		// the alternate state is cleared, so this measures only consecutive activities.
+		if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+			p.Cat.setActivityAlternateState(act, ctTime)
+			relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
+			alternateRelativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
+			if alternateRelativeAge > relativeAgeIncumbent/2 {
+				p.Cat.setActivityState(act, ctTime)
+				return nil
+			}
 		}
 
 		// Same state? Continuity preferred. Return early.
@@ -476,20 +492,6 @@ func (p *Improver) improve(ct WrappedTrack) error {
 			}
 		}
 
-		// Blend running:walking, driving:cycling, preferring a long-term incumbent
-		// until a continuing alternative overtakes the majority of the incumbent.
-		// Note that above, in the case of a repeat activity mode (same state as current),
-		// the alternate state is cleared, so this measures only consecutive activities.
-		//if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-		//	p.Cat.setActivityAlternateState(act, ctTime)
-		//	relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
-		//	relativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
-		//	if relativeAge > relativeAgeIncumbent/2 {
-		//		p.Cat.setActivityState(act, ctTime)
-		//		return nil
-		//	}
-		//}
-
 		if act.Activity == activity.TrackerStateUnknown {
 			continue
 		}
@@ -507,8 +509,9 @@ func (c *Cat) setActivityState(act activity.Mode, t time.Time) {
 		// do something
 		return
 	}
-	c.ActivityStateStart = t
+	c.Current = act
 	c.ActivityState = act.Activity
+	c.ActivityStateStart = t
 }
 
 func (c *Cat) setActivityAlternateState(act activity.Mode, t time.Time) {
@@ -516,8 +519,8 @@ func (c *Cat) setActivityAlternateState(act activity.Mode, t time.Time) {
 		// do something
 		return
 	}
-	c.ActivityAlternateStateStart = t
 	c.ActivityAlternateState = act.Activity
+	c.ActivityAlternateStateStart = t
 }
 
 func (p *Improver) Improve(ct cattrack.CatTrack) error {

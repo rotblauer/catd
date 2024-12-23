@@ -42,14 +42,14 @@ func FilterGrounded(ct cattrack.CatTrack) bool {
 }
 
 func FilterLaps(ct cattrack.CatLap) bool {
-	duration := ct.Properties.MustFloat64("Duration", 0)
-	if duration < 120 {
-		return false
-	}
-	dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
-	if dist < 100 {
-		return false
-	}
+	//duration := ct.Properties.MustFloat64("Duration", 0)
+	//if duration < 120 {
+	//	return false
+	//}
+	//dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
+	//if dist < 100 {
+	//	return false
+	//}
 
 	// Sanity check for speed.
 	// This is a hacky workaround for a spurious pseudo-flight (ia 202411/12) that got

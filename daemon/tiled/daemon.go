@@ -149,13 +149,7 @@ func (d *TileDaemon) Start() error {
 
 	d.pendingTTLCache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *TilingRequestArgs]) {
 		d.logger.Info("Pending tiling request up", "args", item.Value().id())
-		// Reset pending if an equivalent request is still running.
-		if _, ok := d.tilingRunningM.Load(item.Key()); ok {
-			d.logger.Warn("Pending tiling request already running, skipping", "args", item.Value().id())
-			//d.pending(item.Value())
-			return
-		}
-		if err := service.callTiling(item.Value(), nil); err != nil {
+		if err := service.callTiling(item.Value(), nil); err != nil && !errors.Is(err, errTilingAlreadyRunning) {
 			d.logger.Error("Failed to run pending tiling", "error", err)
 		}
 	})
@@ -276,8 +270,8 @@ func (d *TileD) awaitPendingTileRequests() (nextPending int) {
 		res := <-results
 		// Normally, the pending request is removed from the cache by a TTL eviction.
 		// Here, we need manually remove the completed request from the pending cache.
-		d.pendingTTLCache.Delete(res.req.id())
-		if res.err != nil {
+		//d.pendingTTLCache.Delete(res.req.id())
+		if res.err != nil && !errors.Is(res.err, errTilingAlreadyRunning) {
 			d.logger.Error("Failed to run pending tiling",
 				"i", fmt.Sprintf("%d/%d", i+1, len(requests)), "req", res.req.id(), "error", res.err)
 			return
@@ -306,17 +300,12 @@ func (d *TileDaemon) pending(args *TilingRequestArgs) {
 	}
 }
 
-// storePending is the structure of a pending request in the database.
-type storePending struct {
-	At      time.Time
-	Request *TilingRequestArgs
-}
-
-// unpersistPending removes a pending request from the database.
+// unPending removes a pending request from the database.
 // It is called exclusively by the function responsible for running the request (d.callTiling).
-// FIXME: This is not thoroughly implemented. Maybe should become simply `unpending`,
+// FIXME: This is not thoroughly implemented. Maybe should become simply `unPending`,
 // and also try to remove TTL cache item (for awaitPending shutdowns).
-func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
+func (d *TileDaemon) unPending(args *TilingRequestArgs) error {
+	d.pendingTTLCache.Delete(args.id())
 	return d.db.Update(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("pending"))
 		if b == nil {
@@ -324,6 +313,12 @@ func (d *TileDaemon) unpersistPending(args *TilingRequestArgs) error {
 		}
 		return b.Delete([]byte(args.id()))
 	})
+}
+
+// storePending is the structure of a pending request in the database.
+type storePending struct {
+	At      time.Time
+	Request *TilingRequestArgs
 }
 
 // recover attempts to recover pending requests from the database.
@@ -863,26 +858,24 @@ func (d *TileD) RequestTiling(args *TilingRequestArgs, reply *TilingResponse) er
 	return nil
 }
 
+var errTilingAlreadyRunning = errors.New("tiling already running")
+
 func (d *TileD) callTiling(args *TilingRequestArgs, reply *TilingResponse) error {
 	d.logger.Debug("callTiling", "args", args.id())
+
+	d.unPending(args)
+	if _, ok := d.tilingRunningM.Load(args.id()); ok {
+		return fmt.Errorf("%w: %s", errTilingAlreadyRunning, args.id())
+	}
+	d.tilingRunningM.Store(args.id(), args)
+	defer d.tilingRunningM.Delete(args.id())
 
 	d.running.Add(1)
 	defer d.running.Done()
 
-	d.tilingRunningM.Store(args.id(), args)
-	defer d.tilingRunningM.Delete(args.id())
-
 	if reply == nil {
 		reply = &TilingResponse{}
 	}
-
-	defer func(rep *TilingResponse) {
-		//if rep.Success {
-		if err := d.unpersistPending(args); err != nil {
-			d.logger.Error("Failed to unpersist pending request", "error", err)
-		}
-		//}
-	}(reply)
 
 	if args == nil {
 		err := errors.New("nil args")

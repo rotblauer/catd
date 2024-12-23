@@ -19,13 +19,6 @@ func TestMeter(t *testing.T) {
 		t.Fatalf("have %d want %d", v, 47)
 	}
 }
-func TestGetOrRegisterMeter(t *testing.T) {
-	r := NewRegistry()
-	NewRegisteredMeter("foo", r).Mark(47)
-	if m := GetOrRegisterMeter("foo", r).Snapshot(); m.Count() != 47 {
-		t.Fatal(m.Count())
-	}
-}
 
 func TestMeterDecay(t *testing.T) {
 	ma := meterArbiter{
