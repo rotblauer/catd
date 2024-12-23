@@ -39,6 +39,8 @@ func NewEWMA15() EWMA {
 	return NewEWMA(1 - math.Exp(-5.0/60.0/15))
 }
 
+func NewEWMAN(n float64) EWMA { return NewEWMA(1 - math.Exp(-5.0/60.0/n)) }
+
 // ewmaSnapshot is a read-only copy of another EWMA.
 type ewmaSnapshot float64
 

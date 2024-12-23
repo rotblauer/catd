@@ -62,8 +62,9 @@ func (f *TeleportationFilter) Filter(ctx context.Context, in <-chan cattrack.Cat
 			// If the calculated speed exceeds the reported speed by X factor, it's a teleportation point.
 			calculatedSpeed := dist / interval.Seconds()
 			reportedSpeed := track.Properties.MustFloat64("Speed")
+			modifiedTeleportFactor := params.DefaultCleanConfig.TeleportSpeedFactor / track.Properties.MustFloat64("TimeOffset", 1)
 			if dist > params.DefaultCleanConfig.TeleportMinDistance &&
-				calculatedSpeed > reportedSpeed*params.DefaultCleanConfig.TeleportSpeedFactor {
+				calculatedSpeed > reportedSpeed*modifiedTeleportFactor {
 
 				//lastTime = trackTime
 				//lastPoint = track.Point()
