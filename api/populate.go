@@ -92,6 +92,8 @@ func (c *Cat) SubscribeFancyLogs() {
 
 // Populate persists incoming CatTracks for one cat.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
+	var cancelCtx context.CancelFunc
+	ctx, cancelCtx = context.WithCancel(ctx)
 
 	c.SubscribeFancyLogs()
 
@@ -223,47 +225,58 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	c.logger.Info("Blocking on store cat tracks+snaps gz")
 	handledErrorsN := 0
 	for {
+		var err error
+		var open bool
 		select {
-		case err, open := <-storeErrs:
+		case err, open = <-storeErrs:
 			if err != nil {
-				return fmt.Errorf("storeErrs: %w", err)
+				err = fmt.Errorf("storeErrs: %w", err)
+				break
 			}
 			if !open {
 				handledErrorsN++
 				storeErrs = nil
 			}
-		case err, open := <-snapErrs:
+		case err, open = <-snapErrs:
 			if err != nil {
-				return fmt.Errorf("snapErrs: %w", err)
+				err = fmt.Errorf("snapErrs: %w", err)
+				break
 			}
 			if !open {
 				handledErrorsN++
 				snapErrs = nil
 			}
-		case err, open := <-sinkSnapErrs:
+		case err, open = <-sinkSnapErrs:
 			if err != nil {
-				return fmt.Errorf("sinkSnapErrs: %w", err)
+				err = fmt.Errorf("sinkSnapErrs: %w", err)
+				break
 			}
 			if !open {
 				handledErrorsN++
 				sinkSnapErrs = nil
 			}
-		case err, open := <-sendSnapErrs:
+		case err, open = <-sendSnapErrs:
 			if err != nil {
-				return fmt.Errorf("sendSnapErrs: %w", err)
+				err = fmt.Errorf("sendSnapErrs: %w", err)
+				break
 			}
 			if !open {
 				handledErrorsN++
 				sendSnapErrs = nil
 			}
-		case err, open := <-pipeLineErrs:
+		case err, open = <-pipeLineErrs:
 			if err != nil {
-				return fmt.Errorf("pipeLineErrs: %w", err)
+				err = fmt.Errorf("pipeLineErrs: %w", err)
+				break
 			}
 			if !open {
 				handledErrorsN++
 				pipeLineErrs = nil
 			}
+		}
+		if err != nil {
+			cancelCtx()
+			return err
 		}
 		if handledErrorsN == 5 {
 			break
