@@ -59,6 +59,7 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 				if n == 0 {
 					s.logger.Info("First track", "track", ct)
 					first <- *ct
+					close(first)
 				}
 				n++
 				tracks <- *ct
