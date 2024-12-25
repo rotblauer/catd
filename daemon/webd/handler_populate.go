@@ -2,6 +2,7 @@ package webd
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/rotblauer/catd/api"
@@ -9,13 +10,14 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types"
 	"github.com/rotblauer/catd/types/cattrack"
+	"io"
 	"net/http"
 )
 
 // populate is a handler for the /populate endpoint.
-// It is where Cat Tracks get posted and persisted for-ev-er.
+// It is where Cat Tracks get posted.
 // Due to legacy support requirements it supports a variety of input formats.
-// Android (GCPS) posts a GeoJSON FeatureCollection.
+// Android (GCPS) posts a GeoJSON FeatureCollection (object).
 // iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
 func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 	var err error
@@ -25,7 +27,18 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	buf := bufio.NewReader(r.Body)
+	cp := new(bytes.Buffer)
+	tee := io.TeeReader(r.Body, cp)
+	i, err := api.Master(s.Config.DataDir, tee)
+	if err != nil {
+		s.logger.Error("Failed to master", "error", err)
+		http.Error(w, "Failed to master", http.StatusInternalServerError)
+		return
+	} else {
+		s.logger.Info("Mastered", "bytes", i, "path", params.MasterGZFileName)
+	}
+
+	buf := bufio.NewReader(cp)
 	peek, _ := buf.Peek(80)
 	s.logger.Info("Peeked request body", "peek", fmt.Sprintf("%s...", peek))
 

@@ -334,7 +334,9 @@ func sendToCatTileD[T any](ctx context.Context, c *Cat, args *tiled.PushFeatures
 	return nil
 }
 
-// sinkStreamToJSONGZWriter sinks a stream of T encoded as JSON to some GZ writer.
+// sinkStreamToJSONGZWriter sinks a stream of T encoded as JSON to an adhoc gzip.Writer on wr.
+// The gzip writer is closed before returning, and uses the default compression level.
+// It is a blocking function, and returns the number of items written and/or the first error.
 func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer func() {
 		if items > 0 || err != nil {
@@ -360,6 +362,8 @@ func sinkStreamToJSONGZWriter[T any](ctx context.Context, wr io.Writer, in <-cha
 	return items, err
 }
 
+// sinkStreamToJSONWriter sinks a stream of T encoded as JSON to wr.
+// It is a blocking function, and returns the number of items encoded and/or the first error.
 func sinkStreamToJSONWriter[T any](ctx context.Context, wr io.Writer, in <-chan T) (items int, err error) {
 	defer func() {
 		if items > 0 || err != nil {

@@ -30,7 +30,7 @@ type GZFileWriterConfig struct {
 func DefaultGZFileWriterConfig() *GZFileWriterConfig {
 	return &GZFileWriterConfig{
 		CompressionLevel: params.DefaultGZipCompressionLevel,
-		Flag:             os.O_WRONLY | os.O_APPEND | os.O_CREATE,
+		Flag:             os.O_CREATE | os.O_WRONLY | os.O_APPEND,
 		FilePerm:         0660,
 		DirPerm:          0770,
 	}
@@ -225,13 +225,19 @@ func (g *GZFileReader) MaybeClose() {
 	_ = g.Close()
 }
 
+// scan100MB is the maximum buffer size for the LineCount bufio.Scanner.
+// This is mostly used in tests.
+const scan100MB = 1024 * 1024 * 100
+
 func (g *GZFileReader) LineCount() (int, error) {
 	if err := g.lockSH(); err != nil {
 		return 0, err
 	}
 	defer g.unlock()
 	count := 0
+	buf := make([]byte, 0, 64*1024)
 	scanner := bufio.NewScanner(g.Reader())
+	scanner.Buffer(buf, scan100MB)
 	for scanner.Scan() {
 		count++
 	}

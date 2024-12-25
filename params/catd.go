@@ -29,12 +29,12 @@ const (
 	// CatSnapsDir is the cats/<catID>/"snaps"/ subdirectory name, nested under the catID.
 	CatSnapsSubdir = "snaps"
 
-	MasterTracksGZFileName = "master.geojson.gz"
-	TracksGZFileName       = "tracks.geojson.gz"
-	LastTracksGZFileName   = "last_tracks.geojson.gz"
-	SnapsGZFileName        = "snaps.geojson.gz"
-	LapsGZFileName         = "laps.geojson.gz"
-	NapsGZFileName         = "naps.geojson.gz"
+	MasterGZFileName     = "master.json.gz"
+	TracksGZFileName     = "tracks.geojson.gz"
+	LastTracksGZFileName = "last_tracks.geojson.gz"
+	SnapsGZFileName      = "snaps.geojson.gz"
+	LapsGZFileName       = "laps.geojson.gz"
+	NapsGZFileName       = "naps.geojson.gz"
 )
 
 var DefaultDatadirRoot = func() string {
