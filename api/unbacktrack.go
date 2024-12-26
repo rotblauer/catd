@@ -174,11 +174,7 @@ func (c *Cat) Unbacktrack(ctx context.Context, in <-chan cattrack.CatTrack) (<-c
 		onceJamaisVu.Do(func() {
 			c.logger.Info("Jamais vu: track outside cat/uuid window", "track", ct.StringPretty(), "first", catWindow.First, "last", catWindow.Last)
 		})
-		if t.After(popWindow.Last) {
-			popWindow.Last = t
-		} else if t.Before(popWindow.First) {
-			popWindow.First = t
-		}
+		popWindow.Extend(t)
 		popUUIDWindowMap.Store(uuid, popWindow)
 		return true
 	}, in)
@@ -199,12 +195,13 @@ func logUUIDWindowMap(logger *slog.Logger, m uuidWindowMap, prefix string) {
 		shortWindow := window.Duration() < 24*time.Hour
 		if shortWindow {
 			shortWindows++
+			if shortWindowsLogged < shortWindowsLogMax {
+				logger.Warn(prefix+"UUID window (short)", "uuid", uuid, "window", window.String())
+				shortWindowsLogged++
+			}
+		} else {
+			logger.Info(prefix+"UUID window", "uuid", uuid, "window", window.String())
 		}
-		if shortWindowsLogged < shortWindowsLogMax && shortWindow {
-			logger.Warn(prefix+"UUID window (short)", "uuid", uuid, "window", window.String())
-			shortWindowsLogged++
-		}
-		logger.Info(prefix+"UUID window", "uuid", uuid, "window", window.String())
 	}
 	if shortWindows > shortWindowsLogMax {
 		logger.Warn(prefix+"UUID window (short)", "count", shortWindows)
