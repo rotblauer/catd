@@ -16,7 +16,7 @@ import (
 
 // populate is a handler for the /populate endpoint.
 // It is where Cat Tracks get posted.
-// Due to legacy support requirements it supports a variety of input formats.
+// It supports a variety of input formats;
 // Android (GCPS) posts a GeoJSON FeatureCollection (object).
 // iOS (v.CustomizeableCatHat) posts an array of O.G. TrackPoints.
 func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,8 @@ tdata() {
 #     zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 
+    zcat "${HOME}/tdata/local/yyyy-mm/2023-07"*.gz
+
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
@@ -41,9 +43,9 @@ tdata() {
 #    for f in $(seq -f "%02g" 5 10); do
 #      zcat "${HOME}/tdata/local/yyyy-mm/2024-${f}"*.gz
 #    done
-      for f in $(seq -f "%02g" 22 24); do
-        zcat "${HOME}/tdata/local/yyyy-mm/20${f}"*.gz
-      done
+#       for f in $(seq -f "%02g" 22 24); do
+#         zcat "${HOME}/tdata/local/yyyy-mm/20${f}"*.gz
+#       done
 }
 
 bump_tileservice() {
