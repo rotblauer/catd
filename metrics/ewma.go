@@ -104,3 +104,62 @@ func (a *StandardEWMA) updateRate(instantRate float64) {
 func (a *StandardEWMA) Update(n int64) {
 	a.uncounted.Add(n)
 }
+
+// NonStandardEWMA is a non-standard implementation of an EWMA and tracks the number
+// of uncounted events and processes them on each tick.  It uses the
+// sync/atomic package to manage uncounted events.
+// Differentially from StandardEWMA, it does not assume a 5-second tick;
+// rather an interval of time is passed to the Tick method.
+type NonStandardEWMA struct {
+	uncounted atomic.Int64
+	alpha     float64
+	rate      atomic.Uint64
+	init      atomic.Bool
+	mutex     sync.Mutex
+}
+
+// Snapshot returns a read-only copy of the EWMA.
+func (a *NonStandardEWMA) Snapshot() EWMASnapshot {
+	r := math.Float64frombits(a.rate.Load()) * float64(time.Second)
+	return ewmaSnapshot(r)
+}
+
+// Tick ticks the clock to update the moving average.  It assumes it is called
+// every five seconds.
+func (a *NonStandardEWMA) Tick(interval time.Duration) {
+	// Optimization to avoid mutex locking in the hot-path.
+	if a.init.Load() {
+		a.updateRate(a.fetchInstantRate(interval))
+		return
+	}
+	// Slow-path: this is only needed on the first Tick() and preserves transactional updating
+	// of init and rate in the else block. The first conditional is needed below because
+	// a different thread could have set a.init = 1 between the time of the first atomic load and when
+	// the lock was acquired.
+	a.mutex.Lock()
+	if a.init.Load() {
+		// The fetchInstantRate() uses atomic loading, which is unnecessary in this critical section
+		// but again, this section is only invoked on the first successful Tick() operation.
+		a.updateRate(a.fetchInstantRate(interval))
+	} else {
+		a.init.Store(true)
+		a.rate.Store(math.Float64bits(a.fetchInstantRate(interval)))
+	}
+	a.mutex.Unlock()
+}
+
+func (a *NonStandardEWMA) fetchInstantRate(interval time.Duration) float64 {
+	count := a.uncounted.Swap(0)
+	return float64(count) / float64(interval)
+}
+
+func (a *NonStandardEWMA) updateRate(instantRate float64) {
+	currentRate := math.Float64frombits(a.rate.Load())
+	currentRate += a.alpha * (instantRate - currentRate)
+	a.rate.Store(math.Float64bits(currentRate))
+}
+
+// Update adds n uncounted events.
+func (a *NonStandardEWMA) Update(n int64) {
+	a.uncounted.Add(n)
+}
