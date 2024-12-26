@@ -418,8 +418,8 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	p.Cat.push(ct)
 
 	// The activity modes, by time, in descending order.
-	//sortedActsKnown := p.Cat.SortedActsKnown()
-	sortedActsAll := p.Cat.SortedActsAll()
+	sortedActsKnown := p.Cat.SortedActsKnown()
+	//sortedActsAll := p.Cat.SortedActsAll()
 
 	// This is definitely an UN-improver. Don't use, but remember.
 	//if p.isNapLapTransition(ct) {
@@ -449,63 +449,55 @@ func (p *Improver) improve(ct WrappedTrack) error {
 	}
 	p.Cat.ActivityStateLastCheck = ctTime
 
-	for i, act := range sortedActsAll {
-		if act.Scalar <= 0 {
-			continue
-		}
+	act := sortedActsKnown[0]
 
-		// Blend running:walking, driving:cycling, preferring a long-term incumbent
-		// until a continuing alternative overtakes the majority of the incumbent.
-		// Note that above, in the case of a repeat activity mode (same state as current),
-		// the alternate state is cleared, so this measures only consecutive activities.
-		if act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-			p.Cat.setActivityAlternateState(act, ctTime)
-			relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
-			alternateRelativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
-			if alternateRelativeAge > relativeAgeIncumbent/2 {
-				p.Cat.setActivityState(act, ctTime)
-				return nil
-			}
-		}
-
-		// Same state? Continuity preferred. Return early.
-		if act.Activity == p.Cat.ActivityState {
-			// Clear any alternate realities.
-			//p.Cat.setActivityAlternateState(p.Cat.Unknown, ctTime)
+	// Blend running:walking, driving:cycling, preferring a long-term incumbent
+	// until a continuing alternative overtakes the majority of the incumbent.
+	// Note that above, in the case of a repeat activity mode (same state as current),
+	// the alternate state is cleared, so this measures only consecutive activities.
+	if act.Activity != p.Cat.ActivityState && act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
+		p.Cat.setActivityAlternateState(act, ctTime)
+		relativeAgeIncumbent := ctTime.Sub(p.Cat.ActivityStateStart)
+		alternateRelativeAge := ctTime.Sub(p.Cat.ActivityAlternateStateStart)
+		if alternateRelativeAge > relativeAgeIncumbent/2 {
+			p.Cat.setActivityState(act, ctTime)
 			return nil
 		}
+	}
 
-		// Here we get to fix stationary-labeled tracks that are actually moving.
-		// Empirically, stationary tracks are most often mislabeled for
-		// driving, rafting, and flying. Sometimes cycling. Hardly ever walking or running.
-		if i == 0 && !act.Activity.IsActive() && p.Cat.ActivityState.IsActive() {
-			meanSpeed := p.Cat.WindowSpeedCalculatedSum / p.Cat.WindowSpan.Seconds()
-			if meanSpeed > common.SpeedOfDrivingHighwayMin*2 {
-				p.Cat.setActivityState(p.Cat.Flying, ctTime)
-				return nil
-			} else if meanSpeed > common.SpeedOfDrivingMin {
-				p.Cat.setActivityState(p.Cat.Driving, ctTime)
-				return nil
-			} else if meanSpeed > common.SpeedOfCyclingMin {
-				//p.Cat.setActivityState(p.Cat.Cycling, ctTime)
-				return nil
-			}
-			if meanSpeed < common.SpeedOfWalkingSlow {
-				p.Cat.setActivityState(act, ctTime)
-				return nil
-			} else {
-				return nil
-			}
-		}
-
-		if act.Activity == activity.TrackerStateUnknown {
-			continue
-		}
-
-		// Different states.
+	if act.Activity.IsActive() {
 		p.Cat.setActivityState(act, ctTime)
 		return nil
 	}
+
+	// Else: act is inactive (== Stationary).
+	speedRep := p.Cat.WindowSpeedReportedSum / p.Cat.WindowSpan.Seconds()
+	speedCalc := p.Cat.WindowSpeedCalculatedSum / p.Cat.WindowSpan.Seconds()
+	speed := ((speedRep * 1.0) + (speedCalc * 1.0)) / 2
+	if speed > p.Config.SpeedThreshold {
+		if speed > common.SpeedOfDrivingAutobahn {
+			p.Cat.setActivityState(p.Cat.Flying, ctTime)
+			return nil
+		}
+		if speed > common.SpeedOfCyclingMax {
+			p.Cat.setActivityState(p.Cat.Driving, ctTime)
+			return nil
+		}
+		if speed > common.SpeedOfRunningMax {
+			p.Cat.setActivityState(p.Cat.Cycling, ctTime)
+			return nil
+		}
+		if speed > common.SpeedOfWalkingMax {
+			p.Cat.setActivityState(p.Cat.Running, ctTime)
+			return nil
+		}
+		if p.Cat.WindowHeadingDeltaCalculatedSum/p.Cat.WindowSpan.Seconds() < 45/p.Cat.WindowSpan.Seconds() {
+			p.Cat.setActivityState(p.Cat.Walking, ctTime)
+		}
+		return nil
+	}
+
+	p.Cat.setActivityState(p.Cat.Stationary, ctTime)
 
 	return nil
 }

@@ -36,11 +36,11 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	// Clean and improve tracks for pipeline handlers.
 	wOffsets := cattrack.WithTimeOffset(ctx, in)
-	cleaned := c.CleanTracks(ctx, wOffsets)
 
+	cleaned := c.CleanTracks(ctx, wOffsets)
 	//cleanDebug, cleanPass := stream.Tee[cattrack.CatTrack](ctx, cleaned)
 
-	////// P.S. Don't send all tracks to tiled unless development?
+	//////// P.S. Don't send all tracks to tiled unless development?
 	//go func() {
 	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 	//		SourceSchema: tiled.SourceSchema{
@@ -56,11 +56,11 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	//	}
 	//}()
 
-	//pipeliners, toImprove := stream.Tee(ctx, cleanPass)
 	improved := c.ImprovedActTracks(ctx, cleaned)
+	//improved := c.ImprovedActTracks(ctx, cleanPass)
 	//improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
 
-	////// P.S. Don't send all tracks to tiled unless development?
+	//////// P.S. Don't send all tracks to tiled unless development?
 	//go func() {
 	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
 	//		SourceSchema: tiled.SourceSchema{
@@ -71,11 +71,12 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	//		TippeConfigName: params.TippeConfigNameTracks,
 	//		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
 	//		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//	}, improved); err != nil {
+	//	}, improvedDebug); err != nil {
 	//		c.logger.Error("Failed to send tracks", "error", err)
 	//	}
 	//}()
 
+	//pipeliners := improvedPass
 	pipeliners := improved
 	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)

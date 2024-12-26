@@ -27,7 +27,8 @@ tdata() {
 #     zcat "${HOME}/tdata/local/yyyy-mm/2021"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2022"*.gz
 
-    zcat "${HOME}/tdata/local/yyyy-mm/2023-07"*.gz
+#     zcat "${HOME}/tdata/local/yyyy-mm/2023-07"*.gz
+    zcat "${HOME}/tdata/local/yyyy-mm/2024-08"*.gz
 
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
