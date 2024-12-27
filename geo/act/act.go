@@ -491,9 +491,7 @@ func (p *Improver) improve(ct WrappedTrack) error {
 			p.Cat.setActivityState(p.Cat.Running, ctTime)
 			return nil
 		}
-		if p.Cat.WindowHeadingDeltaCalculatedSum/p.Cat.WindowSpan.Seconds() < 45/p.Cat.WindowSpan.Seconds() {
-			p.Cat.setActivityState(p.Cat.Walking, ctTime)
-		}
+		p.Cat.setActivityState(p.Cat.Walking, ctTime)
 		return nil
 	}
 
