@@ -30,8 +30,9 @@ type ActDiscretionConfig struct {
 }
 
 var DefaultActImproverConfig = &ActDiscretionConfig{
-	Interval:       20 * time.Second,
-	ResetInterval:  2 * time.Minute,
+	Interval:      60 * time.Second,
+	ResetInterval: 5 * time.Minute,
+	//Distance:       0.42 * 60,
 	SpeedThreshold: common.SpeedOfWalkingMin,
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/rotblauer/catd/common"
 	"github.com/rotblauer/catd/conceptual"
 	"github.com/rotblauer/catd/names"
+	"github.com/rotblauer/catd/types/activity"
 	"math"
 	"strings"
 	"time"
@@ -101,6 +102,10 @@ func (ct *CatTrack) CatID() conceptual.CatID {
 		ct.Properties.MustString("Name", names.UknownName)))
 }
 
+func (ct *CatTrack) MustActivity() activity.Activity {
+	return activity.FromString(ct.Properties.MustString("Activity", ""))
+}
+
 // Time
 // Here's a big deal.
 // Cat Tracks only deals in tracks with a granularity of 1 second.
@@ -178,7 +183,7 @@ func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 }
 
 // Point returns the Point a cat is or was at.
-func (ct *CatTrack) Point() orb.Point {
+func (ct CatTrack) Point() orb.Point {
 	return ct.Geometry.Bound().Center()
 }
 

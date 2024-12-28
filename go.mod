@@ -17,6 +17,7 @@ require (
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe
 	github.com/olahol/melody v1.2.1
 	github.com/paulmach/orb v0.11.1
+	github.com/regnull/kalman v0.0.0-20200908141424-10753ec93999
 	github.com/sams96/rgeo v1.2.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/spf13/cobra v1.8.1
@@ -61,6 +62,7 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
+	gonum.org/v1/gonum v0.8.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

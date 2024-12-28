@@ -39,7 +39,12 @@ func NewEWMA15() EWMA {
 	return NewEWMA(1 - math.Exp(-5.0/60.0/15))
 }
 
-func NewEWMAN(n float64) EWMA { return NewEWMA(1 - math.Exp(-5.0/60.0/n)) }
+// AlphaEWMA returns the alpha value for n minutes.
+func AlphaEWMA(n float64) float64 { return 1 - math.Exp(-5.0/60.0/n) }
+
+func NewNonStandardEWMA(alpha float64, interval time.Duration) EWMA {
+	return &NonStandardEWMA{alpha: alpha, interval: interval}
+}
 
 // ewmaSnapshot is a read-only copy of another EWMA.
 type ewmaSnapshot float64
@@ -106,14 +111,14 @@ func (a *StandardEWMA) Update(n int64) {
 }
 
 // NonStandardEWMA is a non-standard implementation of an EWMA and tracks the number
-// of uncounted events and processes them on each tick.  It uses the
-// sync/atomic package to manage uncounted events.
-// Differentially from StandardEWMA, it does not assume a 5-second tick;
-// rather an interval of time is passed to the Tick method.
+// of uncounted events and processes them on each tick.
+// Differentially from StandardEWMA, it provides a method to update the rate
+// based on the interval between ticks.
 type NonStandardEWMA struct {
 	uncounted atomic.Int64
 	alpha     float64
 	rate      atomic.Uint64
+	interval  time.Duration
 	init      atomic.Bool
 	mutex     sync.Mutex
 }
@@ -126,10 +131,10 @@ func (a *NonStandardEWMA) Snapshot() EWMASnapshot {
 
 // Tick ticks the clock to update the moving average.  It assumes it is called
 // every five seconds.
-func (a *NonStandardEWMA) Tick(interval time.Duration) {
+func (a *NonStandardEWMA) Tick() {
 	// Optimization to avoid mutex locking in the hot-path.
 	if a.init.Load() {
-		a.updateRate(a.fetchInstantRate(interval))
+		a.updateRate(a.fetchInstantRate(a.interval))
 		return
 	}
 	// Slow-path: this is only needed on the first Tick() and preserves transactional updating
@@ -140,10 +145,10 @@ func (a *NonStandardEWMA) Tick(interval time.Duration) {
 	if a.init.Load() {
 		// The fetchInstantRate() uses atomic loading, which is unnecessary in this critical section
 		// but again, this section is only invoked on the first successful Tick() operation.
-		a.updateRate(a.fetchInstantRate(interval))
+		a.updateRate(a.fetchInstantRate(a.interval))
 	} else {
 		a.init.Store(true)
-		a.rate.Store(math.Float64bits(a.fetchInstantRate(interval)))
+		a.rate.Store(math.Float64bits(a.fetchInstantRate(a.interval)))
 	}
 	a.mutex.Unlock()
 }
@@ -162,4 +167,8 @@ func (a *NonStandardEWMA) updateRate(instantRate float64) {
 // Update adds n uncounted events.
 func (a *NonStandardEWMA) Update(n int64) {
 	a.uncounted.Add(n)
+}
+
+func (a *NonStandardEWMA) SetInterval(interval time.Duration) {
+	a.interval = interval
 }

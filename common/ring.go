@@ -158,6 +158,7 @@ func (rb *SortingRingBuffer[T]) Add(value T) {
 	}
 }
 
+// sort introduces some serious big O complexity.
 func (rb *SortingRingBuffer[T]) sort() {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
