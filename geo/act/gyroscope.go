@@ -1,7 +1,7 @@
 package act
 
 import (
-	"github.com/paulmach/orb/geojson"
+	"github.com/rotblauer/catd/types/cattrack"
 	"math"
 	"time"
 )
@@ -13,10 +13,10 @@ var GyroscopeStableThresholdTime = 30 * time.Second
 // isGyroscopicallyStable returns true if the feature is considered stable by the gyroscope.
 // Valid is returned true only if all gyroscope attributes exist on the feature.
 // Only gcps (the Android cat tracker) will have gyroscope readings.
-func isGyroscopicallyStable(f *geojson.Feature) (stable, valid bool) {
+func isGyroscopicallyStable(ct *cattrack.CatTrack) (stable, valid bool) {
 	sum := 0.0
 	for _, prop := range gyroscopeProps {
-		v, ok := f.Properties[prop]
+		v, ok := ct.Properties[prop]
 		if !ok {
 			return false, false
 		}

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"github.com/rotblauer/catd/daemon/tiled"
 	"github.com/rotblauer/catd/geo/clean"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
@@ -38,46 +39,46 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 	wOffsets := cattrack.WithTimeOffset(ctx, in)
 
 	cleaned := c.CleanTracks(ctx, wOffsets)
-	//cleanDebug, cleanPass := stream.Tee[cattrack.CatTrack](ctx, cleaned)
+	cleanDebug, cleanPass := stream.Tee[cattrack.CatTrack](ctx, cleaned)
 
-	//////// P.S. Don't send all tracks to tiled unless development?
-	//go func() {
-	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-	//		SourceSchema: tiled.SourceSchema{
-	//			CatID:      c.CatID,
-	//			SourceName: "tracks",
-	//			LayerName:  "tracks",
-	//		},
-	//		TippeConfigName: params.TippeConfigNameTracks,
-	//		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-	//		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//	}, cleanDebug); err != nil {
-	//		c.logger.Error("Failed to send tracks", "error", err)
-	//	}
-	//}()
+	////// P.S. Don't send all tracks to tiled unless development?
+	go func() {
+		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "tracks",
+				LayerName:  "tracks",
+			},
+			TippeConfigName: params.TippeConfigNameTracks,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, cleanDebug); err != nil {
+			c.logger.Error("Failed to send tracks", "error", err)
+		}
+	}()
 
-	improved := c.ImprovedActTracks(ctx, cleaned)
-	//improved := c.ImprovedActTracks(ctx, cleanPass)
-	//improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
+	//improved := c.ImprovedActTracks(ctx, cleaned)
+	improved := c.ImprovedActTracks(ctx, cleanPass)
+	improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
 
-	//////// P.S. Don't send all tracks to tiled unless development?
-	//go func() {
-	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-	//		SourceSchema: tiled.SourceSchema{
-	//			CatID:      c.CatID,
-	//			SourceName: "tracks-improved",
-	//			LayerName:  "tracks-improved",
-	//		},
-	//		TippeConfigName: params.TippeConfigNameTracks,
-	//		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-	//		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//	}, improvedDebug); err != nil {
-	//		c.logger.Error("Failed to send tracks", "error", err)
-	//	}
-	//}()
+	////// P.S. Don't send all tracks to tiled unless development?
+	go func() {
+		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "tracks-improved",
+				LayerName:  "tracks-improved",
+			},
+			TippeConfigName: params.TippeConfigNameTracks,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, improvedDebug); err != nil {
+			c.logger.Error("Failed to send tracks", "error", err)
+		}
+	}()
 
-	//pipeliners := improvedPass
-	pipeliners := improved
+	pipeliners := improvedPass
+	//pipeliners := improved
 	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	simpleIndexerCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)

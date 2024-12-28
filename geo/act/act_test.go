@@ -47,7 +47,7 @@ func TestProbableCat_Add(t *testing.T) {
 
 		kalmanVReportDist := geo.Distance(pc.Pos.KalmanPt, ct.Point())
 
-		t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f Δ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f\n`,
+		t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f Δ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
 			pc.Pos.Activity,
 			ct.Point().Lon(),
 			pc.Pos.KalmanPt.Lon(),
@@ -56,9 +56,10 @@ func TestProbableCat_Add(t *testing.T) {
 			kalmanVReportDist,
 			wt(ct).Speed(),
 			pc.Pos.KalmanSpeed,
-			pc.Pos.SpeedRate,
-			pc.Pos.accuracyRate,
+			pc.Pos.speed.Snapshot().Rate(),
+			pc.Pos.accuracy.Snapshot().Rate(),
 			geo.Distance(pc.Pos.NapPt, ct.Point()),
+			pc.Pos.headingDelta.Snapshot().Rate(),
 		)
 	}
 }
