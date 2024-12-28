@@ -35,6 +35,9 @@ type Pos struct {
 	Activity activity.Activity
 	NapPt    orb.Point
 
+	StationaryStart time.Time
+	ActiveStart     time.Time
+
 	observed int32
 }
 
@@ -145,6 +148,9 @@ func (p *ProbableCat) Reset(wt wt) {
 		accuracy:     metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 		headingDelta: metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 	}
+	if !p.Pos.Activity.IsActive() {
+		p.Pos.NapPt = cattrack.CatTrack(wt).Point()
+	}
 	p.Pos.speed.Update(int64(math.Round(wt.Speed())))
 	p.Pos.speed.SetInterval(time.Second)
 	p.Pos.speed.Tick()
@@ -202,7 +208,7 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	if minSpeed < p.Config.SpeedThreshold {
 		isStationary += 1.0
 	} else {
-		isStationary -= (minSpeed - p.Config.SpeedThreshold)
+		isStationary -= (minSpeed - p.Config.SpeedThreshold) / p.Config.SpeedThreshold
 	}
 	if ctAct.IsKnown() && !ctAct.IsActive() {
 		isStationary += 1.0
@@ -212,22 +218,37 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 
 	if isStationary > 1 {
 		p.Pos.NapPt = p.Pos.KalmanPt
-		p.Pos.Activity = activity.TrackerStateStationary
-		return nil
-	} else if isStationary < -1 {
-		if !ctAct.IsKnown() || !ctAct.IsActive() {
-			p.Pos.Activity = fallbackActForSpeed(minSpeed)
+
+		if p.Pos.StationaryStart.IsZero() {
+			p.Pos.StationaryStart = ct.MustTime()
+		} else if ct.MustTime().Sub(p.Pos.StationaryStart) > p.Config.Interval {
+			// Enforcing stationary; timeout elapsed.
+			p.Pos.ActiveStart = time.Time{}
+			p.Pos.Activity = activity.TrackerStateStationary
 			return nil
 		}
-		p.Pos.Activity = ctAct
+	}
+	if isStationary < -1 {
+		if p.Pos.ActiveStart.IsZero() {
+			p.Pos.ActiveStart = ct.MustTime()
+		} else if ct.MustTime().Sub(p.Pos.ActiveStart) > p.Config.Interval {
+			// Enforcing active; timeout elapsed.
+			p.Pos.StationaryStart = time.Time{}
+			p.Pos.Activity = mustActiveActivity(ctAct, minSpeed)
+			return nil
+		}
 		return nil
 	}
+
 	p.Pos.Activity = ct.MustActivity()
 
 	return nil
 }
 
-func fallbackActForSpeed(speed float64) activity.Activity {
+func mustActiveActivity(act activity.Activity, speed float64) activity.Activity {
+	if act.IsActive() {
+		return act
+	}
 	if speed > common.SpeedOfDrivingAutobahn {
 		return activity.TrackerStateFlying
 	}
