@@ -54,7 +54,7 @@ func TestProbableCat_Add(t *testing.T) {
 			ct.Point().Lat(),
 			pc.Pos.KalmanPt.Lat(),
 			kalmanVReportDist,
-			wt(ct).Speed(),
+			wt(ct).SafeSpeed(),
 			pc.Pos.KalmanSpeed,
 			pc.Pos.speed.Snapshot().Rate(),
 			pc.Pos.accuracy.Snapshot().Rate(),

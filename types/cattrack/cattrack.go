@@ -213,6 +213,12 @@ func Sanitize(ct CatTrack) CatTrack {
 			delete(ct.Properties, k)
 		}
 	}
+
+	// Truncate accuracy precision to 1 meter. Save space.
+	accuracy := ct.Properties.MustFloat64("Accuracy", 0)
+	accuracy = common.DecimalToFixed(accuracy, 0)
+	ct.Properties["Accuracy"] = accuracy
+
 	// The bounding box of a point is useless.
 	// Only the GCPS client includes this, as an artifcat of its geojson lib.
 	if ct.BBox != nil {

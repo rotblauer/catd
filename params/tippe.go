@@ -151,18 +151,19 @@ var (
 		"--include", "Alias",
 		"--include", "UUID",
 		"--include", "Name",
+		"--include", "Accuracy",
+		"-EAccuracy:max",
 		"--include", "Activity",
 		"--include", "Elevation",
+		"-EElevation:max",
 		"--include", "Speed",
-		"--include", "Accuracy",
+		"-ESpeed:max", // mean",
 		"--include", "Heading",
 		"--include", "UnixTime",
+		"-EUnixTime:max",
 		"--include", "Time",
 		"--include", "TimeOffset",
-		"-EUnixTime:max",
-		"-EElevation:max",
-		"-ESpeed:max", // mean",
-		"-EAccuracy:mean",
+		"-ETimeOffset:sum",
 	}
 	TippeSnapsArgs = CLIFlagsT{
 		"--maximum-tile-bytes", "330000", // num bytes/tile,default: 500kb=500000
@@ -187,8 +188,8 @@ var (
 
 		"-EUnixTime:max",
 		"-EElevation:max",
-		"-ESpeed:max", // mean",
-		"-EAccuracy:mean",
+		"-ESpeed:max",
+		"-EAccuracy:max",
 	}
 	// TippeCellsArgs are for S2 cell polygons.
 	TippeCellsArgs = CLIFlagsT{

@@ -149,6 +149,11 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	//// Unbacktrack drops tracks that are older than the last known track,
 	//// or otherwise within the window of seen tracks; critically: per cat/uuid.
+	//// WARN: This WILL DROP MEANINGFUL TRACKS, and is ONLY for testing/development.
+	//// Bad network connections, or other issues, can cause clients to upload
+	//// tracks out of order, and this will drop them. See 2023-06 for some examples, eg. biking Coeur d'Alene.
+	//// Sketchy tracks/weird uploads are often associated with awesome tracks,
+	//// so better to not use this in production.
 	//unbacktracked, onCloseBack := c.Unbacktrack(ctx, noSnaps)
 	//defer func() {
 	//	if err := onCloseBack(); err != nil {

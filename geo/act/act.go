@@ -52,11 +52,11 @@ func (p *Pos) filterObserve(seconds float64, wt wt) {
 		Lat:                cattrack.CatTrack(wt).Point().Lat(),
 		Lng:                cattrack.CatTrack(wt).Point().Lon(),
 		Altitude:           wt.Properties.MustFloat64("Elevation", 0),
-		Speed:              wt.Speed(),
+		Speed:              wt.SafeSpeed(),
 		SpeedAccuracy:      0.2,
-		Direction:          wt.Heading(),
+		Direction:          wt.SafeHeading(),
 		DirectionAccuracy:  0,
-		HorizontalAccuracy: wt.Accuracy(),
+		HorizontalAccuracy: wt.SafeAccuracy(),
 		VerticalAccuracy:   2.0,
 	})
 	if err != nil {
@@ -69,19 +69,19 @@ func (p *Pos) Observe(seconds float64, wt wt) {
 
 	p.filterObserve(seconds, wt)
 
-	p.speed.Update(int64(math.Round(wt.Speed())))
+	p.speed.Update(int64(math.Round(wt.SafeSpeed())))
 	p.speed.SetInterval(time.Duration(seconds) * time.Second)
 	p.speed.Tick()
 
-	p.accuracy.Update(int64(math.Round(wt.Accuracy())))
+	p.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
 	p.accuracy.SetInterval(time.Duration(seconds) * time.Second)
 	p.accuracy.Tick()
 
-	headingDelta := math.Abs(wt.Heading() - p.lastHeading)
+	headingDelta := math.Abs(wt.SafeHeading() - p.lastHeading)
 	p.headingDelta.Update(int64(math.Round(headingDelta)))
 	p.headingDelta.SetInterval(time.Duration(seconds) * time.Second)
 	p.headingDelta.Tick()
-	p.lastHeading = wt.Heading()
+	p.lastHeading = wt.SafeHeading()
 
 	p.Last = (*cattrack.CatTrack)(&wt).MustTime()
 	p.LastTrack = cattrack.CatTrack(wt)
@@ -112,7 +112,8 @@ func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 
 type wt cattrack.CatTrack
 
-func (wt wt) Speed() float64 {
+// SafeSpeed always reports a valid speed, defaulting to 0.
+func (wt wt) SafeSpeed() float64 {
 	speed := wt.Properties.MustFloat64("Speed", 0)
 	if math.IsNaN(speed) || math.IsInf(speed, 0) {
 		return 0
@@ -120,7 +121,16 @@ func (wt wt) Speed() float64 {
 	return math.Max(0, speed)
 }
 
-func (wt wt) Accuracy() float64 {
+// UnsafeSpeed reports the speed, defaulting to -1 (unknown).
+func (wt wt) UnsafeSpeed() float64 {
+	speed := wt.Properties.MustFloat64("Speed", -1)
+	if math.IsNaN(speed) || math.IsInf(speed, 0) {
+		return -1
+	}
+	return speed
+}
+
+func (wt wt) SafeAccuracy() float64 {
 	accuracy := wt.Properties.MustFloat64("Accuracy", 100)
 	if math.IsNaN(accuracy) || math.IsInf(accuracy, 0) {
 		return 100
@@ -128,12 +138,22 @@ func (wt wt) Accuracy() float64 {
 	return math.Max(1, accuracy)
 }
 
-func (wt wt) Heading() float64 {
+// SafeHeading always reports a valid heading, defaulting to 0 (north).
+func (wt wt) SafeHeading() float64 {
 	heading := wt.Properties.MustFloat64("Heading", 0)
 	if math.IsNaN(heading) || math.IsInf(heading, 0) {
 		return 0
 	}
 	return math.Max(0, heading)
+}
+
+// UnsafeHeading reports the heading, defaulting to -1 (unknown).
+func (wt wt) UnsafeHeading() float64 {
+	heading := wt.Properties.MustFloat64("Heading", -1)
+	if math.IsNaN(heading) || math.IsInf(heading, 0) {
+		return -1
+	}
+	return heading
 }
 
 func (p *ProbableCat) Reset(wt wt) {
@@ -143,7 +163,7 @@ func (p *ProbableCat) Reset(wt wt) {
 		Activity: (*cattrack.CatTrack)(&wt).MustActivity(),
 		filter: NewRKalmanFilter(
 			cattrack.CatTrack(wt).Point().Lat(),
-			wt.Speed(),
+			wt.SafeSpeed(),
 			0.1,
 		),
 		KalmanPt:     cattrack.CatTrack(wt).Point(),
@@ -154,13 +174,13 @@ func (p *ProbableCat) Reset(wt wt) {
 	if !p.Pos.Activity.IsActive() {
 		p.Pos.NapPt = cattrack.CatTrack(wt).Point()
 	}
-	p.Pos.speed.Update(int64(math.Round(wt.Speed())))
+	p.Pos.speed.Update(int64(math.Round(wt.SafeSpeed())))
 	p.Pos.speed.SetInterval(time.Second)
 	p.Pos.speed.Tick()
-	p.Pos.accuracy.Update(int64(math.Round(wt.Accuracy())))
+	p.Pos.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
 	p.Pos.accuracy.SetInterval(time.Second)
 	p.Pos.accuracy.Tick()
-	p.Pos.lastHeading = wt.Heading()
+	p.Pos.lastHeading = wt.SafeHeading()
 	p.Pos.LastTrack = cattrack.CatTrack(wt)
 	atomic.AddInt32(&p.Pos.observed, 1)
 }
@@ -203,9 +223,9 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	//accuracyRate := p.Pos.accuracy.Snapshot().Rate()
 
 	ctAct := ct.MustActivity()
-	ctAccuracy := wt(ct).Accuracy()
+	ctAccuracy := wt(ct).SafeAccuracy()
 	minSpeed := math.Min(speedRate, p.Pos.KalmanSpeed)
-	minSpeed = math.Min(minSpeed, wt(ct).Speed())
+	minSpeed = math.Min(minSpeed, wt(ct).SafeSpeed())
 	isStationary := 0.0
 	if stable, valid := isGyroscopicallyStable(&ct); valid && stable {
 		isStationary += 1000.0
@@ -227,6 +247,9 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 		isStationary += 1.0
 	} else if ctAct.IsKnown() && ctAct.IsActive() {
 		isStationary -= 1.0
+	}
+	if w := wt(ct); w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 {
+		isStationary += 1.0
 	}
 
 	if isStationary > 1 {
