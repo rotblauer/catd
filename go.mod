@@ -29,15 +29,15 @@ require (
 
 replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-20241229144427-38ee53b6fd46
 
-//replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229144158-04d884ec1c98
-replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
+replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229172425-96c538931353
+
+//replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
 
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/holiman/uint256 v1.3.1 // indirect
@@ -64,7 +64,7 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
-	gonum.org/v1/gonum v0.8.1 // indirect
+	gonum.org/v1/gonum v0.15.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
