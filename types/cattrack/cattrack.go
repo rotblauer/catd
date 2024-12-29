@@ -182,6 +182,12 @@ func MustContinuousTimeOffset(a, b CatTrack) time.Duration {
 	return offset
 }
 
+func IsCatContinuous(a, b CatTrack) bool {
+	catIDMatch := a.CatID() == b.CatID()
+	uuidMatch := a.Properties.MustString("UUID", "") == b.Properties.MustString("UUID", "")
+	return catIDMatch && uuidMatch
+}
+
 // Point returns the Point a cat is or was at.
 func (ct CatTrack) Point() orb.Point {
 	return ct.Geometry.Bound().Center()

@@ -23,6 +23,8 @@ const TrackerStateActivityUndetermined = activity.TrackerStateUnknown - 1
 
 type Pos struct {
 	First, Last time.Time
+	LastTrack   cattrack.CatTrack
+
 	filter      *rkalman.GeoFilter
 	KalmanPt    orb.Point
 	KalmanSpeed float64
@@ -82,6 +84,7 @@ func (p *Pos) Observe(seconds float64, wt wt) {
 	p.lastHeading = wt.Heading()
 
 	p.Last = (*cattrack.CatTrack)(&wt).MustTime()
+	p.LastTrack = cattrack.CatTrack(wt)
 }
 
 type ProbableCat struct {
@@ -158,6 +161,7 @@ func (p *ProbableCat) Reset(wt wt) {
 	p.Pos.accuracy.SetInterval(time.Second)
 	p.Pos.accuracy.Tick()
 	p.Pos.lastHeading = wt.Heading()
+	p.Pos.LastTrack = cattrack.CatTrack(wt)
 	atomic.AddInt32(&p.Pos.observed, 1)
 }
 
@@ -167,6 +171,10 @@ func (p *ProbableCat) IsEmpty() bool {
 
 func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	if p.IsEmpty() {
+		p.Reset(wt(ct))
+		return nil
+	}
+	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
 		p.Reset(wt(ct))
 		return nil
 	}
@@ -184,6 +192,11 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	if filterEstimate != nil {
 		p.Pos.KalmanPt = orb.Point{filterEstimate.Lng, filterEstimate.Lat}
 		p.Pos.KalmanSpeed = filterEstimate.Speed
+	} else {
+		// Estimate was nil. Reset the filter.
+		slog.Error("Kalman.Estimate was nil. Resetting filter.")
+		p.Reset(wt(ct))
+		return nil
 	}
 
 	speedRate := p.Pos.speed.Snapshot().Rate()
@@ -237,7 +250,6 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 			p.Pos.Activity = mustActiveActivity(ctAct, minSpeed)
 			return nil
 		}
-		return nil
 	}
 
 	p.Pos.Activity = ct.MustActivity()

@@ -37,9 +37,7 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	// Clean and improve tracks for pipeline handlers.
 	wOffsets := cattrack.WithTimeOffset(ctx, in)
-
-	cleaned := c.CleanTracks(ctx, wOffsets)
-	cleanDebug, cleanPass := stream.Tee[cattrack.CatTrack](ctx, cleaned)
+	offsetsDebug, offsetsPass := stream.Tee(ctx, wOffsets)
 
 	////// P.S. Don't send all tracks to tiled unless development?
 	go func() {
@@ -52,13 +50,16 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 			TippeConfigName: params.TippeConfigNameTracks,
 			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
 			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-		}, cleanDebug); err != nil {
+		}, offsetsDebug); err != nil {
 			c.logger.Error("Failed to send tracks", "error", err)
 		}
 	}()
 
+	cleaned := c.CleanTracks(ctx, offsetsPass)
+	//cleanDebug, cleanPass := stream.Tee[cattrack.CatTrack](ctx, cleaned)
+
 	//improved := c.ImprovedActTracks(ctx, cleaned)
-	improved := c.ImprovedActTracks(ctx, cleanPass)
+	improved := c.ImprovedActTracks(ctx, cleaned)
 	improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
 
 	////// P.S. Don't send all tracks to tiled unless development?

@@ -27,8 +27,10 @@ require (
 	go.etcd.io/bbolt v1.3.11
 )
 
-//replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-20241214182049-a129ff7481c9
-replace github.com/sams96/rgeo => /home/ia/dev/sams96/rgeo
+replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-20241229144427-38ee53b6fd46
+
+//replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229144158-04d884ec1c98
+replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
 
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect

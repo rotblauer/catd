@@ -8,7 +8,7 @@ import (
 )
 
 // CleanTracks probably doesn't need a cat.
-// FIXME? Turn it loose (method to func).
+// FIXME? Turn it loose (method to func; no cat needed).
 func (c *Cat) CleanTracks(ctx context.Context, in <-chan cattrack.CatTrack) <-chan cattrack.CatTrack {
 	out := make(chan cattrack.CatTrack)
 

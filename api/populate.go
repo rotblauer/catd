@@ -147,14 +147,14 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		return ct.IsSnap()
 	}, normalized)
 
-	// Unbacktrack drops tracks that are older than the last known track,
-	// or otherwise within the window of seen tracks, critically: per cat/uuid.
-	unbacktracked, onCloseBack := c.Unbacktrack(ctx, noSnaps)
-	defer func() {
-		if err := onCloseBack(); err != nil {
-			c.logger.Error("Failed to close cat window unbacktracker", "error", err)
-		}
-	}()
+	//// Unbacktrack drops tracks that are older than the last known track,
+	//// or otherwise within the window of seen tracks; critically: per cat/uuid.
+	//unbacktracked, onCloseBack := c.Unbacktrack(ctx, noSnaps)
+	//defer func() {
+	//	if err := onCloseBack(); err != nil {
+	//		c.logger.Error("Failed to close cat window unbacktracker", "error", err)
+	//	}
+	//}()
 
 	// Snap storage mutates the original snap tracks.
 	snapped, snapErrs := c.StoreSnaps(ctx, yesSnaps)
@@ -200,7 +200,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// All non-snaps flow to these channels.
 	storeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	pipelineChan := make(chan cattrack.CatTrack, params.DefaultChannelCap)
-	stream.TeeMany(ctx, unbacktracked, storeCh, pipelineChan)
+	stream.TeeMany(ctx, noSnaps, storeCh, pipelineChan)
 
 	storeErrs := make(chan error, 1)
 	go func() {
