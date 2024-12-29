@@ -60,6 +60,7 @@ bump_tileservice() {
 #     pkill -f 'mbtileserver --port 3001' || { echo "WARN: mbtileserver not running" ; }
 #     nohup mbtileserver --port 3001 -d /tmp/catd/tiled/tiles --verbose --enable-reload-signal > /dev/null 2>&1 &
 }
+export -f bump_tileservice
 
 tabula_rasa() {
     >&2 echo "WARN: Removing datadir"

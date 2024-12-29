@@ -31,6 +31,7 @@ replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-2024122914442
 
 replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229172425-96c538931353
 
+//replace github.com/sams96/rgeo => /home/ia/dev/sams96/rgeo
 //replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
 
 require (
