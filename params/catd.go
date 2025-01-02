@@ -48,17 +48,20 @@ var DefaultDatadirRoot = func() string {
 // Optimal is the number that works best for everything.
 const Optimal = 9_000
 
+// NearOptimal is nearly optimal.
+var NearOptimal = runtime.NumCPU() * 1_000
+
 // DefaultBatchSize is now the default batch size primarily for doing db io.
 // Used by indexers s2 and rgeo for their persistent kv indices.
-var DefaultBatchSize = runtime.NumCPU() * 1_000
+var DefaultBatchSize = Optimal
 
 // DefaultSortSize is the default size for sorting tracks.
 // Its used by the sorter in Populate.
-var DefaultSortSize = runtime.NumCPU() * 1_000
+var DefaultSortSize = Optimal
 
 // DefaultChannelCap is the default channel capacity for channels.
 // Used widely for channels caps.
-var DefaultChannelCap = runtime.NumCPU() * 1_000
+var DefaultChannelCap = Optimal
 
 // DedupeCacheSize is the default size for the dedupe cache.
 var DedupeCacheSize = int((1 * time.Hour).Seconds())
@@ -78,3 +81,8 @@ var (
 	CacheLastPushTTL  = 1 * 24 * time.Hour
 	CacheLastKnownTTL = 7 * 24 * time.Hour
 )
+
+var INFLUXDB_URL = os.Getenv("CATD_INFLUXDB_URL")
+var INFLUXDB_TOKEN = os.Getenv("CATD_INFLUXDB_TOKEN")
+var INFLUXDB_ORG = os.Getenv("CATD_INFLUXDB_ORG")
+var INFLUXDB_BUCKET = os.Getenv("CATD_INFLUXDB_BUCKET")

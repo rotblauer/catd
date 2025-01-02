@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/dustin/go-humanize"
 	"github.com/rotblauer/catd/daemon/tiled"
+	"github.com/rotblauer/catd/metrics/influxdb"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/activity"
@@ -16,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"sync"
 	"time"
 )
 
@@ -138,6 +140,32 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		//normalized = stream.RingSort(ctx, params.DefaultSortSize, cattrack.SlicesSortFunc, stamped)
 	}
 
+	// Tee for processing and InfluxDB metrics.
+	// TODO: Should the InfluxDB metrics be called on successful store instead?
+	normalA, normalB := stream.Tee(ctx, normalized)
+
+	c.State.Waiting.Add(1)
+	go func() {
+		defer c.State.Waiting.Done()
+		once := sync.Once{}
+		batches := stream.Batch(ctx, nil, func(tracks []cattrack.CatTrack) bool {
+			return len(tracks) >= 100
+		}, normalB)
+		for batch := range batches {
+			if params.INFLUXDB_URL == "" {
+				once.Do(func() {
+					c.logger.Warn("InfluxDB not configured", "method", "Post")
+				})
+				continue
+			}
+			c.logger.Info("Batch InfluxDB", "count", len(batch))
+			err := influxdb.Post(batch)
+			if err != nil {
+				c.logger.Error("Failed to post batch to InfluxDB", "error", err)
+			}
+		}
+	}()
+
 	// Fork normalized stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
 	// Base 64 images should be stripped, converted into better formats,
@@ -145,7 +173,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// We don't want to send snaps to the places normal tracks go.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
-	}, normalized)
+	}, normalA)
 
 	//// Unbacktrack drops tracks that are older than the last known track,
 	//// or otherwise within the window of seen tracks; critically: per cat/uuid.

@@ -81,6 +81,11 @@ run() {
   set -x
   go install . || { echo "Install failed" && exit 1 ; }
   [[ -z "${RMCATS}" ]] || { >&2 echo "WARN RMCATS rming cats" && tabula_rasa ; }
+
+  export CATD_INFLUXDB_URL=http://localhost:8086
+  export CATD_INFLUXDB_TOKEN=catdevelopmenttokeninfluxdb
+  export CATD_INFLUXDB_ORG=cats
+  export CATD_INFLUXDB_BUCKET=catmetrics
   tdata | catd populate \
     --datadir /tmp/catd \
     --verbosity 0 \
