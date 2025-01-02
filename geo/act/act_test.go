@@ -32,8 +32,11 @@ func TestAccelerationStuff(t *testing.T) {
 }
 
 func TestProbableCat_Add(t *testing.T) {
+	//sourcePath := testdata.Path(testdata.Source_EDGE20241217)
+	sourcePath := "/home/ia/tdata/edge.json.gz"
+
 	ctx := context.Background()
-	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, testdata.Path(testdata.Source_EDGE20241217))
+	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, sourcePath)
 	err := <-errs
 	if err != nil {
 		t.Fatal(err)
@@ -43,16 +46,20 @@ func TestProbableCat_Add(t *testing.T) {
 	}, tracks)
 	pc := NewProbableCat(params.DefaultActImproverConfig)
 	for ct := range iaTracks {
-		pc.Add(ct)
+		err := pc.Add(ct)
+		if err != nil {
+			t.Logf("track=%v err=%s\n", ct, err)
+			t.Fatal(err)
+		}
 
-		kalmanVReportDist := geo.Distance(pc.Pos.KalmanPt, ct.Point())
+		kalmanVReportDist := geo.Distance(pc.Pos.ProbablePt, ct.Point())
 
-		t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f Δ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
+		t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
 			pc.Pos.Activity,
 			ct.Point().Lon(),
-			pc.Pos.KalmanPt.Lon(),
+			pc.Pos.ProbablePt.Lon(),
 			ct.Point().Lat(),
-			pc.Pos.KalmanPt.Lat(),
+			pc.Pos.ProbablePt.Lat(),
 			kalmanVReportDist,
 			wt(ct).SafeSpeed(),
 			pc.Pos.KalmanSpeed,

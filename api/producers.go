@@ -148,3 +148,44 @@ func (c *Cat) OffsetIndexer(ctx context.Context, in <-chan cattrack.CatTrack) er
 	}
 	return nil
 }
+
+//// HatspotIndexer is an indexer on NetworkInfo, Stationary-ness, and level 16 cell.
+//// It intends to provide another, good, heuristic for napping iOS cats.
+//// When these cats use an often-used wifi network which is not moving (wifi/level16),
+//// we can assume they are napping because they are in their normal nap hotspot zone.
+//func (c *Cat) HatspotIndexer(ctx context.Context, in <-chan cattrack.CatTrack) error {
+//	c.logger.Info("Simple offset indexer")
+//	defer c.logger.Info("Simple offset indexer complete")
+//
+//	indexerT := &cattrack.OffsetIndexT{}
+//	oldT := &cattrack.OffsetIndexT{}
+//
+//	oldTrack := cattrack.CatTrack{}
+//	if err := c.State.ReadKVUnmarshalJSON(params.CatStateBucket, params.CatStateKey_OffsetIndexer, &oldTrack); err != nil {
+//		c.logger.Warn("Did not read offsetIndexer state (new cat?)", "error", err)
+//	} else {
+//		oldT = indexerT.FromCatTrack(oldTrack).(*cattrack.OffsetIndexT)
+//	}
+//
+//	lastTrack := cattrack.CatTrack{}
+//	for track := range in {
+//		select {
+//		case <-ctx.Done():
+//			break
+//		default:
+//		}
+//		lastTrack = track
+//		indexing := indexerT.FromCatTrack(track)
+//		next := indexerT.Index(oldT, indexing)
+//		*oldT = *next.(*cattrack.OffsetIndexT)
+//	}
+//	c.logger.Info("Simple indexer complete")
+//
+//	storeTrack := indexerT.ApplyToCatTrack(oldT, lastTrack)
+//	err := c.State.StoreKVMarshalJSON([]byte("state"), params.CatStateKey_OffsetIndexer, storeTrack)
+//	if err != nil {
+//		c.logger.Error("Failed to store offsetIndexer state", "error", err)
+//		return err
+//	}
+//	return nil
+//}

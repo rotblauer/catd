@@ -3,7 +3,6 @@ package act
 import (
 	"fmt"
 	rkalman "github.com/regnull/kalman"
-	"os"
 )
 
 func NewRKalmanFilter(latitude, speed, acceleration float64) *rkalman.GeoFilter {
@@ -21,7 +20,7 @@ func NewRKalmanFilter(latitude, speed, acceleration float64) *rkalman.GeoFilter 
 	filter, err := rkalman.NewGeoFilter(processNoise)
 	if err != nil {
 		fmt.Printf("failed to initialize Kalman filter: %s\n", err)
-		os.Exit(1)
+		panic("rkalman init failed")
 	}
 	return filter
 }

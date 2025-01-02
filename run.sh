@@ -37,7 +37,7 @@ tdata() {
 
 #     zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
-#    zcat "${HOME}"/tdata/edge.json.gz
+   zcat "${HOME}"/tdata/edge.json.gz
 #
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -46,9 +46,9 @@ tdata() {
 #    for f in $(seq -f "%02g" 11 12); do
 #      zcat "${HOME}/tdata/local/yyyy-mm/2024-${f}"*.gz
 #    done
-      for f in $(seq -f "%02g" 20 24); do
-        zcat "${HOME}/tdata/local/yyyy-mm/20${f}"*.gz
-      done
+#       for f in $(seq -f "%02g" 20 24); do
+#         zcat "${HOME}/tdata/local/yyyy-mm/20${f}"*.gz
+#       done
 }
 
 bump_tileservice() {

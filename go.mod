@@ -29,10 +29,10 @@ require (
 
 replace github.com/sams96/rgeo => github.com/rotblauer/rgeo v0.0.0-20241229144427-38ee53b6fd46
 
-replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229172425-96c538931353
+//replace github.com/regnull/kalman => github.com/rotblauer/rkalman v0.0.0-20241229172425-96c538931353
 
 //replace github.com/sams96/rgeo => /home/ia/dev/sams96/rgeo
-//replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
+replace github.com/regnull/kalman => /home/ia/dev/regnull/kalman
 
 require (
 	github.com/StackExchange/wmi v1.2.1 // indirect

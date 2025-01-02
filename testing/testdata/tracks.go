@@ -1,6 +1,6 @@
 package testdata
 
-var Track_stationary_1 = `{
+var Track_iOS_stationary_1 = `{
   "id": 0,
   "type": "Feature",
   "geometry": {
@@ -32,6 +32,50 @@ var Track_stationary_1 = `{
     "UUID": "5D37B5EA-6E0B-41FE-8A72-2BB681D661DA",
     "UnixTime": 1734967916,
     "Version": "V.customizableCatTrackHat"
+  }
+}
+`
+
+var Track_Android_stationary_1 = `{
+  "id": 0,
+  "type": "Feature",
+  "bbox": [-113.4730765, 47.1787276, -113.4730765, 47.1787276],
+  "geometry": {
+    "type": "Point",
+    "coordinates": [-113.4730765, 47.1787276]
+  },
+  "properties": {
+    "AccelerometerX": -1.91,
+    "AccelerometerY": -0.86,
+    "AccelerometerZ": -9.57,
+    "Accuracy": 3.9,
+    "Activity": "Stationary",
+    "ActivityConfidence": 100,
+    "AmbientTemp": null,
+    "BatteryLevel": 1,
+    "BatteryStatus": "unplugged",
+    "CurrentTripStart": "2024-12-23T15:01:41.196997Z",
+    "Distance": 0,
+    "Elevation": 1258.4,
+    "GyroscopeX": 0,
+    "GyroscopeY": 0,
+    "GyroscopeZ": 0,
+    "Heading": -1,
+    "Lightmeter": 0,
+    "Name": "ranga-moto-act3",
+    "NumberOfSteps": 51,
+    "Pressure": null,
+    "Speed": 0.06,
+    "Time": "2024-12-23T15:05:34.710Z",
+    "UUID": "76170e959f967f40",
+    "UnixTime": 1734966334,
+    "UserAccelerometerX": 0,
+    "UserAccelerometerY": 0,
+    "UserAccelerometerZ": 0.02,
+    "Version": "gcps/v0.0.0+4",
+    "heading_accuracy": -1,
+    "speed_accuracy": 3.2,
+    "vAccuracy": 1
   }
 }
 `
