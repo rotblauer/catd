@@ -37,10 +37,10 @@ var DefaultActImproverConfig = &ActDiscretionConfig{
 }
 
 var DefaultLapConfig = &ActDiscretionConfig{
-	Interval:       2 * time.Minute,
-	Distance:       50.0,
-	SpeedThreshold: common.SpeedOfWalkingSlow,
-	//SplitActivities: true, // false normally
+	Interval:        2 * time.Minute,
+	Distance:        50.0,
+	SpeedThreshold:  common.SpeedOfWalkingSlow,
+	SplitActivities: true, // false normally
 }
 
 var DefaultNapConfig = &ActDiscretionConfig{

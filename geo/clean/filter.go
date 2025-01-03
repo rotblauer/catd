@@ -42,10 +42,10 @@ func FilterGrounded(ct cattrack.CatTrack) bool {
 }
 
 func FilterLaps(ct cattrack.CatLap) bool {
-	duration := ct.Properties.MustFloat64("Duration", 0)
-	if duration < 120 {
-		return false
-	}
+	//duration := ct.Properties.MustFloat64("Duration", 0)
+	//if duration < 120 {
+	//	return false
+	//}
 	dist := ct.Properties.MustFloat64("Distance_Traversed", 0)
 	if dist < 100 {
 		return false

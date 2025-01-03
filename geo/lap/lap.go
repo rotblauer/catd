@@ -59,12 +59,15 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	if span > s.Config.Interval || span < -1*time.Second {
 		return true
 	}
+	// Activity splitting is a hot topic.
+	//
 	if !s.Config.SplitActivities {
 		return false
 	}
+
 	currentAct := activity.FromString(ct.Properties.MustString("Activity"))
 	lastAct := activity.FromString(s.Tracks[len(s.Tracks)-1].Properties.MustString("Activity"))
-	return !activity.IsContinuous(currentAct, lastAct)
+	return activity.BreakLap(currentAct, lastAct)
 }
 
 // Bump signals the lap builder to flush the current lap.

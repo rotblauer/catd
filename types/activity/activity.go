@@ -83,9 +83,18 @@ func (a Activity) Emoji() string {
 	return "❓"
 }
 
-func IsContinuous(a, b Activity) bool {
+func (a Activity) IsActiveHuman() bool {
+	return a >= TrackerStateWalking && a < TrackerStateAutomotive
+}
+
+// BreakLap configures Lap splitting based on activity.
+// It is a hot topic.
+func BreakLap(a, b Activity) bool {
 	if a == TrackerStateUnknown || b == TrackerStateUnknown {
-		return true
+		return false
+	}
+	if b.IsActiveHuman() && b.IsActiveHuman() {
+		return false
 	}
 
 	//if a.IsActive() && b.IsActive() {
@@ -93,7 +102,7 @@ func IsContinuous(a, b Activity) bool {
 	//}
 	//return a == b
 
-	return a == b
+	return a != b
 
 	//if a == TrackerStateStationary && b >= TrackerStateWalking {
 	//	return false

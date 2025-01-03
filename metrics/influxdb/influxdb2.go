@@ -1,7 +1,6 @@
 package influxdb
 
 import (
-	"errors"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
@@ -10,16 +9,10 @@ import (
 	"time"
 )
 
-var ErrDisabled = errors.New("influxdb disabled")
-
-func Post(tracks []cattrack.CatTrack) error {
-	if params.INFLUXDB_URL == "" {
-		return ErrDisabled
-	}
-	return post(tracks)
-}
-
-func post(tracks []cattrack.CatTrack) error {
+// ExportCatTracks posts tracks to an InfluxDB Write API.
+// Because it accepts a slice, use batches. The Write API will buffer and flush.
+// The last error encountered is returned.
+func ExportCatTracks(tracks []cattrack.CatTrack) error {
 	opts := influxdb2.DefaultOptions()
 	opts.SetPrecision(time.Second)
 	client := influxdb2.NewClientWithOptions(params.INFLUXDB_URL, params.INFLUXDB_TOKEN, opts)

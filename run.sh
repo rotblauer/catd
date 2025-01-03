@@ -82,6 +82,9 @@ run() {
   go install . || { echo "Install failed" && exit 1 ; }
   [[ -z "${RMCATS}" ]] || { >&2 echo "WARN RMCATS rming cats" && tabula_rasa ; }
 
+  # https://github.com/rotblauer/docker-compose-influxdb-grafana-catd
+  # docker-compose up --detach
+  # docker-compose down --volumes
   export CATD_INFLUXDB_URL=http://localhost:8086
   export CATD_INFLUXDB_TOKEN=catdevelopmenttokeninfluxdb
   export CATD_INFLUXDB_ORG=cats

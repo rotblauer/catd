@@ -93,6 +93,13 @@ func (c *Cat) SubscribeFancyLogs() {
 	}()
 }
 
+func (c *Cat) ExportInfluxDB(tracks []cattrack.CatTrack) error {
+	if params.INFLUXDB_URL == "" {
+		return errors.New("InfluxDB not configured")
+	}
+	return influxdb.ExportCatTracks(tracks)
+}
+
 // Populate persists incoming CatTracks for one cat.
 func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTrack) error {
 	var cancelCtx context.CancelFunc
@@ -141,7 +148,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	}
 
 	// Tee for processing and InfluxDB metrics.
-	// TODO: Should the InfluxDB metrics be called on successful store instead?
+	// TODO: Should the InfluxDB metrics be called on successful store instead? Also?
 	normalA, normalB := stream.Tee(ctx, normalized)
 
 	c.State.Waiting.Add(1)
@@ -149,18 +156,19 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		defer c.State.Waiting.Done()
 		once := sync.Once{}
 		batches := stream.Batch(ctx, nil, func(tracks []cattrack.CatTrack) bool {
-			return len(tracks) >= 100
+			return len(tracks) >= 1000
 		}, normalB)
 		for batch := range batches {
 			if params.INFLUXDB_URL == "" {
 				once.Do(func() {
-					c.logger.Warn("InfluxDB not configured", "method", "Post")
+					c.logger.Warn("InfluxDB not configured", "method", "ExportCatTracks")
 				})
 				continue
 			}
 			c.logger.Info("Batch InfluxDB", "count", len(batch))
-			err := influxdb.Post(batch)
+			err := c.ExportInfluxDB(batch)
 			if err != nil {
+				// CHORE: Return error via chan.
 				c.logger.Error("Failed to post batch to InfluxDB", "error", err)
 			}
 		}
@@ -261,6 +269,13 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	for {
 		var err error
 		var open bool
+		if err != nil {
+			cancelCtx()
+			return err
+		}
+		if handledErrorsN == 5 {
+			break
+		}
 		select {
 		case err, open = <-storeErrs:
 			if err != nil {
@@ -307,13 +322,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 				handledErrorsN++
 				pipeLineErrs = nil
 			}
-		}
-		if err != nil {
-			cancelCtx()
-			return err
-		}
-		if handledErrorsN == 5 {
-			break
 		}
 	}
 	return nil
