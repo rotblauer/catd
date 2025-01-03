@@ -368,17 +368,5 @@ func (p *ProbableCat) mustActiveActivity(t time.Time, act activity.Activity, spe
 			return mode.Activity
 		}
 	}
-	if speed > common.SpeedOfDrivingAutobahn {
-		return activity.TrackerStateFlying
-	}
-	if speed > common.SpeedOfCyclingMax {
-		return activity.TrackerStateAutomotive
-	}
-	if speed > common.SpeedOfRunningMax {
-		return activity.TrackerStateBike
-	}
-	if speed > common.SpeedOfWalkingMax {
-		return activity.TrackerStateRunning
-	}
-	return activity.TrackerStateWalking
+	return activity.InferSpeedFromClosest(speed, 1.0, true)
 }

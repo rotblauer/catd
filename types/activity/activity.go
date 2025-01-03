@@ -1,6 +1,7 @@
 package activity
 
 import (
+	"github.com/rotblauer/catd/common"
 	"math"
 	"regexp"
 	"slices"
@@ -93,6 +94,52 @@ func (a Activity) Emoji() string {
 
 func (a Activity) IsActiveHuman() bool {
 	return a >= TrackerStateWalking && a < TrackerStateAutomotive
+}
+
+// InferFromSpeed infers activity from speed using high -> low max_speed breakpoints.
+// maxMul is a multiplier to the max_speed of the activity.
+func InferFromSpeed(speed, maxMul float64, mustActive bool) Activity {
+	if speed > common.SpeedOfDrivingAutobahn*maxMul {
+		return TrackerStateFlying
+	}
+	if speed > common.SpeedOfCyclingMax*maxMul {
+		return TrackerStateAutomotive
+	}
+	if speed > ((common.SpeedOfRunningMean+common.SpeedOfRunningMax)/2)*maxMul {
+		return TrackerStateBike
+	}
+	if speed > common.SpeedOfWalkingMax*maxMul {
+		return TrackerStateRunning
+	}
+	if !mustActive && speed < common.SpeedOfWalkingMin {
+		return TrackerStateStationary
+	}
+	return TrackerStateWalking
+}
+
+var ActivityMeanSpeeds = map[Activity]float64{
+	TrackerStateStationary: -(common.SpeedOfWalkingMin * 0.9),
+	TrackerStateWalking:    common.SpeedOfWalkingMean,
+	TrackerStateRunning:    common.SpeedOfRunningMean,
+	TrackerStateBike:       common.SpeedOfCyclingMean,
+	TrackerStateAutomotive: common.SpeedOfDrivingCityUSMean,
+	TrackerStateFlying:     common.SpeedOfDrivingAutobahn,
+}
+
+func InferSpeedFromClosest(speed, maxMul float64, mustActive bool) Activity {
+	delta := 100.0
+	var closest Activity
+	for act, stdSpeed := range ActivityMeanSpeeds {
+		if mustActive && act == TrackerStateStationary {
+			continue
+		}
+		d := math.Abs(speed - stdSpeed)
+		if d < delta {
+			delta = d
+			closest = act
+		}
+	}
+	return closest
 }
 
 // BreakLap configures Lap splitting based on activity.
@@ -191,6 +238,13 @@ func NewModeTracker(interval time.Duration) *ModeTracker {
 	return &ModeTracker{
 		IntervalLimit: interval,
 		Acts:          []actRecord{},
+		Unknown:       Mode{TrackerStateUnknown, 0},
+		Stationary:    Mode{TrackerStateStationary, 0},
+		Walking:       Mode{TrackerStateWalking, 0},
+		Running:       Mode{TrackerStateRunning, 0},
+		Cycling:       Mode{TrackerStateBike, 0},
+		Driving:       Mode{TrackerStateAutomotive, 0},
+		Flying:        Mode{TrackerStateFlying, 0},
 	}
 }
 
@@ -247,6 +301,7 @@ func (mt *ModeTracker) drop(a Activity, weight float64) {
 	}
 }
 
+// Sorted returns the modes sorted by scalar value, with greatest scalars first.
 func (mt *ModeTracker) Sorted(onlyKnown bool) []Mode {
 	modes := []Mode{
 		mt.Stationary, mt.Walking, mt.Running, mt.Cycling, mt.Driving, mt.Flying,
@@ -254,10 +309,16 @@ func (mt *ModeTracker) Sorted(onlyKnown bool) []Mode {
 	if !onlyKnown {
 		modes = append(modes, mt.Unknown)
 	}
-	slices.SortFunc(modes, func(a, b Mode) int {
+	slices.SortStableFunc(modes, func(a, b Mode) int {
 		if a.Scalar > b.Scalar {
 			return -1
 		} else if a.Scalar < b.Scalar {
+			return 1
+			// In the case of a tie, prefer the "lesser" activity.
+			// Sloth is easier, and thus more likely, than action.
+		} else if int(a.Activity) < int(b.Activity) {
+			return -1
+		} else if int(a.Activity) > int(b.Activity) {
 			return 1
 		} else {
 			return 0

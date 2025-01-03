@@ -44,9 +44,6 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 
 	first, last := tracks[0], tracks[len(tracks)-1]
 
-	// FIXME: Another list iteration and awkward type assertions.
-	f.Properties["Activity"] = ActivityModeNotUnknownNorStationary(tracks).String()
-
 	f.Properties["Alias"] = first.CatID().String()
 	f.Properties["UUID"] = first.Properties.MustString("UUID")
 	f.Properties["RawPointCount"] = len(tracks) // unsimplified
@@ -59,7 +56,6 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	f.Properties["Duration"] = lastTime.Sub(firstTime).Round(time.Second).Seconds()
 
 	accuracies := make([]float64, 0, len(tracks))
-	activities := make([]activity.Activity, 0, len(tracks))
 	elevations := make([]float64, 0, len(tracks))
 	reportedSpeeds := make([]float64, 0, len(tracks))
 	calculatedSpeeds := make([]float64, 0, len(tracks)-1)
@@ -73,7 +69,6 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 		f.Geometry = append(f.Geometry.(orb.LineString), track.Point())
 
 		accuracies = append(accuracies, track.Properties.MustFloat64("Accuracy", 0))
-		activities = append(activities, activity.FromAny(track.Properties["Activity"]))
 		elevation := track.Properties.MustFloat64("Elevation", 0)
 		elevations = append(elevations, math.Round(elevation))
 		reportedSpeeds = append(reportedSpeeds, track.Properties.MustFloat64("Speed", 0))
@@ -126,6 +121,9 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	f.Properties["Elevation_Gain"] = math.Floor(elevationGain)
 	f.Properties["Elevation_Loss"] = math.Floor(elevationLoss)
 
+	// FIXME: Another list iteration and awkward type assertions.
+	f.Properties["Activity"] = inferLapActivity(tracks, f.Properties.MustFloat64("Speed_Reported_Mean", 0)).String()
+
 	return f
 }
 
@@ -137,46 +135,37 @@ func (cl *CatLap) Duration() time.Duration {
 	return time.Duration(cl.Properties.MustFloat64("Duration")) * time.Second
 }
 
-func ActivityModeNotUnknownNorStationary(list []*CatTrack) activity.Activity {
-	activities := []float64{}
-	for _, f := range list {
-		props := f.Properties
-		if props == nil {
-			panic("nil properties")
-		}
-		act := activity.FromAny(props.MustString("Activity", "Unknown"))
-		if act > activity.TrackerStateStationary {
-			activities = append(activities, float64(act))
+func inferLapActivity(list []*CatTrack, meanSpeed float64) activity.Activity {
+	interval := list[len(list)-1].MustTime().Sub(list[0].MustTime())
+	actTracker := activity.NewModeTracker(interval)
+	for _, track := range list {
+		actTracker.Push(track.MustActivity(), track.MustTime(), track.Properties.MustFloat64("TimeOffset", 1))
+	}
+
+	// FIXME how come the laps are Running Running Running?
+
+	// Problem: rye runs too fast, gets cycle laps.
+	// Solution: use speed to infer activity, comparing first two sorted-mode activities iff they're relatively close in mode.
+	// ie. If the top-two modes are *roughly* co-occurring, try match either of the two to the lap's mean speed.
+	sorted := actTracker.Sorted(true)
+	first, second := sorted[0], sorted[1]
+	if first.Activity.IsActive() && second.Activity.IsActive() && first.Scalar < second.Scalar*1.5 {
+		guess := activity.InferSpeedFromClosest(meanSpeed, 0.9, true)
+		if guess == first.Activity || guess == second.Activity {
+			return guess
 		}
 	}
-	activitiesStats := stats.Float64Data(activities)
-	mode, _ := activitiesStats.Mode()
-	for _, m := range mode {
-		if m > float64(activity.TrackerStateStationary) {
-			return activity.Activity(m)
+	for _, act := range sorted {
+		if act.Activity.IsActive() {
+			return act.Activity
 		}
 	}
 
 	// At this point there are NO activities that are not either stationary or unknown.
 	// This may be a client bug (cough Android cough) where it doesn't report activity.
 	// So instead we'll use reported speed.
-	speeds := []float64{}
-	for _, f := range list {
-		speeds = append(speeds, f.Properties.MustFloat64("Speed", -1))
-	}
-	speedsStats := stats.Float64Data(speeds)
-
-	// Remember, these are meters per second.
-	mean, _ := speedsStats.Mean()
 
 	// Using common walking speeds, running speeds, bicycling, and driving speeds,
 	// we'll return the matching activity.
-	if mean < 1.78816 /* 4 mph */ {
-		return activity.TrackerStateWalking
-	} else if mean < 4.87274 /* 10.9 mph == 5.5 min / mile */ {
-		return activity.TrackerStateRunning
-	} else if mean < 8.04672 /* 18 mph */ {
-		return activity.TrackerStateBike
-	}
-	return activity.TrackerStateAutomotive
+	return activity.InferSpeedFromClosest(meanSpeed, 1.0, true)
 }

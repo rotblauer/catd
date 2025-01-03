@@ -46,7 +46,9 @@ func ExportCatTracks(tracks []cattrack.CatTrack) error {
 			AddField("heading", track.Properties["Heading"]).
 			AddField("speed", track.Properties["Speed"]).
 			AddField("elevation", track.Properties["Elevation"]).
-			AddField("accuracy", track.Properties["Accuracy"])
+			AddField("accuracy", track.Properties["Accuracy"]).
+			// Add activity as a field, in addition to as tag, above.
+			AddField("activity", track.Properties["Activity"])
 
 		if track.IsSnap() {
 			p.AddField("snap", 1)

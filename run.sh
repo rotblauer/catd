@@ -37,7 +37,8 @@ tdata() {
 
 #     zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
-   zcat "${HOME}"/tdata/edge.json.gz
+#    zcat "${HOME}"/tdata/edge.json.gz
+    zcat "${HOME}"/tdata/20250103_500000.json.gz
 #
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
