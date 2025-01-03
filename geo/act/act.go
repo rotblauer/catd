@@ -43,7 +43,12 @@ type Pos struct {
 	ActiveStart     time.Time
 	LastActiveAct   activity.Activity
 
+	// ActivityModeTracker memoizes the last activity modes across the interval.
+	// Weighting is by time offset.
 	ActivityModeTracker *activity.ModeTracker
+	// ProbableActivityModeTracker memoizes the last _probable_ activity modes across the interval.
+	// These are the "improved" activities.
+	ProbableActivityModeTracker *activity.ModeTracker
 
 	observed int32
 }
@@ -135,16 +140,17 @@ func (p *ProbableCat) resetKalmanFilter() {
 func (p *ProbableCat) Reset(wt wt) {
 	ct := (*cattrack.CatTrack)(&wt)
 	p.Pos = &Pos{
-		First:               ct.MustTime(),
-		Last:                ct.MustTime(),
-		LastTrack:           *ct,
-		Activity:            ct.MustActivity(),
-		ProbablePt:          ct.Point(),
-		ActivityModeTracker: activity.NewModeTracker(p.Config.Interval),
-		speed:               metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		accuracy:            metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		elevation:           metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		headingDelta:        metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		First:                       ct.MustTime(),
+		Last:                        ct.MustTime(),
+		LastTrack:                   *ct,
+		Activity:                    ct.MustActivity(),
+		ProbablePt:                  ct.Point(),
+		ActivityModeTracker:         activity.NewModeTracker(p.Config.Interval),
+		ProbableActivityModeTracker: activity.NewModeTracker(p.Config.Interval),
+		speed:                       metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		accuracy:                    metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		elevation:                   metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		headingDelta:                metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 	}
 
 	p.resetKalmanFilter()
@@ -164,8 +170,9 @@ func (p *ProbableCat) Reset(wt wt) {
 
 	p.Pos.lastHeading = wt.SafeHeading()
 
-	p.Pos.ActivityModeTracker.Push(p.Pos.Activity, p.Pos.Last, 1)
-	if p.Pos.Activity.IsActive() {
+	p.Pos.ActivityModeTracker.Push(ct.MustActivity(), p.Pos.Last, ct.Properties.MustFloat64("TimeOffset", 1))
+
+	if ct.MustActivity().IsActive() {
 		p.Pos.LastActiveAct = p.Pos.Activity
 	}
 
@@ -325,7 +332,7 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 		} else if ct.MustTime().Sub(p.Pos.ActiveStart) > p.Config.Interval {
 			// Enforcing active; timeout elapsed.
 			p.Pos.StationaryStart = time.Time{}
-			proposal = p.mustActiveActivity(ct.MustTime(), ctAct, minSpeed)
+			proposal = p.mustActiveActivity(ct.MustTime(), ctAct, speedRate)
 		}
 	}
 	if !proposal.IsKnown() && ctAct.IsKnown() {
@@ -333,7 +340,7 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	}
 	if !proposal.IsKnown() {
 		if minSpeed > p.Config.SpeedThreshold {
-			proposal = p.mustActiveActivity(ct.MustTime(), proposal, minSpeed)
+			proposal = p.mustActiveActivity(ct.MustTime(), proposal, speedRate)
 		} else {
 			proposal = activity.TrackerStateStationary
 		}
@@ -349,24 +356,37 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 			}
 		}
 	}
-
-	p.Pos.Activity = proposal
+	p.decideActivity(proposal, ct)
 	return nil
+}
+
+func (p *ProbableCat) decideActivity(act activity.Activity, ct cattrack.CatTrack) {
+	p.Pos.Activity = act
+	p.Pos.ProbableActivityModeTracker.Push(p.Pos.Activity, ct.MustTime(), ct.Properties.MustFloat64("TimeOffset", 1))
 }
 
 func (p *ProbableCat) mustActiveActivity(t time.Time, act activity.Activity, speed float64) activity.Activity {
 	if act.IsActive() {
 		return act
 	}
-	if !p.Pos.ActiveStart.IsZero() || t.Sub(p.Pos.StationaryStart) < p.Config.Interval {
-		return p.Pos.LastActiveAct
-	}
-	actModes := p.Pos.ActivityModeTracker.Sorted(true)
+	//if !p.Pos.ActiveStart.IsZero() || t.Sub(p.Pos.StationaryStart) < p.Config.Interval {
+	//	return p.Pos.LastActiveAct
+	//}
+	reportedActModes := p.Pos.ActivityModeTracker.Sorted(true)
 	for i := 0; i < 2; i++ {
-		mode := actModes[i]
+		if i == 0 && reportedActModes[i].Activity == activity.TrackerStateStationary {
+			// This is a heuristic for  bad data: Stationary leads an active cat.
+			// Discard this approach.
+			break
+		}
+		mode := reportedActModes[i]
 		if mode.Activity.IsActive() {
 			return mode.Activity
 		}
 	}
+	//decidedActModes := p.Pos.ProbableActivityModeTracker.Sorted(true)
+	//if decidedActModes[0].Activity.IsActive() && decidedActModes[0].Scalar*0.6 > decidedActModes[1].Scalar {
+	//	return decidedActModes[0].Activity
+	//}
 	return activity.InferSpeedFromClosest(speed, 1.0, true)
 }
