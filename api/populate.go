@@ -165,11 +165,12 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 				})
 				continue
 			}
-			c.logger.Info("Batch InfluxDB", "count", len(batch))
 			err := c.ExportInfluxDB(batch)
 			if err != nil {
 				// CHORE: Return error via chan.
 				c.logger.Error("Failed to post batch to InfluxDB", "error", err)
+			} else {
+				c.logger.Debug("Batch InfluxDB export", "count", len(batch))
 			}
 		}
 	}()

@@ -8,9 +8,10 @@ import (
 	"sync"
 )
 
-// Master stores the incoming CatTracks in their original form in a file <datadir>/master.json.gz.
+// Master stores the incoming CatTracks in their original form (EXACTLY as posted; reading from the request body)
+// in a file <datadir>/master.json.gz.
 // Each call to Master appends to the file.
-// The 'body' value is written in its entirety in a single newline.
+// The 'body' value is written in its entirety with a single newline following.
 // Users of the master file should note that this results in lines which may be longer than bufio.MaxScanTokenSize,
 // and should be prepared to handle this.
 func Master(datadir string, body io.Reader) (written int64, err error) {
@@ -26,7 +27,7 @@ func Master(datadir string, body io.Reader) (written int64, err error) {
 		})
 		return wr.Close()
 	}
-	defer shut()
+	defer shut() // redundant, harmless, helpful in edge cases
 	written, err = io.Copy(wr, body)
 	if err != nil {
 		return

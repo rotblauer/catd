@@ -65,9 +65,9 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return false
 	}
 
-	currentAct := activity.FromString(ct.Properties.MustString("Activity"))
-	lastAct := activity.FromString(s.Tracks[len(s.Tracks)-1].Properties.MustString("Activity"))
-	return activity.BreakLap(currentAct, lastAct)
+	lastAct := s.Tracks[len(s.Tracks)-1].MustActivity()
+	currentAct := ct.MustActivity()
+	return activity.BreakLap(lastAct, currentAct)
 }
 
 // Bump signals the lap builder to flush the current lap.

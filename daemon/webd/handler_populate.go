@@ -31,11 +31,11 @@ func (s *WebDaemon) populate(w http.ResponseWriter, r *http.Request) {
 	tee := io.TeeReader(r.Body, cp)
 	i, err := api.Master(s.Config.DataDir, tee)
 	if err != nil {
-		s.logger.Error("Failed to master", "error", err)
-		http.Error(w, "Failed to master", http.StatusInternalServerError)
+		s.logger.Error("Failed to store master tracks", "error", err)
+		http.Error(w, "Failed to store master tracks", http.StatusInternalServerError)
 		return
 	} else {
-		s.logger.Info("Mastered", "bytes", i, "path", params.MasterGZFileName)
+		s.logger.Info("Stored master tracks", "bytes", i, "path", params.MasterGZFileName)
 	}
 
 	buf := bufio.NewReader(cp)

@@ -4,7 +4,6 @@ import (
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/types/cattrack"
-	"log"
 	"sync"
 	"time"
 )
@@ -31,7 +30,6 @@ func ExportCatTracks(tracks []cattrack.CatTrack) error {
 		for e := range errorsCh {
 			if e != nil {
 				err = e
-				log.Println("influxdb write error", e)
 			}
 		}
 	}()
