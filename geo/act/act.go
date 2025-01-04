@@ -372,18 +372,12 @@ func (p *ProbableCat) mustActiveActivity(t time.Time, act activity.Activity, spe
 	//if !p.Pos.ActiveStart.IsZero() || t.Sub(p.Pos.StationaryStart) < p.Config.Interval {
 	//	return p.Pos.LastActiveAct
 	//}
+
 	reportedActModes := p.Pos.ActivityModeTracker.Sorted(true)
-	for i := 0; i < 2; i++ {
-		if i == 0 && reportedActModes[i].Activity == activity.TrackerStateStationary {
-			// This is a heuristic for  bad data: Stationary leads an active cat.
-			// Discard this approach.
-			break
-		}
-		mode := reportedActModes[i]
-		if mode.Activity.IsActive() {
-			return mode.Activity
-		}
+	if reportedActModes[0].Activity.IsActive() {
+		return reportedActModes[0].Activity
 	}
+
 	//decidedActModes := p.Pos.ProbableActivityModeTracker.Sorted(true)
 	//if decidedActModes[0].Activity.IsActive() && decidedActModes[0].Scalar*0.6 > decidedActModes[1].Scalar {
 	//	return decidedActModes[0].Activity

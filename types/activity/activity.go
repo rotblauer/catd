@@ -117,7 +117,7 @@ func InferFromSpeed(speed, maxMul float64, mustActive bool) Activity {
 	return TrackerStateWalking
 }
 
-var ActivityMeanSpeeds = map[Activity]float64{
+var activityMeanSpeeds = map[Activity]float64{
 	TrackerStateStationary: -(common.SpeedOfWalkingMin * 0.9),
 	TrackerStateWalking:    common.SpeedOfWalkingMean,
 	TrackerStateRunning:    common.SpeedOfRunningMean,
@@ -126,10 +126,11 @@ var ActivityMeanSpeeds = map[Activity]float64{
 	TrackerStateFlying:     common.SpeedOfDrivingAutobahn,
 }
 
+// InferSpeedFromClosest infers activity from speed using the closest mean speed.
 func InferSpeedFromClosest(speed, maxMul float64, mustActive bool) Activity {
 	delta := 100.0
 	var closest Activity
-	for act, stdSpeed := range ActivityMeanSpeeds {
+	for act, stdSpeed := range activityMeanSpeeds {
 		if mustActive && act == TrackerStateStationary {
 			continue
 		}
@@ -151,6 +152,9 @@ func BreakLap(a, b Activity) bool {
 	if a.IsActive() != b.IsActive() {
 		return true
 	}
+	// FIXME: This will screw up triathlons;
+	// it blends common run+bike, walk+bike, and cycle+drive combos;
+	// but it's a workaround for common schizo-activities.
 	if a.IsActiveHuman() && b.IsActiveHuman() {
 		return false
 	}
@@ -158,8 +162,6 @@ func BreakLap(a, b Activity) bool {
 	delta := math.Abs(float64(int(a) - int(b)))
 	return delta > 1
 
-	// Although this will screw up triathlons,
-	// it blends common run+bike, walk+bike, and cycle+drive combos.
 	//if b.IsActiveHuman() && b.IsActiveHuman() {
 	//	return false
 	//}
@@ -209,9 +211,47 @@ func FromString(str string) Activity {
 	return TrackerStateUnknown
 }
 
+// Mode implements basic reasoning about Activity frequency or weighting.
 type Mode struct {
 	Activity Activity
 	Scalar   float64
+}
+
+// SortModes describes the sorting order of modes.
+// Greater scalar values are ordered first, less scalar values last.
+// In case of scalar ties, the "lesser" activity is preferred first.
+func SortModes(a, b Mode) int {
+	if a.Scalar > b.Scalar {
+		return -1
+	} else if a.Scalar < b.Scalar {
+		return 1
+		// In the case of a tie, prefer the "lesser" activity.
+		// Sloth is easier, and thus more likely, than action.
+	} else if int(a.Activity) < int(b.Activity) {
+		return -1
+	} else if int(a.Activity) > int(b.Activity) {
+		return 1
+	} else {
+		return 0
+	}
+}
+
+// Modes is a slice of Mode.
+type Modes []Mode
+
+func (s Modes) Len() int           { return len(s) }
+func (s Modes) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s Modes) Less(i, j int) bool { return s[i].Scalar > s[j].Scalar }
+
+// RelWeights mutates the Modes slice to have relative scalar weights (0 to 1).
+func (s Modes) RelWeights() {
+	totalWeight := 0.0
+	for _, m := range s {
+		totalWeight += m.Scalar
+	}
+	for i := range s {
+		s[i].Scalar /= totalWeight
+	}
 }
 
 // ModeTracker tracks the activity modes over a sliding, time interval-based window.
@@ -234,6 +274,8 @@ type actRecord struct {
 	W float64
 }
 
+// NewModeTracker creates a new ModeTracker with the given interval.
+// The constructor must be used; a zero-value init on the ModeTracker structure will not work.
 func NewModeTracker(interval time.Duration) *ModeTracker {
 	return &ModeTracker{
 		IntervalLimit: interval,
@@ -248,6 +290,8 @@ func NewModeTracker(interval time.Duration) *ModeTracker {
 	}
 }
 
+// Push adds an activity record to the ModeTracker.
+// It will drop any expired act records.
 func (mt *ModeTracker) Push(a Activity, t time.Time, weight float64) {
 	// Drop any expired act records.
 	for len(mt.Acts) > 0 && t.Sub(mt.Acts[0].T) > mt.IntervalLimit {
@@ -302,27 +346,13 @@ func (mt *ModeTracker) drop(a Activity, weight float64) {
 }
 
 // Sorted returns the modes sorted by scalar value, with greatest scalars first.
-func (mt *ModeTracker) Sorted(onlyKnown bool) []Mode {
-	modes := []Mode{
+func (mt *ModeTracker) Sorted(onlyKnown bool) Modes {
+	modes := Modes{
 		mt.Stationary, mt.Walking, mt.Running, mt.Cycling, mt.Driving, mt.Flying,
 	}
 	if !onlyKnown {
 		modes = append(modes, mt.Unknown)
 	}
-	slices.SortStableFunc(modes, func(a, b Mode) int {
-		if a.Scalar > b.Scalar {
-			return -1
-		} else if a.Scalar < b.Scalar {
-			return 1
-			// In the case of a tie, prefer the "lesser" activity.
-			// Sloth is easier, and thus more likely, than action.
-		} else if int(a.Activity) < int(b.Activity) {
-			return -1
-		} else if int(a.Activity) > int(b.Activity) {
-			return 1
-		} else {
-			return 0
-		}
-	})
+	slices.SortStableFunc(modes, SortModes)
 	return modes
 }
