@@ -73,6 +73,13 @@ tabula_rasa() {
     { set +x ;} 2>/dev/null
 }
 
+restart_metrics() {
+    cd "${HOME}"/dev/jkehres/docker-compose-influxdb-grafana
+    docker-compose down --volumes
+    docker-compose up --force-recreate --detach
+    cd -
+}
+
 run() {
   # go tool pprof -http localhost:8001 http://localhost:6060/debug/pprof/heap
   # for i in $(seq 1 360); do curl -sK -v http://localhost:6060/debug/pprof/heap > heap.${i}.pprof && echo $(date) - heap.${i}.prof; sleep 60; done
@@ -82,6 +89,8 @@ run() {
   set -x
   go install . || { echo "Install failed" && exit 1 ; }
   [[ -z "${RMCATS}" ]] || { >&2 echo "WARN RMCATS rming cats" && tabula_rasa ; }
+
+  restart_metrics
 
   # https://github.com/rotblauer/docker-compose-influxdb-grafana-catd
   # docker-compose up --detach
