@@ -142,8 +142,6 @@ func inferLapActivity(list []*CatTrack, meanSpeed float64) activity.Activity {
 		actTracker.Push(track.MustActivity(), track.MustTime(), track.Properties.MustFloat64("TimeOffset", 1))
 	}
 
-	// FIXME how come the laps are Running Running Running?
-
 	// Problem: rye runs too fast, gets cycle laps.
 	// Solution: use speed to infer activity, comparing first two sorted-mode activities iff they're relatively close in mode.
 	// ie. If the top-two modes are *roughly* co-occurring, try match either of the two to the lap's mean speed.

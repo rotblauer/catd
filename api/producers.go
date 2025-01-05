@@ -62,26 +62,26 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	//improved := c.ImprovedActTracks(ctx, cleaned)
 	improved := c.ImprovedActTracks(ctx, cleaned)
-	//improvedA := make(chan cattrack.CatTrack)
+	improvedA := make(chan cattrack.CatTrack)
 	improvedB := make(chan cattrack.CatTrack)
 	improvedC := make(chan cattrack.CatTrack)
-	stream.TeeMany(ctx, improved, improvedB, improvedC)
+	stream.TeeMany(ctx, improved, improvedA, improvedB, improvedC)
 
-	//////// P.S. Don't send all tracks to tiled unless development?
-	//go func() {
-	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-	//		SourceSchema: tiled.SourceSchema{
-	//			CatID:      c.CatID,
-	//			SourceName: "tracks-improved",
-	//			LayerName:  "tracks-improved",
-	//		},
-	//		TippeConfigName: params.TippeConfigNameTracks,
-	//		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-	//		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-	//	}, improvedA); err != nil {
-	//		c.logger.Error("Failed to send tracks", "error", err)
-	//	}
-	//}()
+	////// P.S. Don't send all tracks to tiled unless development?
+	go func() {
+		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+			SourceSchema: tiled.SourceSchema{
+				CatID:      c.CatID,
+				SourceName: "tracks-improved",
+				LayerName:  "tracks-improved",
+			},
+			TippeConfigName: params.TippeConfigNameTracks,
+			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+		}, improvedA); err != nil {
+			c.logger.Error("Failed to send tracks", "error", err)
+		}
+	}()
 
 	c.State.Waiting.Add(1)
 	go func() {

@@ -146,7 +146,7 @@ var (
 		"--maximum-zoom", "17",
 		"--cluster-densest-as-needed",
 		"--calculate-feature-density",
-		"--cluster-distance", "2",
+		"--cluster-distance", "1",
 		"--drop-rate", "1", // == --drop-rate
 		"--include", "Alias",
 		"--include", "UUID",

@@ -143,6 +143,31 @@ func InferSpeedFromClosest(speed, maxMul float64, mustActive bool) Activity {
 	return closest
 }
 
+func IsActivityReasonableForSpeed(a Activity, speed float64) bool {
+	if a == TrackerStateUnknown {
+		return true
+	}
+	if a == TrackerStateStationary {
+		return speed < common.SpeedOfWalkingMin
+	}
+	if a == TrackerStateWalking {
+		return speed >= common.SpeedOfWalkingMin && speed < common.SpeedOfWalkingMax
+	}
+	if a == TrackerStateRunning {
+		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfRunningMax
+	}
+	if a == TrackerStateBike {
+		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfDrivingHighway
+	}
+	if a == TrackerStateAutomotive {
+		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfDrivingPrettyDamnFast
+	}
+	if a == TrackerStateFlying {
+		return speed >= common.SpeedOfDrivingPrettyDamnFast
+	}
+	return false
+}
+
 // BreakLap configures Lap splitting based on activity.
 // It is a hot topic.
 func BreakLap(a, b Activity) bool {
@@ -244,7 +269,7 @@ func (s Modes) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s Modes) Less(i, j int) bool { return s[i].Scalar > s[j].Scalar }
 
 // RelWeights mutates the Modes slice to have relative scalar weights (0 to 1).
-func (s Modes) RelWeights() {
+func (s Modes) RelWeights() Modes {
 	totalWeight := 0.0
 	for _, m := range s {
 		totalWeight += m.Scalar
@@ -252,6 +277,7 @@ func (s Modes) RelWeights() {
 	for i := range s {
 		s[i].Scalar /= totalWeight
 	}
+	return s
 }
 
 // ModeTracker tracks the activity modes over a sliding, time interval-based window.
@@ -305,6 +331,24 @@ func (mt *ModeTracker) Push(a Activity, t time.Time, weight float64) {
 		mt.Acts = append(mt.Acts, actRecord{a, t, weight})
 	}
 	mt.add(a, weight)
+}
+
+func (mt *ModeTracker) Reset() {
+	mt.Acts = []actRecord{}
+	mt.Unknown.Scalar = 0
+	mt.Stationary.Scalar = 0
+	mt.Walking.Scalar = 0
+	mt.Running.Scalar = 0
+	mt.Cycling.Scalar = 0
+	mt.Driving.Scalar = 0
+	mt.Flying.Scalar = 0
+}
+
+func (mt *ModeTracker) Span() time.Duration {
+	if len(mt.Acts) < 2 {
+		return 0
+	}
+	return mt.Acts[len(mt.Acts)-1].T.Sub(mt.Acts[0].T)
 }
 
 func (mt *ModeTracker) add(a Activity, weight float64) {
