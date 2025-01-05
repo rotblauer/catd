@@ -17,7 +17,6 @@ import (
 	"io"
 	"log/slog"
 	"math"
-	"sync"
 	"time"
 )
 
@@ -149,31 +148,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 
 	// Tee for processing and InfluxDB metrics.
 	// TODO: Should the InfluxDB metrics be called on successful store instead? Also?
-	normalA, normalB := stream.Tee(ctx, normalized)
-
-	c.State.Waiting.Add(1)
-	go func() {
-		defer c.State.Waiting.Done()
-		once := sync.Once{}
-		batches := stream.Batch(ctx, nil, func(tracks []cattrack.CatTrack) bool {
-			return len(tracks) >= 1000
-		}, normalB)
-		for batch := range batches {
-			if params.INFLUXDB_URL == "" {
-				once.Do(func() {
-					c.logger.Warn("InfluxDB not configured", "method", "ExportCatTracks")
-				})
-				continue
-			}
-			err := c.ExportInfluxDB(batch)
-			if err != nil {
-				// CHORE: Return error via chan.
-				c.logger.Error("Failed to post batch to InfluxDB", "error", err)
-			} else {
-				c.logger.Debug("Batch InfluxDB export", "count", len(batch))
-			}
-		}
-	}()
+	//normalA, normalB := stream.Tee(ctx, normalized)
+	//stream.Blackhole(normalB)
 
 	// Fork normalized stream into snaps/no-snaps.
 	// Snaps are a different animal than normal cat tracks.
@@ -182,7 +158,7 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	// We don't want to send snaps to the places normal tracks go.
 	yesSnaps, noSnaps := stream.TeeFilter(ctx, func(ct cattrack.CatTrack) bool {
 		return ct.IsSnap()
-	}, normalA)
+	}, normalized)
 
 	//// Unbacktrack drops tracks that are older than the last known track,
 	//// or otherwise within the window of seen tracks; critically: per cat/uuid.

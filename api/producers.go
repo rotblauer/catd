@@ -7,6 +7,7 @@ import (
 	"github.com/rotblauer/catd/params"
 	"github.com/rotblauer/catd/stream"
 	"github.com/rotblauer/catd/types/cattrack"
+	"sync"
 )
 
 //func (c *Cat) TeeToFileGZ(ctx context.Context, in <-chan cattrack.CatTrack, path string) {
@@ -37,8 +38,9 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	// Clean and improve tracks for pipeline handlers.
 	wOffsets := cattrack.WithTimeOffset(ctx, in)
-	offsetsDebug, offsetsPass := stream.Tee(ctx, wOffsets)
+	offsetsPass, offsetsDebug := stream.Tee(ctx, wOffsets)
 
+	//stream.Blackhole(offsetsDebug)
 	////// P.S. Don't send all tracks to tiled unless development?
 	go func() {
 		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
@@ -60,25 +62,52 @@ func (c *Cat) ProducerPipelines(ctx context.Context, in <-chan cattrack.CatTrack
 
 	//improved := c.ImprovedActTracks(ctx, cleaned)
 	improved := c.ImprovedActTracks(ctx, cleaned)
-	improvedPass, improvedDebug := stream.Tee[cattrack.CatTrack](ctx, improved)
+	//improvedA := make(chan cattrack.CatTrack)
+	improvedB := make(chan cattrack.CatTrack)
+	improvedC := make(chan cattrack.CatTrack)
+	stream.TeeMany(ctx, improved, improvedB, improvedC)
 
-	////// P.S. Don't send all tracks to tiled unless development?
+	//////// P.S. Don't send all tracks to tiled unless development?
+	//go func() {
+	//	if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
+	//		SourceSchema: tiled.SourceSchema{
+	//			CatID:      c.CatID,
+	//			SourceName: "tracks-improved",
+	//			LayerName:  "tracks-improved",
+	//		},
+	//		TippeConfigName: params.TippeConfigNameTracks,
+	//		Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
+	//		SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
+	//	}, improvedA); err != nil {
+	//		c.logger.Error("Failed to send tracks", "error", err)
+	//	}
+	//}()
+
+	c.State.Waiting.Add(1)
 	go func() {
-		if err := sendToCatTileD(ctx, c, &tiled.PushFeaturesRequestArgs{
-			SourceSchema: tiled.SourceSchema{
-				CatID:      c.CatID,
-				SourceName: "tracks-improved",
-				LayerName:  "tracks-improved",
-			},
-			TippeConfigName: params.TippeConfigNameTracks,
-			Versions:        []tiled.TileSourceVersion{tiled.SourceVersionCanonical, tiled.SourceVersionEdge},
-			SourceModes:     []tiled.SourceMode{tiled.SourceModeAppend, tiled.SourceModeAppend},
-		}, improvedDebug); err != nil {
-			c.logger.Error("Failed to send tracks", "error", err)
+		defer c.State.Waiting.Done()
+		once := sync.Once{}
+		batches := stream.Batch(ctx, nil, func(tracks []cattrack.CatTrack) bool {
+			return len(tracks) >= 1000
+		}, improvedB)
+		for batch := range batches {
+			if params.INFLUXDB_URL == "" {
+				once.Do(func() {
+					c.logger.Warn("InfluxDB not configured", "method", "ExportCatTracks")
+				})
+				continue
+			}
+			err := c.ExportInfluxDB(batch)
+			if err != nil {
+				// CHORE: Return error via chan.
+				c.logger.Error("Failed to post batch to InfluxDB", "error", err)
+			} else {
+				c.logger.Debug("Batch InfluxDB export", "count", len(batch))
+			}
 		}
 	}()
 
-	pipeliners := improvedPass
+	pipeliners := improvedC
 	//pipeliners := improved
 	areaPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)
 	vectorPipeCh := make(chan cattrack.CatTrack, params.DefaultChannelCap)

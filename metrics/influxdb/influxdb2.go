@@ -54,6 +54,10 @@ func ExportCatTracks(tracks []cattrack.CatTrack) error {
 			p.AddField("snap", 1)
 		}
 
+		if v, ok := track.Properties["TimeOffset"]; ok {
+			p.AddField("time_offset", v)
+		}
+
 		// borken:
 		if v, ok := track.Properties["TripDistance"]; ok {
 			p.AddField("trip_distance", v)

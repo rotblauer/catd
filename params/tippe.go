@@ -77,7 +77,7 @@ var (
 
 		// FIXME Doesn't generate ids...?
 		// Or generates dupe features with different ids?
-		// ... Or I'm sending dupes?
+		// ... Or I'm sending dupes? Maybe no prob?
 		"--generate-ids",
 
 		"--read-parallel",
@@ -146,7 +146,7 @@ var (
 		"--maximum-zoom", "17",
 		"--cluster-densest-as-needed",
 		"--calculate-feature-density",
-		"--cluster-distance", "1",
+		"--cluster-distance", "2",
 		"--drop-rate", "1", // == --drop-rate
 		"--include", "Alias",
 		"--include", "UUID",
