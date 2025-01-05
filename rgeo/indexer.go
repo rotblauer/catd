@@ -11,10 +11,10 @@ import (
 
 var TilingZoomLevels = map[int][2]int{}
 var TilingZoomLevelsRe = map[string][2]int{
-	"(?i)Countries": [2]int{1, 5},
-	"(?i)Provinces": [2]int{1, 6},
-	"(?i)Counties":  [2]int{3, 8},
-	"(?i)Cities":    [2]int{3, 10},
+	"(?i)Countries":      [2]int{1, 5},
+	"(?i)Provinces":      [2]int{1, 6},
+	"(?i)Counties":       [2]int{3, 8},
+	"(?i)(Cities|Urban)": [2]int{3, 10},
 }
 
 func initTilingZoomLevels() {
