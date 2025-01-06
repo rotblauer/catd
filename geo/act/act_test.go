@@ -45,7 +45,9 @@ func TestProbableCat_Add(t *testing.T) {
 		return ct.CatID() == "ia"
 	}, tracks)
 	pc := NewProbableCat(params.DefaultActImproverConfig)
+	i := 0
 	for ct := range iaTracks {
+
 		err := pc.Add(ct)
 		if err != nil {
 			t.Logf("track=%v err=%s\n", ct, err)
@@ -53,20 +55,22 @@ func TestProbableCat_Add(t *testing.T) {
 		}
 
 		kalmanVReportDist := geo.Distance(pc.Pos.ProbablePt, ct.Point())
+		if i%100 == 0 {
+			t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
+				pc.Pos.Activity,
+				ct.Point().Lon(),
+				pc.Pos.ProbablePt.Lon(),
+				ct.Point().Lat(),
+				pc.Pos.ProbablePt.Lat(),
+				kalmanVReportDist,
+				wt(ct).SafeSpeed(),
+				pc.Pos.KalmanSpeed,
+				pc.Pos.speed.Snapshot().Rate()/100,
+				pc.Pos.accuracy.Snapshot().Rate(),
+				geo.Distance(pc.Pos.NapPt, ct.Point()),
+				pc.Pos.headingDelta.Snapshot().Rate(),
+			)
+		}
 
-		t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
-			pc.Pos.Activity,
-			ct.Point().Lon(),
-			pc.Pos.ProbablePt.Lon(),
-			ct.Point().Lat(),
-			pc.Pos.ProbablePt.Lat(),
-			kalmanVReportDist,
-			wt(ct).SafeSpeed(),
-			pc.Pos.KalmanSpeed,
-			pc.Pos.speed.Snapshot().Rate(),
-			pc.Pos.accuracy.Snapshot().Rate(),
-			geo.Distance(pc.Pos.NapPt, ct.Point()),
-			pc.Pos.headingDelta.Snapshot().Rate(),
-		)
 	}
 }

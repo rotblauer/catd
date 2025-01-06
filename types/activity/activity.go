@@ -52,6 +52,17 @@ func (a Activity) IsKnown() bool {
 	return a != TrackerStateUnknown
 }
 
+// IsUnknown returns true if the activity is Unknown.
+func (a Activity) IsUnknown() bool {
+	return a == TrackerStateUnknown
+}
+
+// IsActiveHuman returns whether the activity is human-powered.
+func (a Activity) IsActiveHuman() bool {
+	return a >= TrackerStateWalking && a < TrackerStateAutomotive
+}
+
+// String implements the Stringer interface.
 func (a Activity) String() string {
 	switch a {
 	case TrackerStateUnknown:
@@ -72,6 +83,7 @@ func (a Activity) String() string {
 	return "Unknown"
 }
 
+// Emoji returns a single emoji representation of the activity. Tufte wouldn't mind.
 func (a Activity) Emoji() string {
 	switch a {
 	case TrackerStateUnknown:
@@ -90,10 +102,6 @@ func (a Activity) Emoji() string {
 		return "✈️ "
 	}
 	return "❓"
-}
-
-func (a Activity) IsActiveHuman() bool {
-	return a >= TrackerStateWalking && a < TrackerStateAutomotive
 }
 
 // InferFromSpeed infers activity from speed using high -> low max_speed breakpoints.
@@ -283,7 +291,7 @@ func (s Modes) RelWeights() Modes {
 // ModeTracker tracks the activity modes over a sliding, time interval-based window.
 type ModeTracker struct {
 	IntervalLimit time.Duration
-	Acts          []actRecord
+	Acts          []ActRecord
 
 	Unknown    Mode
 	Stationary Mode
@@ -294,7 +302,7 @@ type ModeTracker struct {
 	Flying     Mode
 }
 
-type actRecord struct {
+type ActRecord struct {
 	A Activity
 	T time.Time
 	W float64
@@ -305,7 +313,7 @@ type actRecord struct {
 func NewModeTracker(interval time.Duration) *ModeTracker {
 	return &ModeTracker{
 		IntervalLimit: interval,
-		Acts:          []actRecord{},
+		Acts:          []ActRecord{},
 		Unknown:       Mode{TrackerStateUnknown, 0},
 		Stationary:    Mode{TrackerStateStationary, 0},
 		Walking:       Mode{TrackerStateWalking, 0},
@@ -326,15 +334,15 @@ func (mt *ModeTracker) Push(a Activity, t time.Time, weight float64) {
 	}
 	// Add the new act record.
 	if mt.Acts == nil {
-		mt.Acts = []actRecord{actRecord{a, t, weight}}
+		mt.Acts = []ActRecord{ActRecord{a, t, weight}}
 	} else {
-		mt.Acts = append(mt.Acts, actRecord{a, t, weight})
+		mt.Acts = append(mt.Acts, ActRecord{a, t, weight})
 	}
 	mt.add(a, weight)
 }
 
 func (mt *ModeTracker) Reset() {
-	mt.Acts = []actRecord{}
+	mt.Acts = []ActRecord{}
 	mt.Unknown.Scalar = 0
 	mt.Stationary.Scalar = 0
 	mt.Walking.Scalar = 0
@@ -349,6 +357,17 @@ func (mt *ModeTracker) Span() time.Duration {
 		return 0
 	}
 	return mt.Acts[len(mt.Acts)-1].T.Sub(mt.Acts[0].T)
+}
+
+// Has returns true if any of the activity records match the predicate,
+// returning on the first truthy return.
+func (mt *ModeTracker) Has(predicate func(a ActRecord) bool) bool {
+	for _, act := range mt.Acts {
+		if predicate(act) {
+			return true
+		}
+	}
+	return false
 }
 
 func (mt *ModeTracker) add(a Activity, weight float64) {

@@ -5,6 +5,7 @@ Package act improves reported activities by cats.
 package act
 
 import (
+	"errors"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/geo"
 	rkalman "github.com/regnull/kalman"
@@ -22,37 +23,54 @@ const TrackerStateActivityUndetermined = activity.TrackerStateUnknown - 1
 
 type Pos struct {
 	observed int32
+	interval time.Duration
 
+	// First and Last are the first and last times the cat was observed.
+	// The First field will be filled with the Init method. Last will be updated with each Observe.
 	First, Last time.Time
-	LastTrack   cattrack.CatTrack
+	// LastTrack is the last track observed.
+	LastTrack cattrack.CatTrack
 
+	// ProbablePt is the probable point of the cat,
+	// perhaps representing a filtered or otherwise improved position.
 	ProbablePt orb.Point
 
-	filter      *rkalman.GeoFilter
-	KalmanSpeed float64
+	// KalmanFilter is a Kalman filter.
+	kalmanFilter *rkalman.GeoFilter
+	KalmanSpeed  float64
 
-	speed                 *metrics.NonStandardEWMA
-	speedCalculated       *metrics.NonStandardEWMA
-	accuracy              *metrics.NonStandardEWMA
-	elevation             *metrics.NonStandardEWMA
-	lastHeading           float64
-	headingDelta          *metrics.NonStandardEWMA
-	LastReportedActiveAct activity.Activity
+	// NonStandardEWMAs are non-standard because they permit the tick interval to be set.
+	speed           *metrics.NonStandardEWMA
+	speedCalculated *metrics.NonStandardEWMA
+	accuracy        *metrics.NonStandardEWMA
+	elevation       *metrics.NonStandardEWMA
+	lastHeading     float64
+	headingDelta    *metrics.NonStandardEWMA
 
+	// NapPt is the last observed stationary point.
+	// This value is assigned when the cat becomes stationary,
+	// and can be reassigned as the cat wiggles while napping (slightly).
+	// It may be reset when the cat is inferred to be active.
+	NapPt orb.Point
+
+	// Activity is the last known, derived, activity of the cat.
+	// This is the canonical activity as judged by this state machine.
 	Activity activity.Activity
-	NapPt    orb.Point
 
-	StationaryStart       time.Time
-	ActiveStart           time.Time
-	LastResolvedActiveAct activity.Activity
+	// StationaryStart is the time the cat was first inferred to be stationary.
+	// This time value will be reset when the cat is inferred to be active.
+	StationaryStart time.Time
 
-	// ReportedActivityModeTracker memoizes the last activity modes across the interval.
+	// ActiveStart is the time the cat was first inferred to be active.
+	ActiveStart time.Time
+
+	// ReportedModes memoizes the last activity modes across the interval.
 	// Weighting is by time offset.
-	ReportedActivityModeTracker *activity.ModeTracker
+	ReportedModes *activity.ModeTracker
 
-	// ProbableActiveActModeTracker memoizes the last _probable_ activity modes across the interval.
+	// CanonModes memoizes the last canonical activity modes across the interval.
 	// These are the "improved" activities.
-	ProbableActiveActModeTracker *activity.ModeTracker
+	CanonModes *activity.ModeTracker
 }
 
 func (p *Pos) isNapPtEmpty() bool {
@@ -64,6 +82,10 @@ type ProbableCat struct {
 	Pos    *Pos
 }
 
+func (p *ProbableCat) IsEmpty() bool {
+	return p.Pos.observed == 0 || (p.Pos.First.IsZero() && p.Pos.Last.IsZero())
+}
+
 func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 	if config == nil {
 		config = params.DefaultActImproverConfig
@@ -71,8 +93,8 @@ func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 	return &ProbableCat{
 		Config: config,
 		Pos: &Pos{
-			ReportedActivityModeTracker:  activity.NewModeTracker(config.Interval),
-			ProbableActiveActModeTracker: activity.NewModeTracker(10 * time.Minute),
+			ReportedModes: activity.NewModeTracker(config.Interval),
+			CanonModes:    activity.NewModeTracker(config.Interval),
 			speed: metrics.NewNonStandardEWMA(
 				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 			speedCalculated: metrics.NewNonStandardEWMA(
@@ -134,102 +156,102 @@ func (wt wt) UnsafeHeading() float64 {
 	return heading
 }
 
-func (p *ProbableCat) resetKalmanFilter() {
-	p.Pos.filter = NewRKalmanFilter(
-		p.Pos.ProbablePt.Lat(),
-		p.Pos.speed.Snapshot().Rate(),
+func (p *Pos) resetKalmanFilter() {
+	p.kalmanFilter = NewRKalmanFilter(
+		p.ProbablePt.Lat(),
+		p.speed.Snapshot().Rate(),
 		0.1,
 	)
 }
 
-func (p *ProbableCat) Reset(wt wt) {
+// Init initializes the position data with the given (wrapped) CatTrack.
+func NewPos(wt wt, interval time.Duration) *Pos {
 	ct := (*cattrack.CatTrack)(&wt)
 	ctAct := ct.MustActivity()
-	p.Pos = &Pos{
-		First:                        ct.MustTime(),
-		Last:                         ct.MustTime(),
-		LastTrack:                    *ct,
-		Activity:                     ctAct,
-		ProbablePt:                   ct.Point(),
-		ReportedActivityModeTracker:  activity.NewModeTracker(p.Config.Interval),
-		ProbableActiveActModeTracker: activity.NewModeTracker(10 * time.Minute),
-		speed:                        metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		speedCalculated:              metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		accuracy:                     metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		elevation:                    metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		headingDelta:                 metrics.NewNonStandardEWMA(metrics.AlphaEWMA(p.Config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+	p := &Pos{
+		interval:        interval,
+		First:           ct.MustTime(),
+		Last:            ct.MustTime(),
+		LastTrack:       *ct,
+		Activity:        ctAct,
+		ProbablePt:      ct.Point(),
+		ReportedModes:   activity.NewModeTracker(interval),
+		CanonModes:      activity.NewModeTracker(interval),
+		speed:           metrics.NewNonStandardEWMA(metrics.AlphaEWMA(interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		speedCalculated: metrics.NewNonStandardEWMA(metrics.AlphaEWMA(interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		accuracy:        metrics.NewNonStandardEWMA(metrics.AlphaEWMA(interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		elevation:       metrics.NewNonStandardEWMA(metrics.AlphaEWMA(interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		headingDelta:    metrics.NewNonStandardEWMA(metrics.AlphaEWMA(interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 	}
 
 	p.resetKalmanFilter()
 
-	if !p.Pos.Activity.IsActive() {
-		p.Pos.NapPt = cattrack.CatTrack(wt).Point()
+	if !p.Activity.IsActive() {
+		p.NapPt = cattrack.CatTrack(wt).Point()
 	}
-	p.Pos.speed.Update(int64(math.Round(wt.SafeSpeed() * 100)))
-	p.Pos.speed.SetInterval(time.Second)
-	p.Pos.speed.Tick()
-	p.Pos.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
-	p.Pos.accuracy.SetInterval(time.Second)
-	p.Pos.accuracy.Tick()
-	p.Pos.elevation.Update(int64(math.Round(wt.Properties.MustFloat64("Elevation", 0))))
-	p.Pos.elevation.SetInterval(time.Second)
-	p.Pos.elevation.Tick()
+	p.speed.Update(int64(math.Round(wt.SafeSpeed() * 100)))
+	p.speed.SetInterval(time.Second)
+	p.speed.Tick()
+	p.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
+	p.accuracy.SetInterval(time.Second)
+	p.accuracy.Tick()
+	p.elevation.Update(int64(math.Round(wt.Properties.MustFloat64("Elevation", 0))))
+	p.elevation.SetInterval(time.Second)
+	p.elevation.Tick()
 
-	p.Pos.lastHeading = wt.SafeHeading()
+	p.lastHeading = wt.SafeHeading()
 
-	p.Pos.ReportedActivityModeTracker.Push(ctAct, p.Pos.Last, ct.Properties.MustFloat64("TimeOffset", 1))
+	p.ReportedModes.Push(ctAct, p.Last, ct.Properties.MustFloat64("TimeOffset", 1))
 
-	if ctAct.IsActive() {
-		p.Pos.LastReportedActiveAct = ctAct
-	}
-
-	atomic.AddInt32(&p.Pos.observed, 1)
+	atomic.AddInt32(&p.observed, 1)
+	return p
 }
 
 // Observe updates the position data with the given (wrapped) CatTrack.
-func (p *Pos) Observe(seconds float64, wt wt) {
+func (p *Pos) Observe(offset float64, wt wt) error {
 	ct := (*cattrack.CatTrack)(&wt)
 	atomic.AddInt32(&p.observed, 1)
 
-	p.filterObserve(seconds, wt)
+	// Observe and handle kalman filter estimates.
+	// Do this first because the function MAY use a workaround for a
+	// possibly buggy library, re-Init-ing the whole Pos.
+	if err := p.filterObserve(offset, wt); err != nil {
+		return err
+	}
 
 	p.speed.Update(int64(math.Round(wt.SafeSpeed() * 100)))
-	p.speed.SetInterval(time.Duration(seconds) * time.Second)
+	p.speed.SetInterval(time.Duration(offset) * time.Second)
 	p.speed.Tick()
 
 	distance := geo.Distance(p.ProbablePt, ct.Point())
-	calculatedSpeed := distance / seconds
+	calculatedSpeed := distance / offset
 
 	p.speedCalculated.Update(int64(math.Round(calculatedSpeed * 100)))
-	p.speedCalculated.SetInterval(time.Duration(seconds) * time.Second)
+	p.speedCalculated.SetInterval(time.Duration(offset) * time.Second)
 	p.speedCalculated.Tick()
 
 	p.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
-	p.accuracy.SetInterval(time.Duration(seconds) * time.Second)
+	p.accuracy.SetInterval(time.Duration(offset) * time.Second)
 	p.accuracy.Tick()
 
 	p.elevation.Update(int64(math.Round(wt.Properties.MustFloat64("Elevation", 0))))
-	p.elevation.SetInterval(time.Duration(seconds) * time.Second)
+	p.elevation.SetInterval(time.Duration(offset) * time.Second)
 	p.elevation.Tick()
 
 	headingDelta := math.Abs(wt.SafeHeading() - p.lastHeading)
 	p.headingDelta.Update(int64(math.Round(headingDelta)))
-	p.headingDelta.SetInterval(time.Duration(seconds) * time.Second)
+	p.headingDelta.SetInterval(time.Duration(offset) * time.Second)
 	p.headingDelta.Tick()
 	p.lastHeading = wt.SafeHeading()
 
 	p.Last = ct.MustTime()
 	p.LastTrack = *ct
-	act := ct.MustActivity()
-	if act.IsActive() {
-		p.LastReportedActiveAct = act
-	}
-
-	p.ReportedActivityModeTracker.Push(act, ct.MustTime(), seconds)
+	p.ReportedModes.Push(ct.MustActivity(), ct.MustTime(), offset)
+	return nil
 }
 
-func (p *Pos) filterObserve(seconds float64, wt wt) {
-	err := p.filter.Observe(seconds, &rkalman.GeoObserved{
+func (p *Pos) filterObserve(seconds float64, wt wt) error {
+	err := p.kalmanFilter.Observe(seconds, &rkalman.GeoObserved{
 		Lat:      cattrack.CatTrack(wt).Point().Lat(),
 		Lng:      cattrack.CatTrack(wt).Point().Lon(),
 		Altitude: wt.Properties.MustFloat64("Elevation", 0),
@@ -243,174 +265,266 @@ func (p *Pos) filterObserve(seconds float64, wt wt) {
 	})
 	if err != nil {
 		slog.Error("Kalman.Observe failed", "error", err)
-	}
-}
-
-func (p *ProbableCat) IsEmpty() bool {
-	return p.Pos.observed == 0 || (p.Pos.First.IsZero() && p.Pos.Last.IsZero())
-}
-
-func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
-	if p.IsEmpty() {
-		p.Reset(wt(ct))
-		return nil
-	}
-	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
-		p.Reset(wt(ct))
-		return nil
-	}
-	span := ct.MustTime().Sub(p.Pos.Last)
-	if span == 0 {
-		return nil
-	}
-	if span > p.Config.ResetInterval || span < -1*time.Second {
-		p.Reset(wt(ct))
-		return nil
+		return errors.New("Kalman.Observe failed")
 	}
 
-	p.Pos.Observe(span.Seconds(), wt(ct))
-	speedRate := p.Pos.speed.Snapshot().Rate() / 100
-	speedCalculatedRate := p.Pos.speedCalculated.Snapshot().Rate() / 100
+	filterEstimate := p.kalmanFilter.Estimate()
 
-	filterEstimate := p.Pos.filter.Estimate()
+	// Workaround a wonky kalman filter.
+	// If the speed is too high, reset the filter.
+	// What happens is the kalman filter goes haywire, and starts reporting
+	// speeds that are way too high, possibly related to poor heading_accuracy input?
+	// This catches it, roughly, as/before that happens.
+	speedRate := p.speed.Snapshot().Rate() / 100
 	if filterEstimate != nil {
-
-		// Workaround a wonky kalman filter.
-		// If the speed is too high, reset the filter.
-		// What happens is the kalman filter goes haywire, and starts reporting
-		// speeds that are way too high, possibly related to poor heading_accuracy input?
-		// This catches it, roughly, as/before that happens.
 		if filterEstimate.Speed > 3 && filterEstimate.Speed > speedRate*10 {
 			// Could be slog.Error, but noisy
 			slog.Debug("Kalman.Estimate.speed is 10x the reported 1-minute EWMA rate", "speed", filterEstimate.Speed, "speedRate", speedRate)
 			p.resetKalmanFilter()
 		} else {
-			p.Pos.ProbablePt = orb.Point{filterEstimate.Lng, filterEstimate.Lat}
-			p.Pos.KalmanSpeed = filterEstimate.Speed
+			p.ProbablePt = orb.Point{filterEstimate.Lng, filterEstimate.Lat}
+			p.KalmanSpeed = filterEstimate.Speed
 		}
-
 	} else {
 		// Estimate was nil. Reset the filter.
 		// Hopefully this will be rare; the above workaround for the Kalman filter
 		// should catch most of the cases where the filter goes haywire.
-		slog.Error("Kalman.Estimate was nil. Resetting everything.", "cat", ct.CatID())
-		p.Reset(wt(ct))
-		return nil
+		slog.Error("Kalman.Estimate was nil. Resetting everything.", "cat", (*cattrack.CatTrack)(&wt).CatID())
+		return errors.New("Kalman.Estimate was nil")
 	}
-
-	ctAct := ct.MustActivity()
-	ctAccuracy := wt(ct).SafeAccuracy()
-	minSpeed := math.Min(speedRate, p.Pos.KalmanSpeed)
-	minSpeed = math.Min(minSpeed, wt(ct).SafeSpeed())
-	minSpeed = math.Min(minSpeed, speedCalculatedRate)
-
-	inferStationary := 0.0
-	if stable, valid := isGyroscopicallyStable(&ct); valid && stable {
-		inferStationary += 1000.0
-	}
-	if !p.Pos.isNapPtEmpty() {
-		distNap := geo.Distance(p.Pos.NapPt, p.Pos.ProbablePt)
-		if distNap-ctAccuracy < p.Config.Interval.Seconds()*p.Config.Distance {
-			inferStationary += 1.0
-		} else if distNap+ctAccuracy > p.Config.Interval.Seconds()*p.Config.Distance {
-			inferStationary -= 1.0
-		}
-	}
-	if minSpeed < p.Config.SpeedThreshold {
-		inferStationary += 1.0
-	} else {
-		inferStationary -= (minSpeed - p.Config.SpeedThreshold) / p.Config.SpeedThreshold
-	}
-	if ctAct.IsActive() {
-		inferStationary -= 1.0
-	} else if ctAct.IsKnown() {
-		inferStationary += 1.0
-	}
-	if w := wt(ct); w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 {
-		inferStationary += 1.0
-	}
-
-	proposal := activity.TrackerStateUnknown
-	if inferStationary > 1 {
-		p.Pos.NapPt = p.Pos.ProbablePt
-
-		if p.Pos.StationaryStart.IsZero() {
-			p.Pos.StationaryStart = ct.MustTime()
-		} else if ct.MustTime().Sub(p.Pos.StationaryStart) > p.Config.Interval {
-			// Enforcing stationary; timeout elapsed.
-			p.Pos.ActiveStart = time.Time{}
-			proposal = activity.TrackerStateStationary
-		}
-	} else if inferStationary < -1 {
-		if p.Pos.ActiveStart.IsZero() {
-			p.Pos.ActiveStart = ct.MustTime()
-		} else if ct.MustTime().Sub(p.Pos.ActiveStart) > p.Config.Interval {
-			// Enforcing active; timeout elapsed.
-			p.Pos.StationaryStart = time.Time{}
-			proposal = p.mustActiveActivity(ct.MustTime(), ctAct, speedRate)
-		}
-	}
-	if !proposal.IsKnown() && ctAct.IsKnown() {
-		proposal = ctAct
-	}
-	if !proposal.IsKnown() {
-		if minSpeed > p.Config.SpeedThreshold {
-			proposal = p.mustActiveActivity(ct.MustTime(), proposal, speedRate)
-		} else {
-			proposal = activity.TrackerStateStationary
-		}
-	}
-	// audit proposal to make sure activity:speed is logical
-	if proposal.IsActive() && !activity.IsActivityReasonableForSpeed(proposal, speedRate) {
-		proposal = activity.InferSpeedFromClosest(speedRate, 1.0, true)
-	}
-	p.resolveActivity(proposal, ct)
 	return nil
 }
 
-// resolveActivity is called when an activity is finally resolved.
+func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
+	if p.IsEmpty() {
+		p.Pos = NewPos(wt(ct), p.Config.Interval)
+		return nil
+	}
+	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
+		p.Pos = NewPos(wt(ct), p.Config.Interval)
+		return nil
+	}
+	span := ct.Properties.MustFloat64("TimeOffset", ct.MustTime().Sub(p.Pos.Last).Seconds())
+	if span == 0 {
+		return nil
+	}
+	if span > p.Config.ResetInterval.Seconds() || span <= -1 {
+		p.Pos = NewPos(wt(ct), p.Config.Interval)
+		return nil
+	}
+	if err := p.Pos.Observe(span, wt(ct)); err != nil {
+		p.Pos = NewPos(wt(ct), p.Config.Interval)
+	}
+	prop, conf := p.Propose(ct)
+	return p.Resolve(ct, prop, conf)
+}
+
+// Propose proposes a KNOWN activity based on the state of the cat and the current track.
+// It is intended primarily to handle high-confidence and bad reported-data cases.
+// It tries to use the probable state of the cat instead of the reported data;
+// leaving resolving report vs. proposed to the Resolve function.
+func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
+
+	ctAct := ct.MustActivity()
+	ctAccuracy := wt(ct).SafeAccuracy()
+	speedRate := p.Pos.speed.Snapshot().Rate() / 100
+	speedCalculatedRate := p.Pos.speedCalculated.Snapshot().Rate() / 100
+	//meanSpeedRate := (speedRate + speedCalculatedRate) / 2
+
+	minSpeed := math.Min(speedRate, speedCalculatedRate)
+	minSpeed = math.Min(minSpeed, wt(ct).SafeSpeed())
+	minSpeed = math.Min(minSpeed, p.Pos.KalmanSpeed)
+
+	// stationaryConfidence is the confidence weight we assign to the cat being stationary (or not).
+	// A value > 1 will indicate actionable confidence that the cat is in a stationary state,
+	// while a value < -1 will indicate actionable confidence that the cat is in an active state.
+	if stable, valid := isGyroscopicallyStable(&ct); valid && stable {
+		stationaryConfidence += 1000.0
+	}
+	if p.Pos.Activity.IsStationary() && !p.Pos.isNapPtEmpty() {
+		distNap := geo.Distance(p.Pos.NapPt, p.Pos.ProbablePt)
+		if distNap-ctAccuracy < p.Config.Distance {
+			stationaryConfidence += 1.0
+		} else if distNap+ctAccuracy > p.Config.Distance {
+			stationaryConfidence -= 1.0
+		}
+	}
+	if minSpeed < p.Config.SpeedThreshold {
+		stationaryConfidence += 1.0
+	} else {
+		stationaryConfidence -= (speedRate - p.Config.SpeedThreshold) / p.Config.SpeedThreshold
+	}
+	if ctAct.IsActive() {
+		stationaryConfidence -= 1.0
+	} else if ctAct.IsStationary() {
+		stationaryConfidence += 1.0
+	}
+	if w := wt(ct); w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 {
+		stationaryConfidence += 1.0
+	}
+
+	// Returns define actionable confidence thresholds.
+	if stationaryConfidence > 1 {
+		proposed = activity.TrackerStateStationary
+		return proposed, stationaryConfidence
+	}
+	if stationaryConfidence < -1 {
+		canonMode := p.Pos.CanonModes.Sorted(true).RelWeights()[0]
+		reportedMode := p.Pos.ReportedModes.Sorted(true).RelWeights()[0]
+		if p.Pos.CanonModes.Span() > p.Config.Interval {
+			if canonMode.Activity.IsActive() && canonMode.Scalar > 0.5 {
+				proposed = canonMode.Activity
+			}
+		} else if p.Pos.ReportedModes.Span() > p.Config.Interval {
+			if reportedMode.Activity.IsActive() && reportedMode.Scalar > 0.5 {
+				proposed = reportedMode.Activity
+			}
+		} else if canonMode.Activity.IsActive() && canonMode.Scalar > 0.5 {
+			proposed = canonMode.Activity
+		} else if reportedMode.Activity.IsActive() && reportedMode.Scalar > 0.5 {
+			proposed = reportedMode.Activity
+		}
+		if activity.IsActivityReasonableForSpeed(proposed, speedRate) {
+			return proposed, stationaryConfidence
+		}
+		proposed = activity.InferSpeedFromClosest(speedRate, 1.0, true)
+		return proposed, stationaryConfidence
+	}
+	// Indeterminate confidence; use reported data if reasonable.
+	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, speedRate) {
+		return ctAct, stationaryConfidence
+	}
+	// No confidence in reported data; try use historical data.
+	prop := p.Pos.CanonModes.Sorted(true).RelWeights()[0]
+	if prop.Activity.IsKnown() && activity.IsActivityReasonableForSpeed(prop.Activity, speedRate) {
+		return prop.Activity, stationaryConfidence
+	}
+	prop = p.Pos.ReportedModes.Sorted(true).RelWeights()[0]
+	if prop.Activity.IsKnown() && activity.IsActivityReasonableForSpeed(prop.Activity, speedRate) {
+		return prop.Activity, stationaryConfidence
+	}
+	// All methods exhausted; infer from speed.
+	return activity.InferSpeedFromClosest(speedRate, 1.0, false), stationaryConfidence
+}
+
+// Resolve resolves a canonical outcome given disparities between reported and proposed activities.
+// It assumes proposed is a known activity, and call a stateful callback before returning, updating
+// the probable cat state.
+func (p *ProbableCat) Resolve(ct cattrack.CatTrack, proposed activity.Activity, stationaryConfidence float64) error {
+	ctAct := ct.MustActivity()
+	speedRate := p.Pos.speed.Snapshot().Rate() / 100
+
+	act := activity.TrackerStateUnknown
+	defer func() {
+		p.onResolveActivity(act, ct)
+	}()
+
+	// Resolve same.
+	if ct.MustActivity() == proposed {
+		act = proposed
+		return nil
+	}
+	// Resolve proposed when cat act is unknown (bad data).
+	if ctAct.IsUnknown() {
+		act = proposed
+		return nil
+	}
+	// Resolve in favor of proposed in cases of active::stationary.
+	if ctAct.IsActive() != proposed.IsActive() && (stationaryConfidence > 1 || stationaryConfidence < -1) {
+		act = proposed
+		return nil
+	}
+
+	// Handle "upshifting" cases. These are common ones.
+	// Here, we expect
+	// - where a run turns in a bike
+	// - where a bike turns into a drive
+	// - where a walk turns in a bike
+	// It's really hard to transition between any of these without stopping at least briefly.
+	if ctAct.IsActive() && proposed.IsActive() {
+		if !p.Pos.CanonModes.Has(func(a activity.ActRecord) bool {
+			return a.A.IsStationary() && a.W > 0
+		}) {
+			// So if there was recorded canonical stop (however brief), we should prefer
+			// the lesser of the two activities.
+			if int(ctAct) < int(proposed) {
+				act = ctAct
+			}
+			if int(proposed) < int(ctAct) {
+				act = proposed
+			}
+		} else {
+			// Else there WAS a stop, and we should prefer the greater activity.
+			if int(ctAct) > int(proposed) {
+				act = ctAct
+			}
+			if int(proposed) > int(ctAct) {
+				act = proposed
+			}
+		}
+		if act.IsKnown() && activity.IsActivityReasonableForSpeed(act, speedRate) {
+			act = proposed
+			return nil
+		}
+	}
+
+	// Resolve on decent reported data.
+	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, speedRate) {
+		act = ctAct
+		return nil
+	}
+	// Resolve proposed data.
+	act = proposed
+	return nil
+}
+
+// onResolveActivity is called when an activity is finally resolved.
 // It installs the
-func (p *ProbableCat) resolveActivity(act activity.Activity, ct cattrack.CatTrack) {
-	// lap -> nap
-	if p.Pos.Activity.IsActive() && !act.IsActive() {
-		p.Pos.ProbableActiveActModeTracker.Reset()
-	}
-	// nap -> lap
-	if !p.Pos.Activity.IsActive() && act.IsActive() {
-	}
+func (p *ProbableCat) onResolveActivity(act activity.Activity, ct cattrack.CatTrack) {
 	p.Pos.Activity = act
-	if act.IsActive() {
-		p.Pos.ProbableActiveActModeTracker.Push(act, ct.MustTime(), ct.Properties.MustFloat64("TimeOffset", 1))
+	p.Pos.CanonModes.Push(act, ct.MustTime(), ct.Properties.MustFloat64("TimeOffset", 1))
+
+	if act.IsStationary() {
+
+		// Once the stationary timer expires (and the cat's stationary state has not been interrupted,
+		// resetting the timer)...
+		if !p.Pos.StationaryStart.IsZero() && p.Pos.Last.Sub(p.Pos.StationaryStart) > p.Config.Interval {
+			// Enforcing stationary; timeout elapsed.
+			p.Pos.ActiveStart = time.Time{}
+			p.Pos.NapPt = p.Pos.ProbablePt
+		} else if p.Pos.StationaryStart.IsZero() {
+			p.Pos.StationaryStart = ct.MustTime()
+		}
 	}
+	if act.IsActive() {
+		if !p.Pos.ActiveStart.IsZero() && p.Pos.Last.Sub(p.Pos.ActiveStart) > p.Config.Interval {
+			p.Pos.StationaryStart = time.Time{}
+			//p.Pos.NapPt = orb.Point{} // leave; might get reused when cat returns?
+		} else if p.Pos.ActiveStart.IsZero() {
+			p.Pos.ActiveStart = ct.MustTime()
+		}
+	}
+
 }
 
 func (p *ProbableCat) mustActiveActivity(t time.Time, act activity.Activity, speed float64) activity.Activity {
 	if act.IsActive() {
 		return act
 	}
-	if !act.IsKnown() && !p.Pos.ActiveStart.IsZero() && p.Pos.ProbableActiveActModeTracker.Span() > 0 {
-		lastAct := p.Pos.Activity
-		if lastAct.IsKnown() && lastAct.IsActive() {
-			return lastAct
-		}
-	}
-	//if !p.Pos.ActiveStart.IsZero() || t.Sub(p.Pos.StationaryStart) < p.Config.Interval {
-	//	return p.Pos.LastReportedActiveAct
-	//}
 
-	if p.Pos.ProbableActiveActModeTracker.Span() > 0 {
-		pas := p.Pos.ProbableActiveActModeTracker.Sorted(true).RelWeights()
+	if p.Pos.CanonModes.Span() > 0 {
+		pas := p.Pos.CanonModes.Sorted(true).RelWeights()
 		if pas[0].Activity.IsActive() && pas[0].Scalar > 0.5 {
 			return pas[0].Activity
 		}
 	}
 
-	reportedActModes := p.Pos.ReportedActivityModeTracker.Sorted(true).RelWeights()
+	reportedActModes := p.Pos.ReportedModes.Sorted(true).RelWeights()
 	if reportedActModes[0].Activity.IsActive() && reportedActModes[0].Scalar > 0.5 {
 		return reportedActModes[0].Activity
 	}
 
-	//decidedActModes := p.Pos.ProbableActiveActModeTracker.Sorted(true)
+	//decidedActModes := p.Pos.CanonModes.Sorted(true)
 	//if decidedActModes[0].Activity.IsActive() && decidedActModes[0].Scalar*0.6 > decidedActModes[1].Scalar {
 	//	return decidedActModes[0].Activity
 	//}
