@@ -41,7 +41,7 @@ var (
 
 // IsActive returns whether the activity is moving. (Yoga is NOT "Active".)
 func (a Activity) IsActive() bool {
-	return a > TrackerStateStationary
+	return a > TrackerStateStationary && a <= TrackerStateFlying
 }
 
 // IsStationary returns whether the activity is stationary.

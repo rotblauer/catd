@@ -33,7 +33,8 @@ func TestAccelerationStuff(t *testing.T) {
 
 func TestProbableCat_Add(t *testing.T) {
 	//sourcePath := testdata.Path(testdata.Source_EDGE20241217)
-	sourcePath := "/home/ia/tdata/edge.json.gz"
+	//sourcePath := "/home/ia/tdata/edge.json.gz"
+	sourcePath := "/home/ia/tdata/20250103_500000.json.gz"
 
 	ctx := context.Background()
 	tracks, errs := testdata.ReadSourceJSONGZ[cattrack.CatTrack](ctx, sourcePath)
@@ -48,6 +49,10 @@ func TestProbableCat_Add(t *testing.T) {
 	i := 0
 	for ct := range iaTracks {
 
+		if u := ct.MustTime().Unix(); u < 1735762585 || u > 1735765627 {
+			continue
+		}
+
 		err := pc.Add(ct)
 		if err != nil {
 			t.Logf("track=%v err=%s\n", ct, err)
@@ -56,8 +61,9 @@ func TestProbableCat_Add(t *testing.T) {
 
 		kalmanVReportDist := geo.Distance(pc.Pos.ProbablePt, ct.Point())
 		if i%100 == 0 {
-			t.Logf(`act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f headingD=%3.02f\n`,
+			t.Logf(`pos.act=%s ct.act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f heading=%3.02f headingD=%3.02f\n`,
 				pc.Pos.Activity,
+				ct.MustActivity(),
 				ct.Point().Lon(),
 				pc.Pos.ProbablePt.Lon(),
 				ct.Point().Lat(),
@@ -68,9 +74,16 @@ func TestProbableCat_Add(t *testing.T) {
 				pc.Pos.speed.Snapshot().Rate()/100,
 				pc.Pos.accuracy.Snapshot().Rate(),
 				geo.Distance(pc.Pos.NapPt, ct.Point()),
+				ct.Properties.MustFloat64("Heading", -1),
 				pc.Pos.headingDelta.Snapshot().Rate(),
 			)
 		}
 
 	}
 }
+
+/*
+1735588579
+1735762585
+1735765627
+*/
