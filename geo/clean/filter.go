@@ -51,6 +51,10 @@ func FilterLaps(ct cattrack.CatLap) bool {
 		return false
 	}
 
+	//if ct.BearingDeltaRate() > 180 {
+	//	return false
+	//}
+
 	// Sanity check for speed.
 	// This is a hacky workaround for a spurious pseudo-flight (ia 202411/12) that got
 	// logged as a lap.

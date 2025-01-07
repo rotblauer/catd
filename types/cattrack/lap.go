@@ -124,15 +124,97 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	// FIXME: Another list iteration and awkward type assertions.
 	f.Properties["Activity"] = inferLapActivity(tracks, f.Properties.MustFloat64("Speed_Reported_Mean", 0)).String()
 
-	return f
-}
+	f.Properties["BearingDeltaRate"] = f.BearingDeltaRate()
+	f.Properties["SelfIntersectionRate"] = f.SelfIntersectionRate()
 
-func (cl *CatLap) DistanceTraversed() float64 {
-	return cl.Properties.MustFloat64("Distance_Traversed")
+	return f
 }
 
 func (cl *CatLap) Duration() time.Duration {
 	return time.Duration(cl.Properties.MustFloat64("Duration")) * time.Second
+}
+
+func (cl *CatLap) DistanceTraversed() (distance float64) {
+	for i := 0; i < len(cl.Geometry.(orb.LineString)); i++ {
+		if i == 0 {
+			continue
+		}
+		// Get the distance between the last and next point.
+		lastPt, thisPt := cl.Geometry.(orb.LineString)[i-1], cl.Geometry.(orb.LineString)[i]
+		distance += geo.Distance(lastPt, thisPt)
+	}
+	return
+}
+
+// BearingDeltaRate is an experiment in spikeball identification.
+func (cl *CatLap) BearingDeltaRate() float64 {
+	ls := cl.Geometry.(orb.LineString)
+	rr := 0.0
+	for i := range ls {
+		if i == 0 || i == len(ls)-1 {
+			continue
+		}
+		// Get the angle of the last and next segment.
+		lastPt, thisPt, nextPt := ls[i-1], ls[i], ls[i+1]
+		lastDistance := geo.Distance(lastPt, thisPt)
+		nextDistance := geo.Distance(thisPt, nextPt)
+		lastBearing := geo.Bearing(lastPt, thisPt)
+		nextBearing := geo.Bearing(thisPt, nextPt)
+		bearingDelta := math.Abs(lastBearing - nextBearing)
+		r := bearingDelta * (lastDistance + nextDistance)
+		rr += r
+	}
+	return rr / cl.DistanceTraversed()
+}
+
+func (cl *CatLap) SelfIntersectionRate() float64 {
+	//common.SegmentsIntersect()
+	ls := cl.Geometry.(orb.LineString)
+	intersectingDistances := 0.0
+	segments := []orb.LineString{}
+	for i := 0; i < len(ls); i++ {
+		if i == 0 {
+			continue
+		}
+		seg := orb.LineString{ls[i-1], ls[i]}
+		for j := 0; j < len(segments); j++ {
+			intersects, _, _ := common.SegmentsIntersect(seg, segments[j])
+			if intersects {
+				intersectingDistances += geo.Distance(seg[0], seg[1])
+			}
+		}
+		segments = append(segments, seg)
+	}
+	// Iterate over the segments.
+	for i := 0; i < len(segments); i++ {
+		if i == len(segments)-1 {
+			break
+		}
+		for j := i + 1; j < len(segments); j++ {
+			intersects, _, _ := common.SegmentsIntersect(segments[i], segments[j])
+			if intersects {
+				intersectingDistances += geo.Distance(segments[i][0], segments[i][1])
+			}
+		}
+	}
+
+	for i := range ls {
+		if i == 0 || i == len(ls)-1 {
+			continue
+		}
+		// Get the angle of the last and next segment.
+		lastPt, thisPt, nextPt := ls[i-1], ls[i], ls[i+1]
+		lastDistance := geo.Distance(lastPt, thisPt)
+		nextDistance := geo.Distance(thisPt, nextPt)
+
+		lastSeg := orb.LineString{lastPt, thisPt}
+		nextSeg := orb.LineString{thisPt, nextPt}
+		intersects, _, _ := common.SegmentsIntersect(lastSeg, nextSeg)
+		if intersects {
+			intersectingDistances += lastDistance + nextDistance
+		}
+	}
+	return intersectingDistances / cl.DistanceTraversed()
 }
 
 func inferLapActivity(list []*CatTrack, meanSpeed float64) activity.Activity {

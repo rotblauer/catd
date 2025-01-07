@@ -115,6 +115,9 @@ var (
 		"--include", "Elevation_Gain",
 		"--include", "Elevation_Loss",
 
+		"--include", "BearingDeltaRate",
+		"--include", "SelfIntersectionRate",
+
 		"--order-by", "Time_Start_Unix",
 	}
 	TippeNapsArgs = CLIFlagsT{

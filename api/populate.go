@@ -65,7 +65,7 @@ func (c *Cat) SubscribeFancyLogs() {
 				"time", lap.Properties.MustString("Time_Start_RFC3339", "XXX"),
 				"count", lap.Properties.MustInt("RawPointCount", -1),
 				"duration", lap.Duration().Truncate(time.Second),
-				"meters", humanize.SIWithDigits(lap.DistanceTraversed(), 2, "m"),
+				"meters", humanize.SIWithDigits(lap.Properties.MustFloat64("Distance_Traversed"), 2, "m"),
 				"activity", a.String(),
 			)
 		}

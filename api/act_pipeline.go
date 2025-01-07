@@ -23,23 +23,28 @@ func (c *Cat) CatActPipeline(ctx context.Context, in <-chan cattrack.CatTrack) e
 	// and restored on cat restart.
 	// Act-detection logic below will flush the last lap if the cat is sufficiently napping.
 	ls, completedLaps := c.TrackLaps(ctx, lapTracks)
-	filterLaps := stream.Filter(ctx, clean.FilterLaps, completedLaps)
 
 	// Simplify the lap geometry.
-	simplifier := simplify.DouglasPeucker(params.DefaultLineStringSimplificationConfig.DouglasPeuckerThreshold)
 	simplified := stream.Transform(ctx, func(ct cattrack.CatLap) cattrack.CatLap {
+		threshold := params.DefaultLineStringSimplificationConfig.DouglasPeuckerThreshold
+		if ct.DistanceTraversed() < 500 {
+			threshold /= 2
+		}
+		simplifier := simplify.DouglasPeucker(threshold)
 		cp := new(cattrack.CatLap)
 		*cp = ct
 		geom := simplifier.Simplify(ct.Geometry)
 		cp.Geometry = geom
 		return *cp
-	}, filterLaps)
+	}, completedLaps)
+
+	filteredLaps := stream.Filter(ctx, clean.FilterLaps, simplified)
 
 	// End of the line for all cat laps...
 	sinkLaps := make(chan cattrack.CatLap)
 	sendLaps := make(chan cattrack.CatLap)
 	notifyLaps := make(chan cattrack.CatLap)
-	stream.TeeMany(ctx, simplified, sinkLaps, sendLaps, notifyLaps)
+	stream.TeeMany(ctx, filteredLaps, sinkLaps, sendLaps, notifyLaps)
 
 	// TrackNaps will send completed naps. Incomplete naps are persisted in KV
 	// and restored on cat restart.
