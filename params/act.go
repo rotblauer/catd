@@ -29,7 +29,13 @@ type ActDiscretionConfig struct {
 	SplitActivities bool
 }
 
+// DefaultActImproverConfig is the default configuration for ActImprover.
+/*
+Notes
+30s * 1.2 m/s = 36m
+*/
 var DefaultActImproverConfig = &ActDiscretionConfig{
+
 	Interval:       30 * time.Second,
 	ResetInterval:  5 * time.Minute,
 	Distance:       100.0,

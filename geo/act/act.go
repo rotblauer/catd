@@ -75,17 +75,13 @@ type Pos struct {
 	CanonModes *activity.ModeTracker
 }
 
-func (p *Pos) isNapPtEmpty() bool {
-	return p.NapPt == orb.Point{}
-}
-
 type ProbableCat struct {
 	Config *params.ActDiscretionConfig
 	Pos    *Pos
 }
 
 func (p *ProbableCat) IsEmpty() bool {
-	return p.Pos.observed == 0 || (p.Pos.First.IsZero() && p.Pos.Last.IsZero())
+	return (p.Pos.First.IsZero() && p.Pos.Last.IsZero())
 }
 
 func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
@@ -335,7 +331,7 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
 
 	ctAct := ct.MustActivity()
-	//ctAccuracy := wt(ct).SafeAccuracy()
+	ctAccuracy := wt(ct).SafeAccuracy()
 	speedRate := p.Pos.speed.Snapshot().Rate() / 100
 	speedCalculatedRate := p.Pos.speedCalculated.Snapshot().Rate() / 100
 	//meanSpeedRate := (speedRate + speedCalculatedRate) / 2
@@ -348,29 +344,40 @@ func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity,
 	// A value > 1 will indicate actionable confidence that the cat is in a stationary state,
 	// while a value < -1 will indicate actionable confidence that the cat is in an active state.
 	if stable, valid := isGyroscopicallyStable(&ct); valid && stable {
-		stationaryConfidence += 1000.0
+		stationaryConfidence += 100.0 // if metered... ok
 	}
-	//if !p.Pos.isNapPtEmpty() {
-	//	distNap := geo.Distance(p.Pos.NapPt, p.Pos.ProbablePt)
-	//	if distNap-ctAccuracy < p.Config.Distance {
-	//		stationaryConfidence += 1.0
-	//	} else if distNap+ctAccuracy > p.Config.Distance {
-	//		stationaryConfidence -= 1.0
-	//	}
-	//}
+	if !p.Pos.NapPt.Equal(orb.Point{}) {
+		distNap := geo.Distance(p.Pos.NapPt, p.Pos.ProbablePt)
+		walkingThreshold := p.Config.Interval.Seconds() * common.SpeedOfWalkingMean
+		if distNap+ctAccuracy < walkingThreshold {
+			stationaryConfidence += 1.0
+		} else if distNap-ctAccuracy > walkingThreshold {
+			stationaryConfidence -= 1.0
+		}
+	}
 	if minSpeed < p.Config.SpeedThreshold {
 		stationaryConfidence += 1.0
 	} else {
 		stationaryConfidence -= (minSpeed - p.Config.SpeedThreshold) / p.Config.SpeedThreshold
 	}
+	rModes := p.Pos.ReportedModes.Sorted(true).RelWeights()
+	for i := 0; i < 2; i++ {
+		if rModes[i].Activity.IsActive() {
+			stationaryConfidence -= rModes[i].Scalar
+		}
+	}
 	if ctAct.IsActive() {
-		stationaryConfidence -= 1.0
+		stationaryConfidence -= float64(int(ctAct))
 	} else
 	if speedRate < common.SpeedOfWalkingMean {
 		if ctAct.IsStationary() {
 			stationaryConfidence += 1.0
 		}
 		if w := wt(ct); w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 {
+			stationaryConfidence += 1.0
+		}
+		headingRate := p.Pos.headingDelta.Snapshot().Rate()
+		if headingRate > 30 {
 			stationaryConfidence += 1.0
 		}
 	}
@@ -386,8 +393,8 @@ func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity,
 			proposed = ctAct
 			return proposed, stationaryConfidence
 		}
-		reportedMode := p.Pos.ReportedModes.Sorted(true).RelWeights()[0]
 		canonMode := p.Pos.CanonModes.Sorted(true).RelWeights()[0]
+		reportedMode := p.Pos.ReportedModes.Sorted(true).RelWeights()[0]
 		if reportedMode.Activity.IsActive() {
 			proposed = reportedMode.Activity
 		} else
@@ -496,49 +503,34 @@ func (p *ProbableCat) onResolveActivity(act activity.Activity, ct cattrack.CatTr
 	p.Pos.Activity = act
 	p.Pos.CanonModes.Push(act, ct.MustTime(), ct.Properties.MustFloat64("TimeOffset", 1))
 
-	if act.IsStationary() {
+	mode := p.Pos.CanonModes.Sorted(true).RelWeights()[0]
+	if mode.Activity.IsStationary() {
 
 		// Once the stationary timer expires (and the cat's stationary state has not been interrupted,
 		// resetting the timer)...
-		if !p.Pos.StationaryStart.IsZero() && p.Pos.Last.Sub(p.Pos.StationaryStart) > p.Config.Interval {
-			// Enforcing stationary; timeout elapsed.
+		timerExpired := p.Pos.Last.Sub(p.Pos.StationaryStart) > p.Config.Interval
+		if !p.Pos.StationaryStart.IsZero() && timerExpired {
+			// Reset competing timer.
 			p.Pos.ActiveStart = time.Time{}
-			p.Pos.NapPt = p.Pos.ProbablePt
 		} else if p.Pos.StationaryStart.IsZero() {
+			// Start timer.
 			p.Pos.StationaryStart = ct.MustTime()
 		}
-	}
-	if act.IsActive() {
-		if !p.Pos.ActiveStart.IsZero() && p.Pos.Last.Sub(p.Pos.ActiveStart) > p.Config.Interval {
+		if p.Pos.NapPt.Equal(orb.Point{}) {
+			p.Pos.NapPt = p.Pos.ProbablePt
+		}
+	} else
+	{
+		timerExpired := p.Pos.Last.Sub(p.Pos.ActiveStart) > p.Config.Interval
+		if !p.Pos.StationaryStart.IsZero() && !p.Pos.ActiveStart.IsZero() && timerExpired {
+			// Reset competing timer.
 			p.Pos.StationaryStart = time.Time{}
-			//p.Pos.NapPt = orb.Point{} // leave; might get reused when cat returns?
 		} else if p.Pos.ActiveStart.IsZero() {
+			// Start timer.
 			p.Pos.ActiveStart = ct.MustTime()
 		}
-	}
-
-}
-
-func (p *ProbableCat) mustActiveActivity(t time.Time, act activity.Activity, speed float64) activity.Activity {
-	if act.IsActive() {
-		return act
-	}
-
-	if p.Pos.CanonModes.Span() > 0 {
-		pas := p.Pos.CanonModes.Sorted(true).RelWeights()
-		if pas[0].Activity.IsActive() && pas[0].Scalar > 0.5 {
-			return pas[0].Activity
+		if !p.Pos.NapPt.Equal(orb.Point{}) {
+			p.Pos.NapPt = orb.Point{}
 		}
 	}
-
-	reportedActModes := p.Pos.ReportedModes.Sorted(true).RelWeights()
-	if reportedActModes[0].Activity.IsActive() && reportedActModes[0].Scalar > 0.5 {
-		return reportedActModes[0].Activity
-	}
-
-	//decidedActModes := p.Pos.CanonModes.Sorted(true)
-	//if decidedActModes[0].Activity.IsActive() && decidedActModes[0].Scalar*0.6 > decidedActModes[1].Scalar {
-	//	return decidedActModes[0].Activity
-	//}
-	return activity.InferSpeedFromClosest(speed, 1.0, true)
 }

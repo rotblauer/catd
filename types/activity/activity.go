@@ -168,7 +168,7 @@ func IsActivityReasonableForSpeed(a Activity, speed float64) bool {
 		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfDrivingHighway
 	}
 	if a == TrackerStateAutomotive {
-		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfDrivingPrettyDamnFast
+		return speed >= common.SpeedOfWalkingMin && speed < common.SpeedOfDrivingPrettyDamnFast
 	}
 	if a == TrackerStateFlying {
 		return speed >= common.SpeedOfDrivingPrettyDamnFast
@@ -341,6 +341,18 @@ func (mt *ModeTracker) Push(a Activity, t time.Time, weight float64) {
 	mt.add(a, weight)
 }
 
+// Sorted returns the modes sorted by scalar value, with greatest scalars first.
+func (mt *ModeTracker) Sorted(onlyKnown bool) Modes {
+	modes := Modes{
+		mt.Stationary, mt.Walking, mt.Running, mt.Cycling, mt.Driving, mt.Flying,
+	}
+	if !onlyKnown {
+		modes = append(modes, mt.Unknown)
+	}
+	slices.SortStableFunc(modes, SortModes)
+	return modes
+}
+
 func (mt *ModeTracker) Reset() {
 	mt.Acts = []ActRecord{}
 	mt.Unknown.Scalar = 0
@@ -406,16 +418,4 @@ func (mt *ModeTracker) drop(a Activity, weight float64) {
 	case TrackerStateFlying:
 		mt.Flying.Scalar -= weight
 	}
-}
-
-// Sorted returns the modes sorted by scalar value, with greatest scalars first.
-func (mt *ModeTracker) Sorted(onlyKnown bool) Modes {
-	modes := Modes{
-		mt.Stationary, mt.Walking, mt.Running, mt.Cycling, mt.Driving, mt.Flying,
-	}
-	if !onlyKnown {
-		modes = append(modes, mt.Unknown)
-	}
-	slices.SortStableFunc(modes, SortModes)
-	return modes
 }
