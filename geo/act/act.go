@@ -250,6 +250,32 @@ func (p *Pos) Observe(offset float64, wt wt) error {
 	return nil
 }
 
+// Add adds a CatTrack to the probable cat.
+func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
+	if p.IsEmpty() {
+		p.Pos = NewPos(wt(ct), p.Config)
+		return nil
+	}
+	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
+		p.Pos = NewPos(wt(ct), p.Config)
+		return nil
+	}
+	span := ct.Properties.MustFloat64("TimeOffset", ct.MustTime().Sub(p.Pos.Last).Seconds())
+	if span == 0 {
+		return nil
+	}
+	if span > p.Config.ResetInterval.Seconds() || span <= -1 {
+		p.Pos = NewPos(wt(ct), p.Config)
+		return nil
+	}
+	if err := p.Pos.Observe(span, wt(ct)); err != nil {
+		p.Pos = NewPos(wt(ct), p.Config)
+	}
+	prop, _ := p.Propose(ct)
+	p.onResolveActivity(prop, ct)
+	return nil
+}
+
 //func (p *Pos) filterObserve(seconds float64, wt wt) error {
 //	err := p.kalmanFilter.Observe(seconds, &rkalman.GeoObserved{
 //		Lat:      cattrack.CatTrack(wt).Point().Lat(),
@@ -298,31 +324,6 @@ func (p *Pos) Observe(offset float64, wt wt) error {
 //	}
 //	return nil
 //}
-
-func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
-	if p.IsEmpty() {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	span := ct.Properties.MustFloat64("TimeOffset", ct.MustTime().Sub(p.Pos.Last).Seconds())
-	if span == 0 {
-		return nil
-	}
-	if span > p.Config.ResetInterval.Seconds() || span <= -1 {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	if err := p.Pos.Observe(span, wt(ct)); err != nil {
-		p.Pos = NewPos(wt(ct), p.Config)
-	}
-	prop, _ := p.Propose(ct)
-	p.onResolveActivity(prop, ct)
-	return nil
-}
 
 // Propose proposes a KNOWN activity based on the state of the cat and the current track.
 // It is intended primarily to handle high-confidence and bad reported-data cases.
