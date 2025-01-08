@@ -1,6 +1,6 @@
 package common
 
-const SpeedOfWalkingMin = 0.42 // or 1.5 km/h or 1 mph
+const SpeedOfWalkingMin = 0.23 // or 0.8 km/h or 0.5 mph
 const SpeedOfWalkingSlow = 0.5 // or 1.8 km/h or 1.1 mph
 const SpeedOfWalkingMean = 1.2 // or 4.3 km/h or 2.7 mph
 const SpeedOfWalkingMax = 1.78 // or 6.4 km/h or 4 mph

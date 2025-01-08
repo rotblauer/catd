@@ -28,3 +28,18 @@ func isGyroscopicallyStable(ct *cattrack.CatTrack) (stable, valid bool) {
 	}
 	return sum < GyroscopeStableThresholdReading, true
 }
+
+func gyroSum(ct *cattrack.CatTrack) (sum float64, ok bool) {
+	for _, prop := range gyroscopeProps {
+		v, ok := ct.Properties[prop]
+		if !ok {
+			return 0, false
+		}
+		fl, ok := v.(float64)
+		if !ok {
+			return 0, false
+		}
+		sum += math.Abs(fl)
+	}
+	return sum, true
+}

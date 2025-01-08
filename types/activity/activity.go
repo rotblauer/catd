@@ -62,6 +62,14 @@ func (a Activity) IsActiveHuman() bool {
 	return a >= TrackerStateWalking && a < TrackerStateAutomotive
 }
 
+func (a Activity) DeltaAbs(b Activity) (delta int) {
+	d := int(a) - int(b)
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
 // String implements the Stringer interface.
 func (a Activity) String() string {
 	switch a {
@@ -104,9 +112,9 @@ func (a Activity) Emoji() string {
 	return "❓"
 }
 
-// InferFromSpeed infers activity from speed using high -> low max_speed breakpoints.
-// maxMul is a multiplier to the max_speed of the activity.
-func InferFromSpeed(speed, maxMul float64, mustActive bool) Activity {
+// InferFromSpeedMax infers activity from speed using high -> low max_speed breakpoints.
+// maxMul is a multiplier to the max_speed of the activity breakpoints.
+func InferFromSpeedMax(speed, maxMul float64, mustActive bool) Activity {
 	if speed > common.SpeedOfDrivingAutobahn*maxMul {
 		return TrackerStateFlying
 	}
@@ -135,7 +143,7 @@ var activityMeanSpeeds = map[Activity]float64{
 }
 
 // InferSpeedFromClosest infers activity from speed using the closest mean speed.
-func InferSpeedFromClosest(speed, maxMul float64, mustActive bool) Activity {
+func InferSpeedFromClosest(speed float64, mustActive bool) Activity {
 	delta := 100.0
 	var closest Activity
 	for act, stdSpeed := range activityMeanSpeeds {
@@ -151,27 +159,27 @@ func InferSpeedFromClosest(speed, maxMul float64, mustActive bool) Activity {
 	return closest
 }
 
-func IsActivityReasonableForSpeed(a Activity, speed float64) bool {
+func IsActivityReasonableForSpeed(a Activity, minSpeed float64) bool {
 	if a == TrackerStateUnknown {
 		return true
 	}
 	if a == TrackerStateStationary {
-		return speed < common.SpeedOfWalkingMin
+		return minSpeed < common.SpeedOfWalkingMin
 	}
 	if a == TrackerStateWalking {
-		return speed >= common.SpeedOfWalkingMin && speed < common.SpeedOfWalkingMax
+		return minSpeed > 0 && minSpeed < common.SpeedOfWalkingMax
 	}
 	if a == TrackerStateRunning {
-		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfRunningMax
+		return minSpeed >= common.SpeedOfWalkingMean && minSpeed < common.SpeedOfRunningMax
 	}
 	if a == TrackerStateBike {
-		return speed >= common.SpeedOfWalkingMean && speed < common.SpeedOfDrivingHighway
+		return minSpeed >= common.SpeedOfWalkingMean && minSpeed < common.SpeedOfDrivingHighway
 	}
 	if a == TrackerStateAutomotive {
-		return speed >= common.SpeedOfWalkingMin && speed < common.SpeedOfDrivingPrettyDamnFast
+		return minSpeed >= common.SpeedOfWalkingMin && minSpeed < common.SpeedOfDrivingPrettyDamnFast
 	}
 	if a == TrackerStateFlying {
-		return speed >= common.SpeedOfDrivingPrettyDamnFast
+		return minSpeed >= common.SpeedOfDrivingPrettyDamnFast
 	}
 	return false
 }
@@ -191,28 +199,7 @@ func BreakLap(a, b Activity) bool {
 	if a.IsActiveHuman() && b.IsActiveHuman() {
 		return false
 	}
-
-	delta := math.Abs(float64(int(a) - int(b)))
-	return delta > 1
-
-	//if b.IsActiveHuman() && b.IsActiveHuman() {
-	//	return false
-	//}
-
-	//if a.IsActive() && b.IsActive() {
-	//	return true
-	//}
-	//return a == b
-
-	//return a != b
-
-	//if a == TrackerStateStationary && b >= TrackerStateWalking {
-	//	return false
-	//}
-	//if a >= TrackerStateWalking && b == TrackerStateStationary {
-	//	return false
-	//}
-	//return true
+	return a.DeltaAbs(b) > 1
 }
 
 func FromAny(a any) Activity {

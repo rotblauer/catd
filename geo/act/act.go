@@ -45,6 +45,8 @@ type Pos struct {
 	elevation       *metrics.NonStandardEWMA
 	lastHeading     float64
 	headingDelta    *metrics.NonStandardEWMA
+	gyroSum         *metrics.NonStandardEWMA
+	gyroOk          bool
 
 	// NapPt is the last observed stationary point.
 	// This value is assigned when the cat becomes stationary,
@@ -88,21 +90,9 @@ func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 	return &ProbableCat{
 		Config: config,
 		Pos: &Pos{
-			interval:      config.Interval,
-			distance:      config.Distance,
+			Activity:      activity.TrackerStateUnknown,
 			ReportedModes: activity.NewModeTracker(config.Interval),
 			CanonModes:    activity.NewModeTracker(config.Interval),
-			speed: metrics.NewNonStandardEWMA(
-				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-			speedCalculated: metrics.NewNonStandardEWMA(
-				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-			accuracy: metrics.NewNonStandardEWMA(
-				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-			elevation: metrics.NewNonStandardEWMA(
-				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-			headingDelta: metrics.NewNonStandardEWMA(
-				metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-			Activity: activity.TrackerStateUnknown,
 		},
 	}
 }
@@ -180,6 +170,7 @@ func NewPos(wt wt, config *params.ActDiscretionConfig) *Pos {
 		accuracy:        metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 		elevation:       metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 		headingDelta:    metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		gyroSum:         metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
 	}
 
 	//p.resetKalmanFilter()
@@ -242,6 +233,17 @@ func (p *Pos) Observe(offset float64, wt wt) error {
 	p.headingDelta.Tick()
 	p.lastHeading = wt.SafeHeading()
 
+	gyro, ok := gyroSum(ct)
+	p.gyroOk = ok
+	if p.gyroOk {
+		p.gyroSum.Update(int64(math.Round(gyro * 1000)))
+		p.gyroSum.SetInterval(time.Duration(offset) * time.Second)
+		p.gyroSum.Tick()
+	}
+
+	if wt.SafeAccuracy() < p.distance {
+		p.ProbablePt = ct.Point()
+	}
 	p.Last = ct.MustTime()
 	p.LastTrack = *ct
 	p.ReportedModes.Push(ct.MustActivity(), ct.MustTime(), offset)
@@ -317,8 +319,9 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 	if err := p.Pos.Observe(span, wt(ct)); err != nil {
 		p.Pos = NewPos(wt(ct), p.Config)
 	}
-	prop, conf := p.Propose(ct)
-	return p.Resolve(ct, prop, conf)
+	prop, _ := p.Propose(ct)
+	p.onResolveActivity(prop, ct)
+	return nil
 }
 
 // Propose proposes a KNOWN activity based on the state of the cat and the current track.
@@ -328,171 +331,147 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
 
 	ctAct := ct.MustActivity()
-	ctAccuracy := wt(ct).SafeAccuracy()
+	//ctAccuracy := wt(ct).SafeAccuracy()
 	speedRate := p.Pos.speed.Snapshot().Rate() / 100
 	speedCalculatedRate := p.Pos.speedCalculated.Snapshot().Rate() / 100
+	gyroRate := p.Pos.gyroSum.Snapshot().Rate() / 1000
 	//meanSpeedRate := (speedRate + speedCalculatedRate) / 2
 
 	minSpeed := math.Min(speedRate, speedCalculatedRate)
 	minSpeed = math.Min(minSpeed, wt(ct).SafeSpeed())
 	//minSpeed = math.Min(minSpeed, p.Pos.KalmanSpeed)
+	maxSpeed := math.Max(speedRate, speedCalculatedRate)
+	maxSpeed = math.Max(maxSpeed, wt(ct).SafeSpeed())
 
-	// stationaryConfidence is the confidence weight we assign to the cat being stationary (or not).
-	// A value > 1 will indicate actionable confidence that the cat is in a stationary state,
-	// while a value < -1 will indicate actionable confidence that the cat is in an active state.
-	if stable, valid := isGyroscopicallyStable(&ct); valid && stable {
-		stationaryConfidence += 100.0 // if metered... ok
-	}
-	if !p.Pos.NapPt.Equal(orb.Point{}) {
-		distNap := geo.Distance(p.Pos.NapPt, p.Pos.ProbablePt)
-		walkingThreshold := p.Config.Interval.Seconds() * common.SpeedOfWalkingMean
-		if distNap+ctAccuracy < walkingThreshold {
-			stationaryConfidence += 1.0
-		} else if distNap-ctAccuracy > walkingThreshold {
-			stationaryConfidence -= 1.0
+	// Quick returns, strong data.
+	// Android friendly; quick stop.
+	if p.Pos.gyroOk {
+		if gyroRate < GyroscopeStableThresholdReading {
+			if ctAct.IsStationary() {
+				return ctAct, 9000
+			}
+			if minSpeed < p.Config.SpeedThreshold {
+				return activity.TrackerStateStationary, 1.0
+			}
 		}
 	}
-	if minSpeed < p.Config.SpeedThreshold {
-		stationaryConfidence += 1.0
-	} else {
-		stationaryConfidence -= (minSpeed - p.Config.SpeedThreshold) / p.Config.SpeedThreshold
+	// iOS friendly; quick stop.
+	w := wt(ct)
+	if w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 && (ctAct.IsStationary() || (minSpeed < p.Config.SpeedThreshold)) {
+		return activity.TrackerStateStationary, 0.99
 	}
-	rModes := p.Pos.ReportedModes.Sorted(true).RelWeights()
-	for i := 0; i < 2; i++ {
-		if rModes[i].Activity.IsActive() {
-			stationaryConfidence -= rModes[i].Scalar
+	// Return acceptable reported data.
+	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, minSpeed) {
+		return ctAct, 0.9
+	}
+	// Unknown is "better" client data than unreasonable data.
+	// So iterate the assumed-trustworthy reported modes, returning first OK.
+	// If reported modes fail, fallback to canon modes, ultimately falling back to speed inference.
+	if !ctAct.IsKnown() {
+		// Use reported speed because we trust the reporter.
+		refSpeed := w.SafeSpeed()
+		for _, mode := range p.Pos.ReportedModes.Sorted(true).RelWeights() {
+			if mode.Activity.IsKnown() && mode.Scalar > 0 && activity.IsActivityReasonableForSpeed(mode.Activity, refSpeed) {
+				return mode.Activity, 0.9
+			}
+		}
+		for _, mode := range p.Pos.CanonModes.Sorted(true).RelWeights() {
+			if mode.Activity.IsKnown() && mode.Scalar > 0 && activity.IsActivityReasonableForSpeed(mode.Activity, refSpeed) {
+				return mode.Activity, 0.9
+			}
+		}
+		return activity.InferSpeedFromClosest(refSpeed, false), 0.8
+	}
+	// Is unreasonable. This is bad data.
+	// Dont trust the reports.
+	// Fixes unreasonable reporting patterns:
+	// - stationary is recorded for obviously non-stationary tracks, eg. driving, flying, in particular
+	// - flying is not recorded as flying
+	if max := math.Max(speedRate, speedCalculatedRate); max > common.SpeedOfDrivingPrettyDamnFast {
+		return activity.TrackerStateFlying, 0.7
+	}
+	refSpeed := speedCalculatedRate
+	for _, mode := range p.Pos.CanonModes.Sorted(true).RelWeights() {
+		if mode.Activity.IsKnown() && mode.Scalar > 0 && activity.IsActivityReasonableForSpeed(mode.Activity, refSpeed) {
+			return mode.Activity, 0.9
 		}
 	}
-	if ctAct.IsActive() {
-		stationaryConfidence -= float64(int(ctAct))
-	} else
-	if speedRate < common.SpeedOfWalkingMean {
-		if ctAct.IsStationary() {
-			stationaryConfidence += 1.0
-		}
-		if w := wt(ct); w.UnsafeHeading() < 0 && w.UnsafeSpeed() < 0 {
-			stationaryConfidence += 1.0
-		}
-		headingRate := p.Pos.headingDelta.Snapshot().Rate()
-		if headingRate > 30 {
-			stationaryConfidence += 1.0
-		}
-	}
-
-	// Returns define actionable confidence thresholds.
-	proposed = activity.TrackerStateUnknown
-	if stationaryConfidence > 1 {
-		proposed = activity.TrackerStateStationary
-		return proposed, stationaryConfidence
-	}
-	if stationaryConfidence < -1 {
-		if ctAct.IsActive() {
-			proposed = ctAct
-			return proposed, stationaryConfidence
-		}
-		canonMode := p.Pos.CanonModes.Sorted(true).RelWeights()[0]
-		reportedMode := p.Pos.ReportedModes.Sorted(true).RelWeights()[0]
-		if reportedMode.Activity.IsActive() {
-			proposed = reportedMode.Activity
-		} else
-		if canonMode.Activity.IsActive() {
-			proposed = canonMode.Activity
-		}
-		if proposed.IsKnown() && activity.IsActivityReasonableForSpeed(proposed, speedRate) {
-			return proposed, stationaryConfidence
-		}
-		proposed = activity.InferSpeedFromClosest(speedRate, 1.0, false)
-		return proposed, stationaryConfidence
-	}
-	// Indeterminate confidence; use reported data if reasonable.
-	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, speedRate) {
-		return ctAct, stationaryConfidence
-	}
-	// No confidence in reported data; try use historical data.
-	proposed = p.Pos.ReportedModes.Sorted(true).RelWeights()[0].Activity
-	if proposed.IsKnown() && activity.IsActivityReasonableForSpeed(proposed, speedRate) {
-		return proposed, stationaryConfidence
-	}
-	proposed = p.Pos.CanonModes.Sorted(true).RelWeights()[0].Activity
-	if proposed.IsKnown() && activity.IsActivityReasonableForSpeed(proposed, speedRate) {
-		return proposed, stationaryConfidence
-	}
-	// All methods exhausted; infer from speed.
-	return activity.InferSpeedFromClosest(speedRate, 1.0, false), stationaryConfidence
+	return activity.InferSpeedFromClosest(refSpeed, false), 0.6
 }
 
-// Resolve resolves a canonical outcome given disparities between reported and proposed activities.
-// It assumes proposed is a known activity, and call a stateful callback before returning, updating
-// the probable cat state.
-func (p *ProbableCat) Resolve(ct cattrack.CatTrack, proposed activity.Activity, stationaryConfidence float64) error {
-	ctAct := ct.MustActivity()
-	speedRate := p.Pos.speed.Snapshot().Rate() / 100
-
-	act := activity.TrackerStateUnknown
-	defer func() {
-		p.onResolveActivity(act, ct)
-	}()
-
-	// Resolve same.
-	if ct.MustActivity() == proposed {
-		act = proposed
-		return nil
-	}
-	// Resolve proposed when cat act is unknown (bad data).
-	if ctAct.IsUnknown() {
-		act = proposed
-		return nil
-	}
-	// Resolve in favor of proposed in cases of active::stationary.
-	if (ctAct.IsActive() != proposed.IsActive()) && (stationaryConfidence > 1 || stationaryConfidence < -1) {
-		act = proposed
-		return nil
-	}
-
-	// Handle "upshifting" cases. These are common ones.
-	// Here, we expect
-	// - where a run turns in a bike
-	// - where a bike turns into a drive
-	// - where a walk turns in a bike
-	// It's really hard to transition between any of these without stopping at least briefly.
-	if ctAct.IsActive() && proposed.IsActive() {
-		stopMin := p.Config.Interval.Seconds() / 2
-		didStop := p.Pos.CanonModes.Has(func(a activity.ActRecord) bool {
-			return a.A.IsStationary() && a.W > stopMin
-		})
-		if !didStop {
-			// So if there was no recorded canonical stop (however brief), we should prefer
-			// the lesser of the two activities.
-			if int(ctAct) < int(proposed) {
-				act = ctAct
-			}
-			if int(proposed) < int(ctAct) {
-				act = proposed
-			}
-		} else {
-			// Else there WAS a stop, and we should prefer the greater activity.
-			if int(ctAct) > int(proposed) {
-				act = ctAct
-			}
-			if int(proposed) > int(ctAct) {
-				act = proposed
-			}
-		}
-		if act.IsKnown() && activity.IsActivityReasonableForSpeed(act, speedRate) {
-			act = proposed
-			return nil
-		}
-	}
-
-	// Resolve on decent reported data.
-	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, speedRate) {
-		act = ctAct
-		return nil
-	}
-	// Resolve proposed data.
-	act = proposed
-	return nil
-}
+//
+//// Resolve resolves a canonical outcome given disparities between reported and proposed activities.
+//// It assumes proposed is a known activity, and call a stateful callback before returning, updating
+//// the probable cat state.
+//func (p *ProbableCat) Resolve(ct cattrack.CatTrack, proposed activity.Activity, stationaryConfidence float64) error {
+//	ctAct := ct.MustActivity()
+//	speedRate := p.Pos.speed.Snapshot().Rate() / 100
+//
+//	act := activity.TrackerStateUnknown
+//	defer func() {
+//		p.onResolveActivity(act, ct)
+//	}()
+//
+//	// Resolve same.
+//	if ct.MustActivity() == proposed {
+//		act = proposed
+//		return nil
+//	}
+//	// Resolve proposed when cat act is unknown (bad data).
+//	if ctAct.IsUnknown() {
+//		act = proposed
+//		return nil
+//	}
+//	// Resolve in favor of proposed in cases of active::stationary.
+//	if (ctAct.IsActive() != proposed.IsActive()) && (stationaryConfidence > 1 || stationaryConfidence < -1) {
+//		act = proposed
+//		return nil
+//	}
+//
+//	// Handle "upshifting" cases. These are common ones.
+//	// Here, we expect
+//	// - where a run turns in a bike
+//	// - where a bike turns into a drive
+//	// - where a walk turns in a bike
+//	// It's really hard to transition between any of these without stopping at least briefly.
+//	if ctAct.IsActive() && proposed.IsActive() {
+//		stopMin := p.Config.Interval.Seconds() / 2
+//		didStop := p.Pos.CanonModes.Has(func(a activity.ActRecord) bool {
+//			return a.A.IsStationary() && a.W > stopMin
+//		})
+//		if !didStop {
+//			// So if there was no recorded canonical stop (however brief), we should prefer
+//			// the lesser of the two activities.
+//			if int(ctAct) < int(proposed) {
+//				act = ctAct
+//			}
+//			if int(proposed) < int(ctAct) {
+//				act = proposed
+//			}
+//		} else {
+//			// Else there WAS a stop, and we should prefer the greater activity.
+//			if int(ctAct) > int(proposed) {
+//				act = ctAct
+//			}
+//			if int(proposed) > int(ctAct) {
+//				act = proposed
+//			}
+//		}
+//		if act.IsKnown() && activity.IsActivityReasonableForSpeed(act, speedRate) {
+//			act = proposed
+//			return nil
+//		}
+//	}
+//
+//	// Resolve on decent reported data.
+//	if ctAct.IsKnown() && activity.IsActivityReasonableForSpeed(ctAct, speedRate) {
+//		act = ctAct
+//		return nil
+//	}
+//	// Resolve proposed data.
+//	act = proposed
+//	return nil
+//}
 
 // onResolveActivity is called when an activity is finally resolved.
 // It installs the

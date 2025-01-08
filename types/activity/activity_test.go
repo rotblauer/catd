@@ -23,7 +23,7 @@ func TestModeTracker_Sorted(t *testing.T) {
 	}
 	sorted := mt.Sorted(false) // skip unknown
 	if len(sorted) != len(acts) {
-		t.Errorf("have %d want %d", len(sorted), len(acts))
+		t.Errorf("have %d wantMax %d", len(sorted), len(acts))
 	}
 
 	t.Logf("sorted: %v", sorted)
@@ -34,44 +34,45 @@ func TestModeTracker_Sorted(t *testing.T) {
 		gotSum += m.Scalar
 	}
 	if gotSum != wantSum {
-		t.Errorf("have %f want %f", gotSum, wantSum)
+		t.Errorf("have %f wantMax %f", gotSum, wantSum)
 	}
 	if sorted[0].Activity != TrackerStateUnknown {
-		t.Errorf("have %v want %v", sorted[0].Activity, TrackerStateStationary)
+		t.Errorf("have %v wantMax %v", sorted[0].Activity, TrackerStateStationary)
 	}
 	if sorted[len(sorted)-1].Activity != TrackerStateWalking {
-		t.Errorf("have %v want %v", sorted[len(sorted)-1].Activity, TrackerStateFlying)
+		t.Errorf("have %v wantMax %v", sorted[len(sorted)-1].Activity, TrackerStateFlying)
 	}
 }
 
 func TestInferFromSpeed(t *testing.T) {
 	cases := []struct {
-		speed      float64
-		maxMul     float64
-		mustActive bool
-		want       Activity
+		speed       float64
+		maxMul      float64
+		mustActive  bool
+		wantMax     Activity
+		wantClosest Activity
 	}{
-		{0, 1, false, TrackerStateStationary},
-		{0, 1, true, TrackerStateWalking},
-		{common.SpeedOfWalkingMin, 1, false, TrackerStateWalking},
-		{common.SpeedOfWalkingSlow, 1, true, TrackerStateWalking},
-		{common.SpeedOfWalkingMax, 1, false, TrackerStateWalking},
-		{common.SpeedOfRunningMean, 1, true, TrackerStateRunning},
-		{common.SpeedOfCyclingMean, 1, true, TrackerStateBike},
-		{common.SpeedOfDrivingCityUSMean, 0.8, true, TrackerStateAutomotive},
-		{common.SpeedOfDrivingHighway, 1, true, TrackerStateAutomotive},
-		{common.SpeedOfDrivingAutobahn * 1.5, 1, true, TrackerStateFlying},
+		{0, 1, false, TrackerStateStationary, TrackerStateStationary},
+		{0, 1, true, TrackerStateWalking, TrackerStateWalking},
+		{common.SpeedOfWalkingMin, 1, false, TrackerStateWalking, TrackerStateStationary},
+		{common.SpeedOfWalkingSlow, 1, true, TrackerStateWalking, TrackerStateWalking},
+		{common.SpeedOfWalkingMax, 1, false, TrackerStateWalking, TrackerStateWalking},
+		{common.SpeedOfRunningMean, 1, true, TrackerStateRunning, TrackerStateRunning},
+		{common.SpeedOfCyclingMean, 1, true, TrackerStateBike, TrackerStateBike},
+		{common.SpeedOfDrivingCityUSMean, 0.8, true, TrackerStateAutomotive, TrackerStateAutomotive},
+		{common.SpeedOfDrivingHighway, 1, true, TrackerStateAutomotive, TrackerStateAutomotive},
+		{common.SpeedOfDrivingAutobahn * 1.5, 1, true, TrackerStateFlying, TrackerStateFlying},
 	}
 	for i, c := range cases {
-		got := InferFromSpeed(c.speed, c.maxMul, c.mustActive)
-		if got != c.want {
-			t.Errorf("i=%d (case: %v), have %v want %v", i, c, got, c.want)
+		got := InferFromSpeedMax(c.speed, c.maxMul, c.mustActive)
+		if got != c.wantMax {
+			t.Errorf("i=%d (case: %v), have %v wantMax %v", i, c, got, c.wantMax)
 		}
 	}
 	for i, c := range cases {
-		got := InferSpeedFromClosest(c.speed, c.maxMul, c.mustActive)
-		if got != c.want {
-			t.Errorf("CLOSEST i=%d (case: %v), have %v want %v", i, c, got, c.want)
+		got := InferSpeedFromClosest(c.speed, c.mustActive)
+		if got != c.wantClosest {
+			t.Errorf("CLOSEST i=%d (case: %v), have %v wantClosest %v", i, c, got, c.wantClosest)
 		}
 	}
 }

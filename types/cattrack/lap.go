@@ -227,16 +227,31 @@ func inferLapActivity(list []*CatTrack, meanSpeed float64) activity.Activity {
 	// Problem: rye runs too fast, gets cycle laps.
 	// Solution: use speed to infer activity, comparing first two sorted-mode activities iff they're relatively close in mode.
 	// ie. If the top-two modes are *roughly* co-occurring, try match either of the two to the lap's mean speed.
-	sorted := actTracker.Sorted(true)
-	first, second := sorted[0], sorted[1]
-	if first.Activity.IsActive() && second.Activity.IsActive() && first.Scalar < second.Scalar*1.5 {
-		guess := activity.InferSpeedFromClosest(meanSpeed, 0.9, true)
-		if guess == first.Activity || guess == second.Activity {
-			return guess
+	sorted := actTracker.Sorted(true).RelWeights()
+	mode1, mode2 := sorted[0], sorted[1]
+	if mode1.Activity.IsActive() && mode2.Activity.IsActive() &&
+		mode1.Scalar > 0 && mode2.Scalar > 0 && mode1.Scalar < mode2.Scalar*1.61 {
+
+		// walking:running, running:biking, NOT walking:biking
+		if mode1.Activity.IsActiveHuman() && mode2.Activity.IsActiveHuman() &&
+			mode1.Activity.DeltaAbs(mode2.Activity) < 2 {
+			// return lesser of two
+			if int(mode1.Activity) < int(mode2.Activity) {
+				return mode1.Activity
+			} else {
+				return mode2.Activity
+			}
+		}
+		// walking:biking, biking:driving, walking:driving
+		// return greater of two
+		if int(mode1.Activity) > int(mode2.Activity) {
+			return mode1.Activity
+		} else {
+			return mode2.Activity
 		}
 	}
 	for _, act := range sorted {
-		if act.Activity.IsActive() {
+		if act.Activity.IsActive() && act.Scalar > 0 {
 			return act.Activity
 		}
 	}
@@ -247,5 +262,5 @@ func inferLapActivity(list []*CatTrack, meanSpeed float64) activity.Activity {
 
 	// Using common walking speeds, running speeds, bicycling, and driving speeds,
 	// we'll return the matching activity.
-	return activity.InferSpeedFromClosest(meanSpeed, 1.0, true)
+	return activity.InferFromSpeedMax(meanSpeed, 1.0, true)
 }

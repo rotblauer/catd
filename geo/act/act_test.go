@@ -49,7 +49,7 @@ func TestProbableCat_Add(t *testing.T) {
 	i := 0
 	for ct := range iaTracks {
 
-		if u := ct.MustTime().Unix(); u < 1735762585 || u > 1735765627 {
+		if u := ct.MustTime().Unix(); u < 1735762585-300 || u > 1735765627+300 {
 			continue
 		}
 
@@ -59,19 +59,24 @@ func TestProbableCat_Add(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		kalmanVReportDist := geo.Distance(pc.Pos.ProbablePt, ct.Point())
+		//kalmanVReportDist := geo.Distance(pc.Pos.ProbablePt, ct.Point())
 		if i%100 == 0 {
-			t.Logf(`pos.act=%s ct.act=%s lon=%3.06f k.lon=%3.06f lat=%3.06f k.lat=%3.06f kΔ=%3.02f speed=%3.06f k.speed=%3.02f ewmaInterval.speed=%3.02f accuracyRate=%3.02f distToNap=%3.02f heading=%3.02f headingD=%3.02f\n`,
+			/*
+				k.lat=%3.06f kΔ=%3.02f  k.speed=%3.02f
+			*/
+			t.Logf(`pos.act=%s ct.act=%s lon=%3.06f p.lon=%3.06f lat=%3.06f p.lat=%3.06f safe.speed=%3.02f speedRate=%3.02f calcSpeedRate=%3.02f gyroRate=%3.03f accuracyRate=%3.02f distToNap=%3.02f heading=%3.02f headingD=%3.02f\n`,
 				pc.Pos.Activity,
 				ct.MustActivity(),
 				ct.Point().Lon(),
 				pc.Pos.ProbablePt.Lon(),
 				ct.Point().Lat(),
 				pc.Pos.ProbablePt.Lat(),
-				kalmanVReportDist,
+				//kalmanVReportDist,
 				wt(ct).SafeSpeed(),
-				pc.Pos.KalmanSpeed,
+				//pc.Pos.KalmanSpeed,
 				pc.Pos.speed.Snapshot().Rate()/100,
+				pc.Pos.speedCalculated.Snapshot().Rate()/100,
+				pc.Pos.gyroSum.Snapshot().Rate()/1000,
 				pc.Pos.accuracy.Snapshot().Rate(),
 				geo.Distance(pc.Pos.NapPt, ct.Point()),
 				ct.Properties.MustFloat64("Heading", -1),
