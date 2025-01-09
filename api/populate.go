@@ -246,10 +246,6 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 	for {
 		var err error
 		var open bool
-		if err != nil {
-			cancelCtx()
-			return err
-		}
 		if handledErrorsN == 5 {
 			break
 		}
@@ -257,7 +253,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		case err, open = <-storeErrs:
 			if err != nil {
 				err = fmt.Errorf("storeErrs: %w", err)
-				break
+				cancelCtx()
+				return err
 			}
 			if !open {
 				handledErrorsN++
@@ -266,7 +263,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		case err, open = <-snapErrs:
 			if err != nil {
 				err = fmt.Errorf("snapErrs: %w", err)
-				break
+				cancelCtx()
+				return err
 			}
 			if !open {
 				handledErrorsN++
@@ -275,7 +273,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		case err, open = <-sinkSnapErrs:
 			if err != nil {
 				err = fmt.Errorf("sinkSnapErrs: %w", err)
-				break
+				cancelCtx()
+				return err
 			}
 			if !open {
 				handledErrorsN++
@@ -284,7 +283,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		case err, open = <-sendSnapErrs:
 			if err != nil {
 				err = fmt.Errorf("sendSnapErrs: %w", err)
-				break
+				cancelCtx()
+				return err
 			}
 			if !open {
 				handledErrorsN++
@@ -293,7 +293,8 @@ func (c *Cat) Populate(ctx context.Context, sort bool, in <-chan cattrack.CatTra
 		case err, open = <-pipeLineErrs:
 			if err != nil {
 				err = fmt.Errorf("pipeLineErrs: %w", err)
-				break
+				cancelCtx()
+				return err
 			}
 			if !open {
 				handledErrorsN++

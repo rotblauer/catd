@@ -63,8 +63,8 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 		for {
 			select {
 			case <-quit:
-				slog.Info("Unbatcher quitting")
-				break
+				slog.Info("Unbatcher received quit")
+				return
 			default:
 			}
 			msg := json.RawMessage{}
@@ -136,7 +136,12 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, catChannelCap))
 			if loaded {
 				// If a cat channel exists, use it, and we're done here.
-				v.(chan []byte) <- msg
+				select {
+				case <-quit:
+					slog.Info("Unbatcher received quit")
+					return
+				case v.(chan []byte) <- msg:
+				}
 				continue
 			}
 
@@ -153,13 +158,23 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 			slog.Info("🐈 Unbatcher fresh cat", "cat", catID, "track", ct.StringPretty())
 
 			// Send the first track.
-			v.(chan []byte) <- msg
+			select {
+			case <-quit:
+				slog.Info("Unbatcher received quit")
+				return
+			case v.(chan []byte) <- msg:
+			}
 
 			// Send the channel.
 			// If catChCh is buffered (workersN), this will block until a worker is available.
 			// If catChCh is unbuffered, this will block until a worker is available,
 			// but it might stack lots of cats very high... if there are many cats.
-			catChCh <- v.(chan []byte)
+			select {
+			case <-quit:
+				slog.Info("Unbatcher received quit")
+				return
+			case catChCh <- v.(chan []byte):
+			}
 			catCount++
 		}
 	}()

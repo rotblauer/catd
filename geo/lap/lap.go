@@ -16,11 +16,13 @@ import (
 )
 
 type State struct {
-	Config   *params.ActDiscretionConfig
-	Tracks   []*cattrack.CatTrack // the points represented by the linestring
-	TimeLast time.Time
-	ch       chan cattrack.CatLap
-	bump     chan struct{}
+	Config      *params.ActDiscretionConfig
+	Tracks      []*cattrack.CatTrack // the points represented by the linestring
+	TimeLast    time.Time
+	ModeTracker *activity.ModeTracker
+	LastMode    activity.Activity
+	ch          chan cattrack.CatLap
+	bump        chan struct{}
 }
 
 func NewState(config *params.ActDiscretionConfig) *State {
@@ -28,17 +30,20 @@ func NewState(config *params.ActDiscretionConfig) *State {
 		config = params.DefaultLapConfig
 	}
 	return &State{
-		Config:   config,
-		Tracks:   make([]*cattrack.CatTrack, 0),
-		TimeLast: time.Time{},
-		ch:       make(chan cattrack.CatLap),
-		bump:     make(chan struct{}, 1),
+		Config:      config,
+		Tracks:      make([]*cattrack.CatTrack, 0),
+		TimeLast:    time.Time{},
+		ModeTracker: activity.NewModeTracker(config.Interval),
+		LastMode:    activity.TrackerStateUnknown,
+		ch:          make(chan cattrack.CatLap),
+		bump:        make(chan struct{}, 1),
 	}
 }
 
 // Add appends a CatTrack to the lap builder, and flushes the current lap if necessary (discontinuous).
 func (s *State) Add(ct *cattrack.CatTrack) {
 	defer func(t *cattrack.CatTrack) {
+		s.ModeTracker.Push(ct.MustActivity(), ct.MustTime(), ct.Properties.MustFloat64("TimeOffset", 1))
 		s.TimeLast = t.MustTime()
 		s.Tracks = append(s.Tracks, t)
 	}(ct)
@@ -65,9 +70,31 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 		return false
 	}
 
-	lastAct := s.Tracks[len(s.Tracks)-1].MustActivity()
-	currentAct := ct.MustActivity()
-	return activity.BreakLap(lastAct, currentAct)
+	a := s.Tracks[len(s.Tracks)-1].MustActivity()
+	//b := ct.MustActivity()
+	//a := s.ModeTracker.Sorted(true).RelWeights()[0].Activity
+	b := ct.MustActivity()
+
+	if !a.IsKnown() || !b.IsKnown() {
+		return false
+	}
+	if a.IsActive() != b.IsActive() {
+		return true
+	}
+	// FIXME: This will screw up triathlons;
+	// it blends common run+bike, walk+bike, and cycle+drive combos;
+	// but it's a workaround for common schizo-activities.
+	if a.IsActiveHuman() && b.IsActiveHuman() {
+		return false
+	}
+	//didStop := s.ModeTracker.Has(func(a activity.ActRecord) bool {
+	//	// 10 seconds is how long it takes to get into a car and drive it.
+	//	return a.A == activity.TrackerStateStationary && a.W > 10
+	//})
+	//if didStop && a.IsActiveHuman() && b == activity.TrackerStateAutomotive {
+	//	return true
+	//}
+	return a.DeltaAbs(b) > 1
 }
 
 // Bump signals the lap builder to flush the current lap.

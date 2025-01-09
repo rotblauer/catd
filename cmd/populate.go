@@ -175,8 +175,8 @@ Missoula, Montana
 			whiteCats = nil
 		}
 
-		quitScanner := make(chan struct{}, 3)
-		catChCh, errCh := stream.ScanLinesUnbatchedCats(
+		quitScanner := make(chan struct{}, 4)
+		catChCh, scanErrCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
 			// Small buffer to keep scanner running while workers catch up.
 			// A small buffer is faster than a large one,
@@ -199,6 +199,8 @@ Missoula, Montana
 			}
 		}()
 
+		populateErrs := make(chan error, optCatWorkersN)
+
 		catN := 0
 	readLoop:
 		for {
@@ -211,9 +213,9 @@ Missoula, Montana
 				catN++
 				catsWorking.Add(1)
 				slog.Info("Received cat chan", "cat", catN)
-				go catPopulate(ctx, catN, catCh, catsWorking, catBackendC)
+				go catPopulate(ctx, catN, catCh, catsWorking, populateErrs, catBackendC)
 
-			case err, open := <-errCh:
+			case err, open := <-scanErrCh:
 				// out of tracks
 				if errors.Is(err, io.EOF) {
 					slog.Info("CatScanner EOF")
@@ -235,6 +237,11 @@ Missoula, Montana
 				if !open {
 					slog.Warn("CatScanner closed err channel")
 					break readLoop
+				}
+			case err := <-populateErrs:
+				if err != nil {
+					slog.Error("Received populate error", "error", err)
+					quitScanner <- struct{}{}
 				}
 			}
 		}
@@ -274,7 +281,7 @@ Missoula, Montana
 // CatID is determined by the first track read from the channel.
 // The call to Populate will block on DB lock for each cat, which
 // makes calling this function for the same cat concurrently harmless, but useless.
-func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, backend *params.CatRPCServices) {
+func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, errCh chan error, backend *params.CatRPCServices) {
 	defer done.Done()
 
 	var err error
@@ -324,6 +331,7 @@ func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.Wa
 	// Populate is blocking. It holds a lock on the cat state.
 	err = cat.Populate(ctx, optSortTrackBatches, decoded)
 	if err != nil {
+		errCh <- err
 		slog.Error("Failed to populate CatTracks", "error", err)
 	} else {
 		slog.Info("Populator worker done", "cat", cat.CatID)

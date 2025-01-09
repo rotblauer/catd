@@ -124,8 +124,8 @@ func NewCatLap(tracks []*CatTrack) *CatLap {
 	// FIXME: Another list iteration and awkward type assertions.
 	f.Properties["Activity"] = inferLapActivity(tracks, f.Properties.MustFloat64("Speed_Reported_Mean", 0)).String()
 
-	f.Properties["BearingDeltaRate"] = f.BearingDeltaRate()
-	f.Properties["SelfIntersectionRate"] = f.SelfIntersectionRate()
+	//f.Properties["BearingDeltaRate"] = f.BearingDeltaRate()
+	//f.Properties["SelfIntersectionRate"] = f.SelfIntersectionRate()
 
 	return f
 }
