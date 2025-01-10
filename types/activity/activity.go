@@ -63,11 +63,15 @@ func (a Activity) IsActiveHuman() bool {
 }
 
 func (a Activity) DeltaAbs(b Activity) (delta int) {
-	d := int(a) - int(b)
+	d := a.Delta(b)
 	if d < 0 {
 		return -d
 	}
 	return d
+}
+
+func (a Activity) Delta(b Activity) (delta int) {
+	return int(a) - int(b)
 }
 
 // String implements the Stringer interface.

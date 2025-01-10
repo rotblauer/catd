@@ -48,6 +48,8 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 				track.SetPropertySafe("Activity", im.Pos.Activity.String())
 			}
 
+			track.SetPropertySafe("Acceleration", im.Pos.IReportedAccel)
+
 			select {
 			case <-ctx.Done():
 				return

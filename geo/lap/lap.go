@@ -87,13 +87,13 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	if a.IsActiveHuman() && b.IsActiveHuman() {
 		return false
 	}
-	//didStop := s.ModeTracker.Has(func(a activity.ActRecord) bool {
-	//	// 10 seconds is how long it takes to get into a car and drive it.
-	//	return a.A == activity.TrackerStateStationary && a.W > 10
-	//})
-	//if didStop && a.IsActiveHuman() && b == activity.TrackerStateAutomotive {
-	//	return true
-	//}
+	didStop := s.ModeTracker.Has(func(a activity.ActRecord) bool {
+		// 10 seconds is how long it takes to get into a car and drive it.
+		return a.A == activity.TrackerStateStationary && a.W > 5 /* seconds (probably); how quick can cat get into/out of car */
+	})
+	if !didStop && a.IsActiveHuman() && b == activity.TrackerStateAutomotive {
+		return false
+	}
 	return a.DeltaAbs(b) > 1
 }
 

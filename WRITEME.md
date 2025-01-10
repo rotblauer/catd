@@ -1,3 +1,16 @@
+list of laps
+lap subsegments.. elevation graph
+lap direction layer
+
+I want to be able to ingest edge.json.gz without
+having to manage it by hand. For development.
+populator should mark and record timestamp of first and last track in push
+
+- [ ] reverse proxy populate pushes to persistent list of subscribers
+- 
+
+---
+
 
 http://localhost:3314/d/KLbOIpsGz/01-one-cat?orgId=1&from=2025-01-01T23:17:45.978Z&to=2025-01-01T23:24:40.221Z&timezone=browser&var-alias=rye&refresh=1m
 
