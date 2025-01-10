@@ -82,7 +82,7 @@ type ProbableCat struct {
 }
 
 func (p *ProbableCat) IsEmpty() bool {
-	return (p.Pos.First.IsZero() && p.Pos.Last.IsZero())
+	return (p.Pos.First.IsZero() && p.Pos.Last.IsZero()) || p.Pos.speed == nil
 }
 
 func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
