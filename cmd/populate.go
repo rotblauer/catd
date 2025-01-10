@@ -175,13 +175,19 @@ Missoula, Montana
 			whiteCats = nil
 		}
 
+		// simulatedPushSize is the max number of tracks to send over any cat channel.
+		// Use 0 to disable.
+		// This causes Populate calls to behave equivalently to real-world batched (HTTP) calls to Populate.
+		// This is useful for testing re-inits of state machines. (Is act Cat Pos reinited well? Probably not...)
+		simulatedPushSize := 1_000
+
 		quitScanner := make(chan struct{}, 4)
 		catChCh, scanErrCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
 			// Small buffer to keep scanner running while workers catch up.
 			// A small buffer is faster than a large one,
 			// but too small is slower. These numbers are magic. Around 5MB/s.
-			optCatWorkersN, 1_111, 111_111, whiteCats)
+			optCatWorkersN, 1_111, 111_111, simulatedPushSize, whiteCats)
 
 		go func() {
 			for i := 0; i < 2; i++ {

@@ -27,7 +27,7 @@ var ErrMissingAttribute = errors.New("missing attribute in read line")
 // Each cat should have one worker.
 // The quit channel should be used to interrupt the read loop.
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
-	workersN, catChannelCap, closeCatAfterInt int, whitelistCats []conceptual.CatID) (chan chan []byte, chan error) {
+	workersN, catChannelCap, catStaleInt, catMaxInt int, whitelistCats []conceptual.CatID) (chan chan []byte, chan error) {
 
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
@@ -41,9 +41,11 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 
 		// A cat not seen in this many lines will have their channel closed.
 		// Upon meeting this cat later, a new channel will be opened.
-		closeCatAfter := uint64(closeCatAfterInt)
-		// A map of cat:line_index.
+		closeCatAfter := uint64(catStaleInt)
+		// A map of cat:line_index, where line_index is the last line index this cat was seen on.
 		catLastMap := sync.Map{}
+		// A map of cat:integer, where integer is the number of messages sent on this cat's chan.
+		catSentMap := map[conceptual.CatID]int{}
 		// A map of cat:channel.
 		catChMap := sync.Map{}
 		defer catChMap.Range(func(key, value interface{}) bool {
@@ -132,6 +134,21 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 			// Store the last line index for this cat (freshen), whether we already have a channel for them or not.
 			catLastMap.Store(catID, n)
 
+			// Check cat-sent tally; if we've met the catMaxInt threshold, close the channel.
+			if catSentMap[catID] >= catMaxInt {
+				slog.Warn(fmt.Sprintf("👋 Unbatcher cat sent %d messages", catMaxInt), "cat", catID)
+				v, loaded := catChMap.LoadAndDelete(catID)
+				if !loaded {
+					panic("where is cat")
+				}
+				close(v.(chan []byte))
+
+				// This is the single most important line of code in the whole program.
+				v = nil
+				delete(catSentMap, catID)
+				met.dropCat(string(catID))
+			}
+
 			// Get or create a channel for this cat.
 			v, loaded := catChMap.LoadOrStore(catID, make(chan []byte, catChannelCap))
 			if loaded {
@@ -141,6 +158,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 					slog.Info("Unbatcher received quit")
 					return
 				case v.(chan []byte) <- msg:
+					catSentMap[catID]++
 				}
 				continue
 			}
@@ -163,6 +181,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 				slog.Info("Unbatcher received quit")
 				return
 			case v.(chan []byte) <- msg:
+				catSentMap[catID]++
 			}
 
 			// Send the channel.
