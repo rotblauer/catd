@@ -60,8 +60,8 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
 		return false
 	}
-	span := current.Sub(s.TimeLast)
-	if span > s.Config.Interval || span < -1*time.Second {
+	span := ct.Properties.MustFloat64("TimeOffset", current.Sub(s.TimeLast).Seconds())
+	if span > s.Config.Interval.Seconds() || span <= -1 {
 		return true
 	}
 	// Activity splitting is a hot topic.
@@ -75,7 +75,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	//a := s.ModeTracker.Sorted(true).RelWeights()[0].Activity
 	b := ct.MustActivity()
 
-	if !a.IsKnown() || !b.IsKnown() {
+	if a.IsUnknown() || b.IsUnknown() {
 		return false
 	}
 	if a.IsActive() != b.IsActive() {

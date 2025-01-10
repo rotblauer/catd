@@ -81,6 +81,8 @@ type ProbableCat struct {
 	Pos    *Pos
 }
 
+type wt cattrack.CatTrack
+
 func (p *ProbableCat) IsEmpty() bool {
 	return (p.Pos.First.IsZero() && p.Pos.Last.IsZero()) || p.Pos.speed == nil
 }
@@ -97,60 +99,6 @@ func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 			CanonModes:    activity.NewModeTracker(config.Interval),
 		},
 	}
-}
-
-type wt cattrack.CatTrack
-
-// SafeSpeed always reports a valid speed, defaulting to 0.
-func (wt wt) SafeSpeed() float64 {
-	speed := wt.Properties.MustFloat64("Speed", 0)
-	if math.IsNaN(speed) || math.IsInf(speed, 0) {
-		return 0
-	}
-	return math.Max(0, speed)
-}
-
-// UnsafeSpeed reports the speed, defaulting to -1 (unknown).
-func (wt wt) UnsafeSpeed() float64 {
-	speed := wt.Properties.MustFloat64("Speed", -1)
-	if math.IsNaN(speed) || math.IsInf(speed, 0) {
-		return -1
-	}
-	return speed
-}
-
-func (wt wt) SafeAccuracy() float64 {
-	accuracy := wt.Properties.MustFloat64("Accuracy", 100)
-	if math.IsNaN(accuracy) || math.IsInf(accuracy, 0) {
-		return 100
-	}
-	return math.Max(1, accuracy)
-}
-
-// SafeHeading always reports a valid heading, defaulting to 0 (north).
-func (wt wt) SafeHeading() float64 {
-	heading := wt.Properties.MustFloat64("Heading", 0)
-	if math.IsNaN(heading) || math.IsInf(heading, 0) {
-		return 0
-	}
-	return math.Max(0, heading)
-}
-
-// UnsafeHeading reports the heading, defaulting to -1 (unknown).
-func (wt wt) UnsafeHeading() float64 {
-	heading := wt.Properties.MustFloat64("Heading", -1)
-	if math.IsNaN(heading) || math.IsInf(heading, 0) {
-		return -1
-	}
-	return heading
-}
-
-func (p *Pos) resetKalmanFilter() {
-	//p.kalmanFilter = NewRKalmanFilter(
-	//	p.ProbablePt.Lat(),
-	//	p.speed.Snapshot().Rate(),
-	//	0.1,
-	//)
 }
 
 // Init initializes the position data with the given (wrapped) CatTrack.
@@ -456,4 +404,56 @@ func (p *ProbableCat) onResolveActivity(act activity.Activity, ct cattrack.CatTr
 			p.Pos.NapPt = orb.Point{}
 		}
 	}
+}
+
+// SafeSpeed always reports a valid speed, defaulting to 0.
+func (wt wt) SafeSpeed() float64 {
+	speed := wt.Properties.MustFloat64("Speed", 0)
+	if math.IsNaN(speed) || math.IsInf(speed, 0) {
+		return 0
+	}
+	return math.Max(0, speed)
+}
+
+// UnsafeSpeed reports the speed, defaulting to -1 (unknown).
+func (wt wt) UnsafeSpeed() float64 {
+	speed := wt.Properties.MustFloat64("Speed", -1)
+	if math.IsNaN(speed) || math.IsInf(speed, 0) {
+		return -1
+	}
+	return speed
+}
+
+func (wt wt) SafeAccuracy() float64 {
+	accuracy := wt.Properties.MustFloat64("Accuracy", 100)
+	if math.IsNaN(accuracy) || math.IsInf(accuracy, 0) {
+		return 100
+	}
+	return math.Max(1, accuracy)
+}
+
+// SafeHeading always reports a valid heading, defaulting to 0 (north).
+func (wt wt) SafeHeading() float64 {
+	heading := wt.Properties.MustFloat64("Heading", 0)
+	if math.IsNaN(heading) || math.IsInf(heading, 0) {
+		return 0
+	}
+	return math.Max(0, heading)
+}
+
+// UnsafeHeading reports the heading, defaulting to -1 (unknown).
+func (wt wt) UnsafeHeading() float64 {
+	heading := wt.Properties.MustFloat64("Heading", -1)
+	if math.IsNaN(heading) || math.IsInf(heading, 0) {
+		return -1
+	}
+	return heading
+}
+
+func (p *Pos) resetKalmanFilter() {
+	//p.kalmanFilter = NewRKalmanFilter(
+	//	p.ProbablePt.Lat(),
+	//	p.speed.Snapshot().Rate(),
+	//	0.1,
+	//)
 }
