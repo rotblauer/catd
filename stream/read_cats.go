@@ -21,23 +21,18 @@ const AttrTime = "properties.Time"
 
 var ErrMissingAttribute = errors.New("missing attribute in read line")
 
-type CatCh struct {
-	ID string
-	Ch chan []byte
-}
-
 // ScanLinesUnbatchedCats reads a stream of lines from reader, and sends them to a channel of (raw bytes)/cat channels.
 // The cat channels are buffered, and will be closed after closeCatAfterInt lines of incativity.
 // The cat channels are sent to workersN cat-workers, who will process the tracks.
 // Each cat should have one worker.
 // The quit channel should be used to interrupt the read loop.
 func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
-	workersN, catChannelCap, catStaleInt, catMaxInt int, whitelistCats []conceptual.CatID) (chan CatCh, chan error) {
+	workersN, catChannelCap, catStaleInt, catMaxInt int, whitelistCats []conceptual.CatID) (chan chan []byte, chan error) {
 
 	// FIXME: What happens if there are more cats than workersN?
 	// Will the scanner ever free itself from the cat race?
 	// The workaround is to use unbuffered cat channel cap, but that's not ideal in case of lots of cats.
-	catChCh := make(chan CatCh, workersN)
+	catChCh := make(chan chan []byte, workersN)
 	errs := make(chan error, 1)
 	go func() {
 		defer close(errs)
@@ -197,7 +192,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 			case <-quit:
 				slog.Info("Unbatcher received quit")
 				return
-			case catChCh <- CatCh{ID: cat, Ch: v.(chan []byte)}:
+			case catChCh <- v.(chan []byte):
 			}
 			catCount++
 		}
