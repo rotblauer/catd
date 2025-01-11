@@ -60,7 +60,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	if s.TimeLast.IsZero() || len(s.Tracks) == 0 {
 		return false
 	}
-	span := ct.Properties.MustFloat64("TimeOffset", current.Sub(s.TimeLast).Seconds())
+	span := current.Sub(s.TimeLast).Seconds()
 	if span > s.Config.Interval.Seconds() || span <= -1 {
 		return true
 	}
@@ -89,7 +89,7 @@ func (s *State) IsDiscontinuous(ct *cattrack.CatTrack) bool {
 	}
 	didStop := s.ModeTracker.Has(func(a activity.ActRecord) bool {
 		// 10 seconds is how long it takes to get into a car and drive it.
-		return a.A == activity.TrackerStateStationary && a.W > 5 /* seconds (probably); how quick can cat get into/out of car */
+		return a.A == activity.TrackerStateStationary && a.W > 5 /* seconds; how quick can cat get into/out of car */
 	})
 	if !didStop && a.IsActiveHuman() && b == activity.TrackerStateAutomotive {
 		return false

@@ -329,6 +329,24 @@ func (ct *CatTrack) Validate() error {
 	return nil
 }
 
+var GyroscopeProps = []string{"GyroscopeX", "GyroscopeY", "GyroscopeZ"}
+var GyroscopeStableThresholdReading = 0.01
+
+// IsGyroOK checks the gyro properties for presence and validity.
+func (ct *CatTrack) IsGyroOK() bool {
+	for _, prop := range GyroscopeProps {
+		v, ok := ct.Properties[prop]
+		if !ok {
+			return false
+		}
+		_, ok = v.(float64)
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // SlicesSortFunc implements the slices.SortFunc for CatTrack slices.
 // Sorting is done by time (chronologically, at 1 second granularity);
 // then, in case of equivalence, by accuracy.

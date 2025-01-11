@@ -20,7 +20,6 @@ import (
 const TrackerStateActivityUndetermined = activity.TrackerStateUnknown - 1
 
 type Pos struct {
-	observed int32
 	interval time.Duration
 	distance float64
 
@@ -38,16 +37,18 @@ type Pos struct {
 	//kalmanFilter *rkalman.GeoFilter
 	//KalmanSpeed  float64
 
+	GyroOk bool
+
 	// NonStandardEWMAs are non-standard because they permit the tick interval to be set.
+	observed        int32
 	speed           *metrics.NonStandardEWMA
 	speedCalculated *metrics.NonStandardEWMA
 	accuracy        *metrics.NonStandardEWMA
 	elevation       *metrics.NonStandardEWMA
-	lastHeading     float64
 	headingDelta    *metrics.NonStandardEWMA
 	gyroSum         *metrics.NonStandardEWMA
-	gyroOk          bool
 
+	// IReportedAccel is the last (instantaneous) reported acceleration.
 	IReportedAccel float64
 
 	// NapPt is the last observed stationary point.
@@ -83,71 +84,86 @@ type ProbableCat struct {
 
 type wt cattrack.CatTrack
 
-func (p *ProbableCat) IsEmpty() bool {
-	return (p.Pos.First.IsZero() && p.Pos.Last.IsZero()) || p.Pos.speed == nil
-}
-
 func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 	if config == nil {
 		config = params.DefaultActImproverConfig
 	}
-	return &ProbableCat{
+	p := &ProbableCat{
 		Config: config,
-		Pos: &Pos{
-			Activity:      activity.TrackerStateUnknown,
-			ReportedModes: activity.NewModeTracker(config.Interval),
-			CanonModes:    activity.NewModeTracker(config.Interval),
-		},
-	}
-}
-
-// Init initializes the position data with the given (wrapped) CatTrack.
-func NewPos(wt wt, config *params.ActDiscretionConfig) *Pos {
-	ct := (*cattrack.CatTrack)(&wt)
-	ctAct := ct.MustActivity()
-	p := &Pos{
-		interval:        config.Interval,
-		distance:        config.Distance,
-		First:           ct.MustTime(),
-		Last:            ct.MustTime(),
-		LastTrack:       *ct,
-		Activity:        ctAct,
-		ProbablePt:      ct.Point(),
-		ReportedModes:   activity.NewModeTracker(config.Interval),
-		CanonModes:      activity.NewModeTracker(config.Interval),
-		speed:           metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		speedCalculated: metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		accuracy:        metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		elevation:       metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		headingDelta:    metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
-		gyroSum:         metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA),
+		Pos:    &Pos{},
 	}
 
-	//p.resetKalmanFilter()
-
-	if !p.Activity.IsActive() {
-		p.NapPt = cattrack.CatTrack(wt).Point()
-	}
-	p.speed.Update(int64(math.Round(wt.SafeSpeed() * 100)))
-	p.speed.SetInterval(time.Second)
-	p.speed.Tick()
-	p.accuracy.Update(int64(math.Round(wt.SafeAccuracy())))
-	p.accuracy.SetInterval(time.Second)
-	p.accuracy.Tick()
-	p.elevation.Update(int64(math.Round(wt.Properties.MustFloat64("Elevation", 0))))
-	p.elevation.SetInterval(time.Second)
-	p.elevation.Tick()
-
-	p.lastHeading = wt.SafeHeading()
-
-	p.ReportedModes.Push(ctAct, p.Last, ct.Properties.MustFloat64("TimeOffset", 1))
-
-	atomic.AddInt32(&p.observed, 1)
 	return p
 }
 
+// Add adds a CatTrack to the probable cat.
+func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
+	span := float64(1)
+	if !p.Pos.Last.IsZero() {
+		span = ct.MustTime().Sub(p.Pos.Last).Seconds()
+		if span == 0 {
+			return nil
+		}
+		if span > p.Config.ResetInterval.Seconds() || span <= -1 {
+			p.Pos = &Pos{}
+			p.Pos.init(p.Config)
+		}
+	}
+	if p.Pos.LastTrack.IsEmpty() {
+		p.Pos = &Pos{}
+		p.Pos.init(p.Config)
+	}
+	if !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
+		p.Pos = &Pos{}
+		p.Pos.init(p.Config)
+	}
+	if p.Pos.observed == 0 {
+		p.Pos.init(p.Config)
+	}
+	offset := ct.Properties.MustFloat64("TimeOffset", span)
+	if err := p.Pos.observe(offset, wt(ct)); err != nil {
+		return err
+	}
+	prop, _ := p.propose(ct)
+	p.onResolveActivity(prop, ct)
+	return nil
+}
+
+// Init initializes the position data with the given (wrapped) CatTrack.
+func (p *Pos) init(config *params.ActDiscretionConfig) {
+	p.observed = 0
+	p.interval = config.Interval
+	p.distance = config.Distance
+	p.speed = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+	p.speedCalculated = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+	p.accuracy = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+	p.elevation = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+	p.headingDelta = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+	p.gyroSum = metrics.NewNonStandardEWMA(metrics.AlphaEWMA(config.Interval.Seconds()/60), time.Second).(*metrics.NonStandardEWMA)
+
+	if !p.LastTrack.IsEmpty() {
+		// TODO: Re-init the meters from past tracks.
+		// For now, re-init from the last track.
+		w := wt(p.LastTrack)
+		p.speed.Update(int64(w.SafeSpeed() * 100))
+		p.speed.SetInterval(config.Interval).Tick()
+		p.accuracy.Update(int64(math.Round(w.SafeAccuracy())))
+		p.accuracy.SetInterval(config.Interval).Tick()
+		p.elevation.Update(int64(math.Round(w.Properties.MustFloat64("Elevation", 0))))
+		p.elevation.SetInterval(config.Interval).Tick()
+		// speedCalculated: cheat
+		p.speedCalculated.Update(int64(w.SafeSpeed() * 100))
+		p.speedCalculated.SetInterval(config.Interval).Tick()
+		// headingDelta: noop
+	} else {
+		p.Activity = TrackerStateActivityUndetermined
+		p.ReportedModes = activity.NewModeTracker(config.Interval)
+		p.CanonModes = activity.NewModeTracker(config.Interval)
+	}
+}
+
 // Observe updates the position data with the given (wrapped) CatTrack.
-func (p *Pos) Observe(offset float64, w wt) error {
+func (p *Pos) observe(offset float64, w wt) error {
 	ct := (*cattrack.CatTrack)(&w)
 	atomic.AddInt32(&p.observed, 1)
 
@@ -159,75 +175,49 @@ func (p *Pos) Observe(offset float64, w wt) error {
 	//}
 
 	p.speed.Update(int64(math.Round(w.SafeSpeed() * 100)))
-	p.speed.SetInterval(time.Duration(offset) * time.Second)
-	p.speed.Tick()
+	p.speed.SetInterval(time.Duration(offset) * time.Second).Tick()
+	p.accuracy.Update(int64(math.Round(w.SafeAccuracy())))
+	p.accuracy.SetInterval(time.Duration(offset) * time.Second).Tick()
+	p.elevation.Update(int64(math.Round(w.Properties.MustFloat64("Elevation", 0))))
+	p.elevation.SetInterval(time.Duration(offset) * time.Second).Tick()
 
-	if offset > 0 {
-		lastSpeed := wt(p.LastTrack).SafeSpeed()
-		p.IReportedAccel = (w.SafeSpeed() - lastSpeed) / offset
+	if !p.ProbablePt.Equal(orb.Point{}) {
+		distance := geo.Distance(p.ProbablePt, ct.Point())
+		calculatedSpeed := distance / offset
+
+		p.speedCalculated.Update(int64(math.Round(calculatedSpeed * 100)))
+		p.speedCalculated.SetInterval(time.Duration(offset) * time.Second)
+		p.speedCalculated.Tick()
 	}
 
-	distance := geo.Distance(p.ProbablePt, ct.Point())
-	calculatedSpeed := distance / offset
+	// FIXME ProbablePt was intended to be a smoother point; ie. Kalman-filtered.
+	if w.SafeAccuracy() < p.distance {
+		p.ProbablePt = ct.Point()
+	}
 
-	p.speedCalculated.Update(int64(math.Round(calculatedSpeed * 100)))
-	p.speedCalculated.SetInterval(time.Duration(offset) * time.Second)
-	p.speedCalculated.Tick()
+	if !p.LastTrack.IsEmpty() {
+		lastSpeed := wt(p.LastTrack).SafeSpeed()
+		p.IReportedAccel = (w.SafeSpeed() - lastSpeed) / offset
 
-	p.accuracy.Update(int64(math.Round(w.SafeAccuracy())))
-	p.accuracy.SetInterval(time.Duration(offset) * time.Second)
-	p.accuracy.Tick()
+		lw := wt(p.LastTrack)
+		headingDelta := math.Abs(w.SafeHeading() - lw.SafeHeading())
+		p.headingDelta.Update(int64(math.Round(headingDelta)))
+		p.headingDelta.SetInterval(time.Duration(offset) * time.Second)
+		p.headingDelta.Tick()
+	}
 
-	p.elevation.Update(int64(math.Round(w.Properties.MustFloat64("Elevation", 0))))
-	p.elevation.SetInterval(time.Duration(offset) * time.Second)
-	p.elevation.Tick()
-
-	headingDelta := math.Abs(w.SafeHeading() - p.lastHeading)
-	p.headingDelta.Update(int64(math.Round(headingDelta)))
-	p.headingDelta.SetInterval(time.Duration(offset) * time.Second)
-	p.headingDelta.Tick()
-	p.lastHeading = w.SafeHeading()
-
-	gyro, ok := gyroSum(ct)
-	p.gyroOk = ok
-	if p.gyroOk {
-		p.gyroSum.Update(int64(math.Round(gyro * 1000)))
+	if ct.IsGyroOK() {
+		s, _ := gyroSum(ct)
+		p.gyroSum.Update(int64(math.Round(s * 1000)))
 		p.gyroSum.SetInterval(time.Duration(offset) * time.Second)
 		p.gyroSum.Tick()
 	}
-
-	if w.SafeAccuracy() < p.distance {
-		p.ProbablePt = ct.Point()
+	if p.First.IsZero() {
+		p.First = ct.MustTime()
 	}
 	p.Last = ct.MustTime()
 	p.LastTrack = *ct
 	p.ReportedModes.Push(ct.MustActivity(), ct.MustTime(), offset)
-	return nil
-}
-
-// Add adds a CatTrack to the probable cat.
-func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
-	if p.IsEmpty() {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	if !p.Pos.LastTrack.IsEmpty() && !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	span := ct.Properties.MustFloat64("TimeOffset", ct.MustTime().Sub(p.Pos.Last).Seconds())
-	if span == 0 {
-		return nil
-	}
-	if span > p.Config.ResetInterval.Seconds() || span <= -1 {
-		p.Pos = NewPos(wt(ct), p.Config)
-		return nil
-	}
-	if err := p.Pos.Observe(span, wt(ct)); err != nil {
-		p.Pos = NewPos(wt(ct), p.Config)
-	}
-	prop, _ := p.Propose(ct)
-	p.onResolveActivity(prop, ct)
 	return nil
 }
 
@@ -284,25 +274,24 @@ func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
 // It is intended primarily to handle high-confidence and bad reported-data cases.
 // It tries to use the probable state of the cat instead of the reported data;
 // leaving resolving report vs. proposed to the Resolve function.
-func (p *ProbableCat) Propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
+func (p *ProbableCat) propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
 
-	ctAct := ct.MustActivity()
-	//ctAccuracy := wt(ct).SafeAccuracy()
-	speedRate := p.Pos.speed.Snapshot().Rate() / 100
-	speedCalculatedRate := p.Pos.speedCalculated.Snapshot().Rate() / 100
-	gyroRate := p.Pos.gyroSum.Snapshot().Rate() / 1000
-	//meanSpeedRate := (speedRate + speedCalculatedRate) / 2
-
-	minSpeed := math.Min(speedRate, speedCalculatedRate)
-	minSpeed = math.Min(minSpeed, wt(ct).SafeSpeed())
-	//minSpeed = math.Min(minSpeed, p.Pos.KalmanSpeed)
-	maxSpeed := math.Max(speedRate, speedCalculatedRate)
-	maxSpeed = math.Max(maxSpeed, wt(ct).SafeSpeed())
+	var (
+		ctAct               = ct.MustActivity()
+		speedRate           = p.Pos.speed.Snapshot().Rate() / 100
+		speedCalculatedRate = p.Pos.speedCalculated.Snapshot().Rate() / 100
+		gyroRate, gyroOK    = p.Pos.gyroSum.Snapshot().Rate() / 1000, p.Pos.observed > 60 && ct.IsGyroOK()
+		//maxSpeed            = math.Max(math.Max(speedRate, speedCalculatedRate), wt(ct).SafeSpeed())
+	)
+	var minSpeed = math.Min(speedRate, wt(ct).SafeSpeed())
+	if ct.MustTime().Sub(p.Pos.First) > p.Config.Interval {
+		minSpeed = math.Min(speedRate, speedCalculatedRate)
+	}
 
 	// Quick returns, strong data.
 	// Android friendly; quick stop.
-	if p.Pos.gyroOk {
-		if gyroRate < GyroscopeStableThresholdReading {
+	if gyroOK {
+		if gyroRate < cattrack.GyroscopeStableThresholdReading {
 			if ctAct.IsStationary() {
 				return ctAct, 9000
 			}

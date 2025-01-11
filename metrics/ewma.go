@@ -169,6 +169,7 @@ func (a *NonStandardEWMA) Update(n int64) {
 	a.uncounted.Add(n)
 }
 
-func (a *NonStandardEWMA) SetInterval(interval time.Duration) {
+func (a *NonStandardEWMA) SetInterval(interval time.Duration) *NonStandardEWMA {
 	a.interval = interval
+	return a
 }
