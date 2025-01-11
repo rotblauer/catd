@@ -179,7 +179,7 @@ Missoula, Montana
 		// Use 0 to disable.
 		// This causes Populate calls to behave equivalently to real-world batched (HTTP) calls to Populate.
 		// This is useful for testing re-inits of state machines. (Is act Cat Pos reinited well? Probably not...)
-		simulatedPushSize := 1_000
+		simulatedPushSize := 0
 
 		quitScanner := make(chan struct{}, 4)
 		catChCh, scanErrCh := stream.ScanLinesUnbatchedCats(
