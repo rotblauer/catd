@@ -135,7 +135,7 @@ func ScanLinesUnbatchedCats(reader io.Reader, quit <-chan struct{},
 			catLastMap.Store(catID, n)
 
 			// Check cat-sent tally; if we've met the catMaxInt threshold, close the channel.
-			if catSentMap[catID] >= catMaxInt {
+			if catMaxInt > 0 && catSentMap[catID] >= catMaxInt {
 				slog.Warn(fmt.Sprintf("👋 Unbatcher cat sent %d messages", catMaxInt), "cat", catID)
 				v, loaded := catChMap.LoadAndDelete(catID)
 				if !loaded {
