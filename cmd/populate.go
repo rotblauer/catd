@@ -179,7 +179,7 @@ Missoula, Montana
 		// Use 0 to disable.
 		// This causes Populate calls to behave equivalently to real-world batched (HTTP) calls to Populate.
 		// This is useful for testing re-inits of state machines. (Is act Cat Pos reinited well? Probably not...)
-		simulatedPushSize := 0
+		simulatedPushSize := 1000
 
 		quitScanner := make(chan struct{}, 4)
 		catChCh, scanErrCh := stream.ScanLinesUnbatchedCats(
@@ -217,23 +217,23 @@ Missoula, Montana
 					slog.Info("Channel of cat channels closed")
 					break readLoop
 				}
-				catN++
-				// FIXME: Order is not ensured. catPopulate workers are racy. This does not simulate real life.
-				catsWorking.Add(1)
 				slog.Info("Received cat chan", "cat", catN)
-				v, ok := catWorkers[conceptual.CatID(catCh.ID)]
+				worker, ok := catWorkers[conceptual.CatID(catCh.ID)]
 				if !ok {
-					v = &catWorker{
-						jobs:  make([]chan []byte, 0),
-						ready: make([]chan struct{}, 0),
+					catN++
+					catsWorking.Add(1)
+					worker = &catWorker{
+						ctx:     ctx,
+						backend: catBackendC,
+						catN:    catN,
+						wg:      catsWorking,
+						errCh:   populateErrs,
+						jobs:    make(chan chan []byte),
 					}
+					go worker.run()
+					catWorkers[conceptual.CatID(catCh.ID)] = worker
 				}
-				i := v.queue(catCh.Ch)
-				if i == 0 {
-					v.ready[0] <- struct{}{}
-				}
-				catWorkers[conceptual.CatID(catCh.ID)] = v
-				go v.catPopulate(ctx, catN, i, catsWorking, populateErrs, catBackendC)
+				worker.jobs <- catCh.Ch
 
 			case err, open := <-scanErrCh:
 				// out of tracks
@@ -262,8 +262,13 @@ Missoula, Montana
 				if err != nil {
 					slog.Error("Received populate error", "error", err)
 					quitScanner <- struct{}{}
+					break readLoop
 				}
 			}
+		}
+
+		for _, v := range catWorkers {
+			close(v.jobs)
 		}
 
 		slog.Info("Waiting on workers")
@@ -298,32 +303,26 @@ Missoula, Montana
 }
 
 type catWorker struct {
-	jobs  []chan []byte
-	ready []chan struct{}
+	ctx     context.Context
+	backend *params.CatRPCServices
+	catN    int
+	wg      *sync.WaitGroup
+	errCh   chan error
+	jobs    chan chan []byte
 }
 
-func (c *catWorker) queue(ch chan []byte) (i int) {
-	c.jobs = append(c.jobs, ch)
-	c.ready = append(c.ready, make(chan struct{}))
-	return len(c.jobs) - 1
+func (c *catWorker) run() {
+	defer c.wg.Done()
+	for job := range c.jobs {
+		c.catPopulate(c.ctx, c.catN, job, c.errCh, c.backend)
+	}
 }
 
 // catPopulate runs Populate for some cat, non-blocking (re waitgroup).
 // CatID is determined by the first track read from the channel.
 // The call to Populate will block on DB lock for each cat, which
 // makes calling this function for the same cat concurrently harmless, but useless.
-func (c *catWorker) catPopulate(ctx context.Context, catN int, ready int, done *sync.WaitGroup, errCh chan error, backend *params.CatRPCServices) {
-	defer done.Done()
-
-	<-c.ready[ready]
-	catCh := c.jobs[ready]
-	defer func() {
-		c.jobs[ready] = nil
-		if c.jobs[ready+1] != nil {
-			c.ready[ready+1] <- struct{}{}
-		}
-	}()
-
+func (c *catWorker) catPopulate(ctx context.Context, catN int, catCh chan []byte, errCh chan error, backend *params.CatRPCServices) {
 	var err error
 	var cat *api.Cat
 
