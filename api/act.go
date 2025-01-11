@@ -42,6 +42,12 @@ func (c *Cat) ImprovedActTracks(ctx context.Context, in <-chan cattrack.CatTrack
 		for track := range in {
 			if err := im.Add(track); err != nil {
 				c.logger.Error("Failed to improve act track", "error", err)
+				select {
+				case <-ctx.Done():
+					return
+				case out <- track:
+				}
+				continue
 			}
 
 			if im.Pos.Activity != act.TrackerStateActivityUndetermined {

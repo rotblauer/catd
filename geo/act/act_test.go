@@ -81,7 +81,7 @@ func TestProbableCat_Add(t *testing.T) {
 		/*
 			k.lat=%3.06f kΔ=%3.02f  k.speed=%3.02f
 		*/
-		t.Logf(`pos.act=%s ct.act=%s lon=%3.06f p.lon=%3.06f lat=%3.06f p.lat=%3.06f acc=%3.02f safe.speed=%3.02f speedRate=%3.02f calcSpeedRate=%3.02f gyroRate=%3.03f accuracyRate=%3.02f distToNap=%3.02f heading=%3.02f headingDeltaRate=%3.02f\n`,
+		t.Logf(`pos.act=%s ct.act=%s lon=%3.06f p.lon=%3.06f lat=%3.06f p.lat=%3.06f acc=%3.02f r.speed=%3.02f safe.speed=%3.02f speedRate=%3.02f calcSpeedRate=%3.02f gyroRate=%3.03f accuracyRate=%3.02f distToNap=%3.02f heading=%3.02f headingDeltaRate=%3.02f\n`,
 			pc.Pos.Activity,
 			ct.MustActivity(),
 			ct.Point().Lon(),
@@ -90,6 +90,7 @@ func TestProbableCat_Add(t *testing.T) {
 			pc.Pos.ProbablePt.Lat(),
 			pc.Pos.IReportedAccel,
 			//kalmanVReportDist,
+			wt(ct).UnsafeSpeed(),
 			wt(ct).SafeSpeed(),
 			//pc.Pos.KalmanSpeed,
 			pc.Pos.speed.Snapshot().Rate()/100,

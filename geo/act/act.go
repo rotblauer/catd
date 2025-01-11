@@ -98,29 +98,27 @@ func NewProbableCat(config *params.ActDiscretionConfig) *ProbableCat {
 
 // Add adds a CatTrack to the probable cat.
 func (p *ProbableCat) Add(ct cattrack.CatTrack) error {
-	span := float64(1)
-	if !p.Pos.Last.IsZero() {
-		span = ct.MustTime().Sub(p.Pos.Last).Seconds()
-		if span == 0 {
-			return nil
-		}
-		if span > p.Config.ResetInterval.Seconds() || span <= -1 {
+	var offset float64
+	if !p.Pos.LastTrack.IsEmpty() {
+		offset = ct.MustTime().Sub(p.Pos.LastTrack.MustTime()).Seconds()
+		oob := offset <= -1 || offset > p.Config.ResetInterval.Seconds()
+		oob = oob || !cattrack.IsCatContinuous(p.Pos.LastTrack, ct)
+		if oob {
 			p.Pos = &Pos{}
 			p.Pos.init(p.Config)
+			offset = ct.Properties.MustFloat64("TimeOffset", 1)
 		}
-	}
-	if p.Pos.LastTrack.IsEmpty() {
-		p.Pos = &Pos{}
-		p.Pos.init(p.Config)
-	}
-	if !cattrack.IsCatContinuous(p.Pos.LastTrack, ct) {
+	} else {
+		offset = ct.Properties.MustFloat64("TimeOffset", 1)
 		p.Pos = &Pos{}
 		p.Pos.init(p.Config)
 	}
 	if p.Pos.observed == 0 {
 		p.Pos.init(p.Config)
 	}
-	offset := ct.Properties.MustFloat64("TimeOffset", span)
+	if offset == 0 {
+		return nil
+	}
 	if err := p.Pos.observe(offset, wt(ct)); err != nil {
 		return err
 	}
@@ -164,15 +162,12 @@ func (p *Pos) init(config *params.ActDiscretionConfig) {
 
 // Observe updates the position data with the given (wrapped) CatTrack.
 func (p *Pos) observe(offset float64, w wt) error {
+	if offset == 0 {
+		// catch this error before here
+		panic("offset 0")
+	}
 	ct := (*cattrack.CatTrack)(&w)
 	atomic.AddInt32(&p.observed, 1)
-
-	//// Observe and handle kalman filter estimates.
-	//// Do this first because the function MAY use a workaround for a
-	//// possibly buggy library, re-Init-ing the whole Pos.
-	//if err := p.filterObserve(offset, wt); err != nil {
-	//	return err
-	//}
 
 	p.speed.Update(int64(math.Round(w.SafeSpeed() * 100)))
 	p.speed.SetInterval(time.Duration(offset) * time.Second).Tick()
@@ -221,59 +216,6 @@ func (p *Pos) observe(offset float64, w wt) error {
 	return nil
 }
 
-//func (p *Pos) filterObserve(seconds float64, wt wt) error {
-//	err := p.kalmanFilter.Observe(seconds, &rkalman.GeoObserved{
-//		Lat:      cattrack.CatTrack(wt).Point().Lat(),
-//		Lng:      cattrack.CatTrack(wt).Point().Lon(),
-//		Altitude: wt.Properties.MustFloat64("Elevation", 0),
-//		Speed:    wt.SafeSpeed(),
-//		// GCPS (only) reports speed_accuracy.
-//		SpeedAccuracy:      wt.Properties.MustFloat64("speed_accuracy", 0.42),
-//		Direction:          wt.SafeHeading(),
-//		DirectionAccuracy:  0,
-//		HorizontalAccuracy: wt.SafeAccuracy(),
-//		VerticalAccuracy:   2.0,
-//	})
-//	if err != nil {
-//		slog.Error("Kalman.Observe failed", "error", err)
-//		return errors.New("Kalman.Observe failed")
-//	}
-//
-//	filterEstimate := p.kalmanFilter.Estimate()
-//
-//	// Workaround a wonky kalman filter.
-//	// If the speed is too high, reset the filter.
-//	// What happens is the kalman filter goes haywire, and starts reporting
-//	// speeds that are way too high, possibly related to poor heading_accuracy input?
-//	// This catches it, roughly, as/before that happens.
-//	speedRate := p.speed.Snapshot().Rate() / 100
-//	if filterEstimate != nil {
-//		if filterEstimate.Speed > 3 && filterEstimate.Speed > speedRate*10 {
-//			// Could be slog.Error, but noisy
-//			slog.Debug("Kalman.Estimate.speed is 10x the reported 1-minute EWMA rate", "speed", filterEstimate.Speed, "speedRate", speedRate)
-//			p.resetKalmanFilter()
-//		} else {
-//			p.ProbablePt = orb.Point{filterEstimate.Lng, filterEstimate.Lat}
-//			p.KalmanSpeed = filterEstimate.Speed
-//			return nil
-//		}
-//	} else {
-//		// Estimate was nil. Reset the filter.
-//		// Hopefully this will be rare; the above workaround for the Kalman filter
-//		// should catch most of the cases where the filter goes haywire.
-//		slog.Error("Kalman.Estimate was nil. Resetting everything.", "cat", (*cattrack.CatTrack)(&wt).CatID())
-//		return errors.New("Kalman.Estimate was nil")
-//	}
-//	if wt.SafeAccuracy() < p.distance {
-//		p.ProbablePt = cattrack.CatTrack(wt).Point()
-//	}
-//	return nil
-//}
-
-// Propose proposes a KNOWN activity based on the state of the cat and the current track.
-// It is intended primarily to handle high-confidence and bad reported-data cases.
-// It tries to use the probable state of the cat instead of the reported data;
-// leaving resolving report vs. proposed to the Resolve function.
 func (p *ProbableCat) propose(ct cattrack.CatTrack) (proposed activity.Activity, stationaryConfidence float64) {
 
 	var (
@@ -446,3 +388,57 @@ func (p *Pos) resetKalmanFilter() {
 	//	0.1,
 	//)
 }
+
+//func (p *Pos) filterObserve(seconds float64, wt wt) error {
+//	err := p.kalmanFilter.Observe(seconds, &rkalman.GeoObserved{
+//		Lat:      cattrack.CatTrack(wt).Point().Lat(),
+//		Lng:      cattrack.CatTrack(wt).Point().Lon(),
+//		Altitude: wt.Properties.MustFloat64("Elevation", 0),
+//		Speed:    wt.SafeSpeed(),
+//		// GCPS (only) reports speed_accuracy.
+//		SpeedAccuracy:      wt.Properties.MustFloat64("speed_accuracy", 0.42),
+//		Direction:          wt.SafeHeading(),
+//		DirectionAccuracy:  0,
+//		HorizontalAccuracy: wt.SafeAccuracy(),
+//		VerticalAccuracy:   2.0,
+//	})
+//	if err != nil {
+//		slog.Error("Kalman.Observe failed", "error", err)
+//		return errors.New("Kalman.Observe failed")
+//	}
+//
+//	filterEstimate := p.kalmanFilter.Estimate()
+//
+//	// Workaround a wonky kalman filter.
+//	// If the speed is too high, reset the filter.
+//	// What happens is the kalman filter goes haywire, and starts reporting
+//	// speeds that are way too high, possibly related to poor heading_accuracy input?
+//	// This catches it, roughly, as/before that happens.
+//	speedRate := p.speed.Snapshot().Rate() / 100
+//	if filterEstimate != nil {
+//		if filterEstimate.Speed > 3 && filterEstimate.Speed > speedRate*10 {
+//			// Could be slog.Error, but noisy
+//			slog.Debug("Kalman.Estimate.speed is 10x the reported 1-minute EWMA rate", "speed", filterEstimate.Speed, "speedRate", speedRate)
+//			p.resetKalmanFilter()
+//		} else {
+//			p.ProbablePt = orb.Point{filterEstimate.Lng, filterEstimate.Lat}
+//			p.KalmanSpeed = filterEstimate.Speed
+//			return nil
+//		}
+//	} else {
+//		// Estimate was nil. Reset the filter.
+//		// Hopefully this will be rare; the above workaround for the Kalman filter
+//		// should catch most of the cases where the filter goes haywire.
+//		slog.Error("Kalman.Estimate was nil. Resetting everything.", "cat", (*cattrack.CatTrack)(&wt).CatID())
+//		return errors.New("Kalman.Estimate was nil")
+//	}
+//	if wt.SafeAccuracy() < p.distance {
+//		p.ProbablePt = cattrack.CatTrack(wt).Point()
+//	}
+//	return nil
+//}
+
+// Propose proposes a KNOWN activity based on the state of the cat and the current track.
+// It is intended primarily to handle high-confidence and bad reported-data cases.
+// It tries to use the probable state of the cat instead of the reported data;
+// leaving resolving report vs. proposed to the Resolve function.
