@@ -45,6 +45,7 @@ import (
 
 var optSortTrackBatches bool
 var optCatWorkersN int = runtime.NumCPU()
+var optPushLimitN int = 0 // 0 to disable.
 var optAutoTilingOff bool
 var optAutoRgeoDOff bool
 var optWhitelistCats []string
@@ -175,19 +176,13 @@ Missoula, Montana
 			whiteCats = nil
 		}
 
-		// simulatedPushSize is the max number of tracks to send over any cat channel.
-		// Use 0 to disable.
-		// This causes Populate calls to behave equivalently to real-world batched (HTTP) calls to Populate.
-		// This is useful for testing re-inits of state machines. (Is act Cat Pos reinited well? Probably not...)
-		simulatedPushSize := 1000
-
 		quitScanner := make(chan struct{}, 4)
 		catChCh, scanErrCh := stream.ScanLinesUnbatchedCats(
 			os.Stdin, quitScanner,
 			// Small buffer to keep scanner running while workers catch up.
 			// A small buffer is faster than a large one,
 			// but too small is slower. These numbers are magic. Around 5MB/s.
-			optCatWorkersN, 1_111, 111_111, simulatedPushSize, whiteCats)
+			optCatWorkersN, 1_111, 111_111, optPushLimitN, whiteCats)
 
 		go func() {
 			for i := 0; i < 2; i++ {
@@ -412,6 +407,13 @@ Also relatively important (critical) for cat tracking.`)
 Cat.Populate calls are blocking PER CAT.
 For optimal results, use the number of cats tracked.
 For superoptimal results, use 0, to unlimit the number of cats tracked concurrently.
+`)
+	flags.IntVar(&optPushLimitN, "push-limit", 0,
+		`Max number of track lines to process per call to Cat.Populate. Use 0 to disable.
+Using a non-zero value (eg. 100) simulates push-batch sizing, generally causing Populate calls
+to behave equivalently to real-world batched (HTTP) calls to Populate. 
+This can be useful for testing store/restore of state machines.
+Using a zero value causes Populate to read the entire input stream, unless interrupted by a stale interval. 
 `)
 
 	flags.StringSliceVar(&optWhitelistCats, "whitelist", nil,

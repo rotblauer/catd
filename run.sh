@@ -103,6 +103,7 @@ run() {
     --datadir /tmp/catd \
     --verbosity 0 \
     --workers 0 \
+    --push-limit 0 \
     --sort true \
     --tiled.skip-edge
 #     --tiled.pending-after 15s \
