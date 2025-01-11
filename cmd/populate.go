@@ -206,6 +206,7 @@ Missoula, Montana
 		}()
 
 		populateErrs := make(chan error, optCatWorkersN)
+		catWorkers := make(map[conceptual.CatID]*catWorker)
 
 		catN := 0
 	readLoop:
@@ -217,9 +218,22 @@ Missoula, Montana
 					break readLoop
 				}
 				catN++
+				// FIXME: Order is not ensured. catPopulate workers are racy. This does not simulate real life.
 				catsWorking.Add(1)
 				slog.Info("Received cat chan", "cat", catN)
-				go catPopulate(ctx, catN, catCh, catsWorking, populateErrs, catBackendC)
+				v, ok := catWorkers[conceptual.CatID(catCh.ID)]
+				if !ok {
+					v = &catWorker{
+						jobs:  make([]chan []byte, 0),
+						ready: make([]chan struct{}, 0),
+					}
+				}
+				i := v.queue(catCh.Ch)
+				if i == 0 {
+					v.ready[0] <- struct{}{}
+				}
+				catWorkers[conceptual.CatID(catCh.ID)] = v
+				go v.catPopulate(ctx, catN, i, catsWorking, populateErrs, catBackendC)
 
 			case err, open := <-scanErrCh:
 				// out of tracks
@@ -283,12 +297,32 @@ Missoula, Montana
 	},
 }
 
+type catWorker struct {
+	jobs  []chan []byte
+	ready []chan struct{}
+}
+
+func (c *catWorker) queue(ch chan []byte) (i int) {
+	c.jobs = append(c.jobs, ch)
+	c.ready = append(c.ready, make(chan struct{}))
+	return len(c.jobs) - 1
+}
+
 // catPopulate runs Populate for some cat, non-blocking (re waitgroup).
 // CatID is determined by the first track read from the channel.
 // The call to Populate will block on DB lock for each cat, which
 // makes calling this function for the same cat concurrently harmless, but useless.
-func catPopulate(ctx context.Context, catN int, catCh chan []byte, done *sync.WaitGroup, errCh chan error, backend *params.CatRPCServices) {
+func (c *catWorker) catPopulate(ctx context.Context, catN int, ready int, done *sync.WaitGroup, errCh chan error, backend *params.CatRPCServices) {
 	defer done.Done()
+
+	<-c.ready[ready]
+	catCh := c.jobs[ready]
+	defer func() {
+		c.jobs[ready] = nil
+		if c.jobs[ready+1] != nil {
+			c.ready[ready+1] <- struct{}{}
+		}
+	}()
 
 	var err error
 	var cat *api.Cat
