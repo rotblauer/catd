@@ -31,14 +31,15 @@ tdata() {
 #     zcat "${HOME}/tdata/local/yyyy-mm/2023-07"*.gz
 #     zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 
+   zcat "${HOME}/tdata/local/yyyy-mm/2023"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-09"*.gz
 #    zcat "${HOME}/tdata/local/yyyy-mm/2024-1"*.gz
 
 #     zcat "${HOME}"/tdata/master.json.gz
 #    zcat "${HOME}"/tdata/{devop,edge}.json.gz
-    zcat "${HOME}"/tdata/20250103_500000.json.gz
-   zcat "${HOME}"/tdata/edge.json.gz
+#     zcat "${HOME}"/tdata/20250103_500000.json.gz
+#    zcat "${HOME}"/tdata/edge.json.gz
 #
 #  shopt -s globstar;
 #  for f in "${HOME}"/tdata/local/yyyy-mm/**/*.gz; do
@@ -103,8 +104,8 @@ run() {
     --datadir /tmp/catd \
     --verbosity 0 \
     --workers 0 \
-    --push-limit 0 \
     --sort true \
+    --push-limit 0 \
     --tiled.skip-edge
 #     --tiled.pending-after 15s \
 #     --tiled.await-pending \
